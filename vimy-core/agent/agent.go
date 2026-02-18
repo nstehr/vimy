@@ -10,8 +10,9 @@ import (
 
 // Agent owns the decision-making for a single player session.
 type Agent struct {
-	Conn  *ipc.Connection
-	State *GameState
+	Conn   *ipc.Connection
+	Player string
+	State  *GameState
 }
 
 func New(conn *ipc.Connection) *Agent {
@@ -26,8 +27,8 @@ func (a *Agent) HandleHello() ipc.Handler {
 			return nil, fmt.Errorf("unmarshal hello: %w", err)
 		}
 
-		a.Conn.Player = hello.Player
-		slog.Info("player identified", "player", a.Conn.Player)
+		a.Player = hello.Player
+		slog.Info("player identified", "player", a.Player)
 
 		ack, err := ipc.NewEnvelope(ipc.TypeAck, ipc.AckMessage{Status: "ok"})
 		if err != nil {
@@ -44,7 +45,6 @@ func (a *Agent) HandleGameState() ipc.Handler {
 			return nil, fmt.Errorf("unmarshal GameState: %w", err)
 		}
 
-		a.Conn.Player = gs.Player.Name
 		a.State = &gs
 
 		slog.Info("game state received",

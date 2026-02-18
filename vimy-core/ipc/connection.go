@@ -13,7 +13,6 @@ type Handler func(env Envelope) (*Envelope, error)
 type Connection struct {
 	conn     net.Conn
 	handlers map[string]Handler
-	Player   string
 }
 
 func NewConnection(conn net.Conn, handlers map[string]Handler) *Connection {
@@ -46,7 +45,7 @@ func (c *Connection) ReadLoop() {
 	for {
 		env, err := ReadEnvelope(c.conn)
 		if err != nil {
-			slog.Info("connection read ended", "player", c.Player, "error", err)
+			slog.Info("connection read ended", "error", err)
 			return
 		}
 
@@ -67,7 +66,7 @@ func (c *Connection) ReadLoop() {
 				slog.Error("failed to send response", "type", resp.Type, "error", err)
 				return
 			}
-			slog.Info("sent response", "type", resp.Type, "player", c.Player)
+			slog.Info("sent response", "type", resp.Type)
 		}
 	}
 }
