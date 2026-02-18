@@ -78,7 +78,7 @@ func main() {
 func handleConn(conn net.Conn) {
 	c := ipc.NewConnection(conn, nil)
 	a := agent.New(c)
-	c.RegisterHandler(ipc.TypeHello, a.HandleHello())
-	c.RegisterHandler(ipc.TypeGameState, a.HandleGameState())
+	c.RegisterHandler(ipc.TypeHello, a.HandleHello)
+	c.RegisterHandler(ipc.TypeGameState, a.HandleGameState)
 	c.ReadLoop()
 }
