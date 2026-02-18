@@ -1,0 +1,54 @@
+package agent
+
+type GameState struct {
+	Tick             int               `json:"tick"`
+	Player           Player            `json:"player"`
+	Buildings        []Building        `json:"buildings"`
+	Units            []Unit            `json:"units"`
+	ProductionQueues []ProductionQueue `json:"productionQueues"`
+	Enemies          []Enemy           `json:"enemies"`
+}
+
+type Player struct {
+	Name             string `json:"name"`
+	Cash             int    `json:"cash"`
+	Resources        int    `json:"resources"`
+	ResourceCapacity int    `json:"resourceCapacity"`
+	PowerProvided    int    `json:"powerProvided"`
+	PowerDrained     int    `json:"powerDrained"`
+	PowerState       string `json:"powerState"`
+}
+
+type Unit struct {
+	ID    int    `json:"id"`
+	Type  string `json:"type"`
+	X     int    `json:"x"`
+	Y     int    `json:"y"`
+	HP    int    `json:"hp"`
+	MaxHP int    `json:"maxHp"`
+	Idle  bool   `json:"idle"`
+}
+
+type Building struct {
+	ID    int    `json:"id"`
+	Type  string `json:"type"`
+	X     int    `json:"x"`
+	Y     int    `json:"y"`
+	HP    int    `json:"hp"`
+	MaxHP int    `json:"maxHp"`
+}
+
+type ProductionQueue struct {
+	Type  string   `json:"type"`
+	Items []string `json:"items"`
+}
+
+type Enemy struct {
+	ID    int    `json:"id"`
+	Owner string `json:"owner"`
+	Type  string `json:"type"`
+	X     int    `json:"x"`
+	Y     int    `json:"y"`
+	HP    int    `json:"hp"`
+	MaxHP int    `json:"maxHp"`
+}

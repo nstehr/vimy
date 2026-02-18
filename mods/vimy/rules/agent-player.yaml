@@ -1,0 +1,11 @@
+Player:
+	ModularBot@AgentAI:
+		Name: Vimy AI
+		Type: agent
+	GrantConditionOnBotOwner@agent:
+		Condition: enable-agent-ai
+		Bots: agent
+	VimyBotModule:
+		RequiresCondition: enable-agent-ai
+		PipePath: /tmp/vimy.sock
+		StateIntervalTicks: 10
