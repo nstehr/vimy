@@ -39,8 +39,11 @@ type Building struct {
 }
 
 type ProductionQueue struct {
-	Type  string   `json:"type"`
-	Items []string `json:"items"`
+	Type            string   `json:"type"`
+	Items           []string `json:"items"`
+	Buildable       []string `json:"buildable"`
+	CurrentItem     string   `json:"currentItem"`
+	CurrentProgress int      `json:"currentProgress"`
 }
 
 type Enemy struct {

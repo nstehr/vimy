@@ -59,6 +59,12 @@ cd vimy-core && go run .
 
 Start a skirmish and select "Vimy AI" as an opponent.
 
+## Repository Structure
+
+The repository root doubles as the OpenRA Mod SDK workspace. Files like `Makefile`, `launch-game.sh`, `mod.config`, and `engine/` belong to the SDK and expect to live at the repo root — moving them into a subdirectory would break the SDK's relative path assumptions and create friction with future engine updates.
+
+As a result, the mod files live at the top level alongside `vimy-core/`, rather than being nested under their own directory.
+
 ## License
 
 The OpenRA engine and SDK scripts are made available under the [GPLv3](https://github.com/OpenRA/OpenRA/blob/bleed/COPYING) license.
