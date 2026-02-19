@@ -132,6 +132,20 @@ namespace OpenRA.Mods.Vimy
 						case "ack":
 							Log.Write("debug", $"Sidecar acknowledged: {envelope.Value.Data}");
 							break;
+						case "produce":
+						case "place_building":
+						case "attack_move":
+						case "move":
+						case "set_rally":
+						case "deploy":
+						case "repair_building":
+						case "attack":
+						case "cancel_production":
+						case "harvest":
+						case "capture":
+						case "support_power":
+							CommandExecutor.Execute(envelope.Value.Type, envelope.Value.Data, world, bot);
+							break;
 						default:
 							Log.Write("debug", $"Unknown message type: {envelope.Value.Type}");
 							break;
