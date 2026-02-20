@@ -1,4 +1,4 @@
-package agent
+package model
 
 type GameState struct {
 	Tick             int               `json:"tick"`
@@ -7,6 +7,8 @@ type GameState struct {
 	Units            []Unit            `json:"units"`
 	ProductionQueues []ProductionQueue `json:"productionQueues"`
 	Enemies          []Enemy           `json:"enemies"`
+	MapWidth         int               `json:"mapWidth"`
+	MapHeight        int               `json:"mapHeight"`
 }
 
 type Player struct {

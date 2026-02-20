@@ -1,0 +1,95 @@
+package rules
+
+// DefaultRules returns the seed rule set for autonomous play.
+func DefaultRules() []*Rule {
+	return []*Rule{
+		{
+			Name:         "deploy-mcv",
+			Priority:     1000,
+			Category:     "setup",
+			Exclusive:    true,
+			ConditionSrc: `HasUnit("mcv") && !HasBuilding("fact")`,
+			Action:       ActionDeployMCV,
+		},
+		{
+			Name:         "place-ready-building",
+			Priority:     900,
+			Category:     "economy",
+			Exclusive:    true,
+			ConditionSrc: `QueueReady("Building")`,
+			Action:       ActionPlaceBuilding,
+		},
+		{
+			Name:         "build-power",
+			Priority:     800,
+			Category:     "economy",
+			Exclusive:    true,
+			ConditionSrc: `!QueueBusy("Building") && CanBuild("Building","powr") && (PowerExcess() < 100 || BuildingCount("powr") == 0) && Cash() >= 300`,
+			Action:       ActionProducePowerPlant,
+		},
+		{
+			Name:         "build-refinery",
+			Priority:     750,
+			Category:     "economy",
+			Exclusive:    true,
+			ConditionSrc: `!QueueBusy("Building") && CanBuild("Building","proc") && !HasBuilding("proc") && Cash() >= 2000`,
+			Action:       ActionProduceRefinery,
+		},
+		{
+			Name:         "build-barracks",
+			Priority:     700,
+			Category:     "economy",
+			Exclusive:    true,
+			ConditionSrc: `!QueueBusy("Building") && CanBuildBarracks() && !HasBarracks() && PowerExcess() >= 0 && Cash() >= 300`,
+			Action:       ActionProduceBarracks,
+		},
+		{
+			Name:         "build-war-factory",
+			Priority:     650,
+			Category:     "economy",
+			Exclusive:    true,
+			ConditionSrc: `!QueueBusy("Building") && CanBuild("Building","weap") && !HasBuilding("weap") && PowerExcess() >= 0 && Cash() >= 2000`,
+			Action:       ActionProduceWarFactory,
+		},
+		{
+			Name:         "produce-infantry",
+			Priority:     500,
+			Category:     "production",
+			Exclusive:    false,
+			ConditionSrc: `HasBarracks() && !QueueBusy("Infantry") && UnitCount("e1") < 10 && Cash() >= 100`,
+			Action:       ActionProduceInfantry,
+		},
+		{
+			Name:         "scout-with-idle-units",
+			Priority:     350,
+			Category:     "recon",
+			Exclusive:    false,
+			ConditionSrc: `!EnemiesVisible() && len(IdleMilitaryUnits()) >= 2`,
+			Action:       ActionScoutWithIdleUnits,
+		},
+		{
+			Name:         "attack-idle-units",
+			Priority:     300,
+			Category:     "combat",
+			Exclusive:    false,
+			ConditionSrc: `len(IdleMilitaryUnits()) >= 5 && NearestEnemy() != nil`,
+			Action:       ActionAttackMoveIdleUnits,
+		},
+		{
+			Name:         "repair-buildings",
+			Priority:     200,
+			Category:     "maintenance",
+			Exclusive:    false,
+			ConditionSrc: `len(DamagedBuildings()) > 0`,
+			Action:       ActionRepairDamagedBuildings,
+		},
+		{
+			Name:         "return-idle-harvesters",
+			Priority:     100,
+			Category:     "economy",
+			Exclusive:    false,
+			ConditionSrc: `len(IdleHarvesters()) > 0`,
+			Action:       ActionSendIdleHarvesters,
+		},
+	}
+}

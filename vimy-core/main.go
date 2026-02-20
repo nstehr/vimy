@@ -11,6 +11,7 @@ import (
 
 	"github.com/nstehr/vimy/vimy-core/agent"
 	"github.com/nstehr/vimy/vimy-core/ipc"
+	"github.com/nstehr/vimy/vimy-core/rules"
 )
 
 const banner = `
@@ -76,8 +77,16 @@ func main() {
 }
 
 func handleConn(conn net.Conn) {
+	engine, err := rules.NewEngine(rules.DefaultRules())
+	if err != nil {
+		slog.Error("failed to create rule engine", "error", err)
+		conn.Close()
+		return
+	}
+	slog.Info("rule engine initialized", "rules", len(rules.DefaultRules()))
+
 	c := ipc.NewConnection(conn, nil)
-	a := agent.New(c)
+	a := agent.New(c, engine)
 	c.RegisterHandler(ipc.TypeHello, a.HandleHello)
 	c.RegisterHandler(ipc.TypeGameState, a.HandleGameState)
 	c.ReadLoop()

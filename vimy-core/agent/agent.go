@@ -6,16 +6,19 @@ import (
 	"log/slog"
 
 	"github.com/nstehr/vimy/vimy-core/ipc"
+	"github.com/nstehr/vimy/vimy-core/model"
+	"github.com/nstehr/vimy/vimy-core/rules"
 )
 
 // Agent owns the decision-making for a single player session.
 type Agent struct {
 	Conn   *ipc.Connection
 	Player string
+	Engine *rules.Engine
 }
 
-func New(conn *ipc.Connection) *Agent {
-	return &Agent{Conn: conn}
+func New(conn *ipc.Connection, engine *rules.Engine) *Agent {
+	return &Agent{Conn: conn, Engine: engine}
 }
 
 // HandleHello completes the handshake so the mod knows the bridge is ready.
@@ -36,7 +39,7 @@ func (a *Agent) HandleHello(env ipc.Envelope) (*ipc.Envelope, error) {
 }
 
 func (a *Agent) HandleGameState(env ipc.Envelope) (*ipc.Envelope, error) {
-	var gs GameState
+	var gs model.GameState
 	if err := json.Unmarshal(env.Data, &gs); err != nil {
 		return nil, fmt.Errorf("unmarshal GameState: %w", err)
 	}
@@ -53,33 +56,8 @@ func (a *Agent) HandleGameState(env ipc.Envelope) (*ipc.Envelope, error) {
 		"queues", len(gs.ProductionQueues),
 	)
 
-	for _, u := range gs.Units {
-		slog.Info("unit",
-			"id", u.ID,
-			"type", u.Type,
-			"pos", fmt.Sprintf("(%d,%d)", u.X, u.Y),
-			"hp", fmt.Sprintf("%d/%d", u.HP, u.MaxHP),
-			"idle", u.Idle,
-		)
-	}
-
-	for _, b := range gs.Buildings {
-		slog.Info("building",
-			"id", b.ID,
-			"type", b.Type,
-			"pos", fmt.Sprintf("(%d,%d)", b.X, b.Y),
-			"hp", fmt.Sprintf("%d/%d", b.HP, b.MaxHP),
-		)
-	}
-
-	for _, e := range gs.Enemies {
-		slog.Info("enemy",
-			"id", e.ID,
-			"owner", e.Owner,
-			"type", e.Type,
-			"pos", fmt.Sprintf("(%d,%d)", e.X, e.Y),
-			"hp", fmt.Sprintf("%d/%d", e.HP, e.MaxHP),
-		)
+	if err := a.Engine.Evaluate(gs, a.Conn); err != nil {
+		slog.Error("rule engine error", "error", err)
 	}
 
 	ack, err := ipc.NewEnvelope(ipc.TypeAck, ipc.AckMessage{Status: "ok"})
