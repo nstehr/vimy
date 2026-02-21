@@ -102,6 +102,12 @@ namespace OpenRA.Mods.Vimy
 
 		[JsonPropertyName("enemies")]
 		public List<EnemyActorData> Enemies { get; set; } = new();
+
+		[JsonPropertyName("mapWidth")]
+		public int MapWidth { get; set; }
+
+		[JsonPropertyName("mapHeight")]
+		public int MapHeight { get; set; }
 	}
 
 	public static class GameStateSerializer
@@ -120,7 +126,9 @@ namespace OpenRA.Mods.Vimy
 				Buildings = SerializeBuildings(world, bot),
 				Units = SerializeUnits(world, bot),
 				ProductionQueues = SerializeProductionQueues(bot),
-				Enemies = SerializeEnemies(world, bot)
+				Enemies = SerializeEnemies(world, bot),
+				MapWidth = world.Map.MapSize.X,
+				MapHeight = world.Map.MapSize.Y
 			};
 
 			return JsonSerializer.Serialize(state, JsonOptions);

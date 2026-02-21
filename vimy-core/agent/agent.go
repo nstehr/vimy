@@ -12,9 +12,10 @@ import (
 
 // Agent owns the decision-making for a single player session.
 type Agent struct {
-	Conn   *ipc.Connection
-	Player string
-	Engine *rules.Engine
+	Conn    *ipc.Connection
+	Player  string
+	Faction string
+	Engine  *rules.Engine
 }
 
 func New(conn *ipc.Connection, engine *rules.Engine) *Agent {
@@ -29,7 +30,8 @@ func (a *Agent) HandleHello(env ipc.Envelope) (*ipc.Envelope, error) {
 	}
 
 	a.Player = hello.Player
-	slog.Info("player identified", "player", a.Player)
+	a.Faction = hello.Faction
+	slog.Info("player identified", "player", a.Player, "faction", a.Faction)
 
 	ack, err := ipc.NewEnvelope(ipc.TypeAck, ipc.AckMessage{Status: "ok"})
 	if err != nil {
@@ -44,19 +46,28 @@ func (a *Agent) HandleGameState(env ipc.Envelope) (*ipc.Envelope, error) {
 		return nil, fmt.Errorf("unmarshal GameState: %w", err)
 	}
 
+	unitTypes := make(map[string]int)
+	for _, u := range gs.Units {
+		unitTypes[u.Type]++
+	}
+	buildingTypes := make(map[string]int)
+	for _, b := range gs.Buildings {
+		buildingTypes[b.Type]++
+	}
+
 	slog.Info("game state received",
 		"player", gs.Player.Name,
 		"tick", gs.Tick,
 		"cash", gs.Player.Cash,
 		"resources", gs.Player.Resources,
 		"power", fmt.Sprintf("%d/%d (%s)", gs.Player.PowerDrained, gs.Player.PowerProvided, gs.Player.PowerState),
-		"buildings", len(gs.Buildings),
-		"units", len(gs.Units),
+		"buildings", buildingTypes,
+		"units", unitTypes,
 		"enemies", len(gs.Enemies),
 		"queues", len(gs.ProductionQueues),
 	)
 
-	if err := a.Engine.Evaluate(gs, a.Conn); err != nil {
+	if err := a.Engine.Evaluate(gs, a.Faction, a.Conn); err != nil {
 		slog.Error("rule engine error", "error", err)
 	}
 

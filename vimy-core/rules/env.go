@@ -10,47 +10,15 @@ import (
 
 // RuleEnv wraps game state and exposes helper methods callable from expr expressions.
 type RuleEnv struct {
-	State  model.GameState
-	Memory map[string]any
+	State   model.GameState
+	Faction string
+	Memory  map[string]any
 }
 
-func (e RuleEnv) HasUnit(t string) bool {
-	for _, u := range e.State.Units {
-		if strings.EqualFold(u.Type, t) {
-			return true
-		}
-	}
-	return false
-}
-
-func (e RuleEnv) HasBuilding(t string) bool {
-	for _, b := range e.State.Buildings {
-		if strings.EqualFold(b.Type, t) {
-			return true
-		}
-	}
-	return false
-}
-
-func (e RuleEnv) UnitCount(t string) int {
-	n := 0
-	for _, u := range e.State.Units {
-		if strings.EqualFold(u.Type, t) {
-			n++
-		}
-	}
-	return n
-}
-
-func (e RuleEnv) BuildingCount(t string) int {
-	n := 0
-	for _, b := range e.State.Buildings {
-		if strings.EqualFold(b.Type, t) {
-			n++
-		}
-	}
-	return n
-}
+func (e RuleEnv) HasUnit(t string) bool      { return containsType(e.State.Units, t) }
+func (e RuleEnv) HasBuilding(t string) bool   { return containsType(e.State.Buildings, t) }
+func (e RuleEnv) UnitCount(t string) int      { return countType(e.State.Units, t) }
+func (e RuleEnv) BuildingCount(t string) int  { return countType(e.State.Buildings, t) }
 
 func (e RuleEnv) QueueBusy(q string) bool {
 	for _, pq := range e.State.ProductionQueues {
@@ -92,7 +60,7 @@ func (e RuleEnv) PowerExcess() int {
 func (e RuleEnv) IdleMilitaryUnits() []model.Unit {
 	var out []model.Unit
 	for _, u := range e.State.Units {
-		if u.Idle && !strings.EqualFold(u.Type, "harv") {
+		if u.Idle && !strings.EqualFold(u.Type, Harvester) {
 			out = append(out, u)
 		}
 	}
@@ -102,7 +70,7 @@ func (e RuleEnv) IdleMilitaryUnits() []model.Unit {
 func (e RuleEnv) IdleHarvesters() []model.Unit {
 	var out []model.Unit
 	for _, u := range e.State.Units {
-		if u.Idle && strings.EqualFold(u.Type, "harv") {
+		if u.Idle && strings.EqualFold(u.Type, Harvester) {
 			out = append(out, u)
 		}
 	}
@@ -148,12 +116,62 @@ func (e RuleEnv) MapHeight() int { return e.State.MapHeight }
 
 func (e RuleEnv) EnemiesVisible() bool { return len(e.State.Enemies) > 0 }
 
-// HasBarracks returns true if the player has a barracks (Allied "tent" or Soviet "barr").
-func (e RuleEnv) HasBarracks() bool {
-	return e.HasBuilding("tent") || e.HasBuilding("barr")
+// HasRole returns true if the player has any building or unit matching the role's type variants.
+func (e RuleEnv) HasRole(name string) bool {
+	r, ok := roles[name]
+	if !ok {
+		return false
+	}
+	return containsAnyType(e.State.Buildings, r.types) || containsAnyType(e.State.Units, r.types)
 }
 
-// CanBuildBarracks returns true if a barracks is available in the Building queue's buildable list.
-func (e RuleEnv) CanBuildBarracks() bool {
-	return e.CanBuild("Building", "tent") || e.CanBuild("Building", "barr")
+// RoleCount returns the total count of buildings and units matching the role's type variants.
+func (e RuleEnv) RoleCount(name string) int {
+	r, ok := roles[name]
+	if !ok {
+		return 0
+	}
+	return countAnyType(e.State.Buildings, r.types) + countAnyType(e.State.Units, r.types)
+}
+
+// CanBuildRole returns true if any of the role's type variants appear in the role's queue's buildable list.
+func (e RuleEnv) CanBuildRole(name string) bool {
+	r, ok := roles[name]
+	if !ok {
+		return false
+	}
+	for _, pq := range e.State.ProductionQueues {
+		if strings.EqualFold(pq.Type, r.queue) {
+			for _, t := range r.types {
+				if slices.ContainsFunc(pq.Buildable, func(s string) bool {
+					return strings.EqualFold(s, t)
+				}) {
+					return true
+				}
+			}
+			return false
+		}
+	}
+	return false
+}
+
+// BuildableType returns the first buildable type variant for the role, or "" if none.
+func (e RuleEnv) BuildableType(name string) string {
+	r, ok := roles[name]
+	if !ok {
+		return ""
+	}
+	for _, pq := range e.State.ProductionQueues {
+		if strings.EqualFold(pq.Type, r.queue) {
+			for _, t := range r.types {
+				if slices.ContainsFunc(pq.Buildable, func(s string) bool {
+					return strings.EqualFold(s, t)
+				}) {
+					return t
+				}
+			}
+			return ""
+		}
+	}
+	return ""
 }

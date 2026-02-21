@@ -9,7 +9,7 @@ import (
 
 func ActionDeployMCV(env RuleEnv, conn *ipc.Connection) error {
 	for _, u := range env.State.Units {
-		if strings.EqualFold(u.Type, "mcv") {
+		if strings.EqualFold(u.Type, MCV) {
 			slog.Info("deploying MCV", "id", u.ID)
 			return conn.Send(ipc.TypeDeploy, ipc.DeployCommand{
 				ActorID: uint32(u.ID),
@@ -22,8 +22,8 @@ func ActionDeployMCV(env RuleEnv, conn *ipc.Connection) error {
 func ActionProducePowerPlant(env RuleEnv, conn *ipc.Connection) error {
 	slog.Info("producing power plant")
 	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-		Queue: "Building",
-		Item:  "powr",
+		Queue: QueueBuilding,
+		Item:  PowerPlant,
 		Count: 1,
 	})
 }
@@ -31,20 +31,20 @@ func ActionProducePowerPlant(env RuleEnv, conn *ipc.Connection) error {
 func ActionProduceRefinery(env RuleEnv, conn *ipc.Connection) error {
 	slog.Info("producing refinery")
 	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-		Queue: "Building",
-		Item:  "proc",
+		Queue: QueueBuilding,
+		Item:  Refinery,
 		Count: 1,
 	})
 }
 
 func ActionProduceBarracks(env RuleEnv, conn *ipc.Connection) error {
-	item := "tent"
-	if env.CanBuild("Building", "barr") {
-		item = "barr"
+	item := env.BuildableType("barracks")
+	if item == "" {
+		return nil
 	}
 	slog.Info("producing barracks", "item", item)
 	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-		Queue: "Building",
+		Queue: QueueBuilding,
 		Item:  item,
 		Count: 1,
 	})
@@ -53,18 +53,18 @@ func ActionProduceBarracks(env RuleEnv, conn *ipc.Connection) error {
 func ActionProduceWarFactory(env RuleEnv, conn *ipc.Connection) error {
 	slog.Info("producing war factory")
 	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-		Queue: "Building",
-		Item:  "weap",
+		Queue: QueueBuilding,
+		Item:  WarFactory,
 		Count: 1,
 	})
 }
 
 func ActionPlaceBuilding(env RuleEnv, conn *ipc.Connection) error {
 	for _, pq := range env.State.ProductionQueues {
-		if strings.EqualFold(pq.Type, "Building") && pq.CurrentItem != "" && pq.CurrentProgress >= 100 {
+		if strings.EqualFold(pq.Type, QueueBuilding) && pq.CurrentItem != "" && pq.CurrentProgress >= 100 {
 			slog.Info("placing building", "item", pq.CurrentItem)
 			return conn.Send(ipc.TypePlaceBuilding, ipc.PlaceBuildingCommand{
-				Queue: "Building",
+				Queue: QueueBuilding,
 				Item:  pq.CurrentItem,
 			})
 		}
@@ -75,8 +75,8 @@ func ActionPlaceBuilding(env RuleEnv, conn *ipc.Connection) error {
 func ActionProduceInfantry(env RuleEnv, conn *ipc.Connection) error {
 	slog.Info("producing infantry")
 	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-		Queue: "Infantry",
-		Item:  "e1",
+		Queue: QueueInfantry,
+		Item:  RifleInfantry,
 		Count: 1,
 	})
 }
@@ -121,12 +121,9 @@ func ActionScoutWithIdleUnits(env RuleEnv, conn *ipc.Connection) error {
 	wp := waypoints[idx%len(waypoints)]
 
 	idle := env.IdleMilitaryUnits()
-	n := 2
-	if len(idle) < n {
-		n = len(idle)
-	}
+	n := min(2, len(idle))
 	ids := make([]uint32, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		ids[i] = uint32(idle[i].ID)
 	}
 
@@ -171,7 +168,7 @@ func ActionSendIdleHarvesters(env RuleEnv, conn *ipc.Connection) error {
 	// Heuristic: send harvesters toward the first refinery location, or base center.
 	tx, ty := 0, 0
 	for _, b := range env.State.Buildings {
-		if strings.EqualFold(b.Type, "proc") {
+		if strings.EqualFold(b.Type, Refinery) {
 			tx, ty = b.X, b.Y
 			break
 		}

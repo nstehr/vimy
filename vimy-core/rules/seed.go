@@ -40,7 +40,7 @@ func DefaultRules() []*Rule {
 			Priority:     700,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: `!QueueBusy("Building") && CanBuildBarracks() && !HasBarracks() && PowerExcess() >= 0 && Cash() >= 300`,
+			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("barracks") && !HasRole("barracks") && PowerExcess() >= 0 && Cash() >= 300`,
 			Action:       ActionProduceBarracks,
 		},
 		{
@@ -56,7 +56,7 @@ func DefaultRules() []*Rule {
 			Priority:     500,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: `HasBarracks() && !QueueBusy("Infantry") && UnitCount("e1") < 10 && Cash() >= 100`,
+			ConditionSrc: `HasRole("barracks") && !QueueBusy("Infantry") && UnitCount("e1") < 10 && Cash() >= 100`,
 			Action:       ActionProduceInfantry,
 		},
 		{

@@ -31,6 +31,8 @@ type Unit struct {
 	Idle  bool   `json:"idle"`
 }
 
+func (u Unit) TypeName() string { return u.Type }
+
 type Building struct {
 	ID    int    `json:"id"`
 	Type  string `json:"type"`
@@ -39,6 +41,8 @@ type Building struct {
 	HP    int    `json:"hp"`
 	MaxHP int    `json:"maxHp"`
 }
+
+func (b Building) TypeName() string { return b.Type }
 
 type ProductionQueue struct {
 	Type            string   `json:"type"`
@@ -57,3 +61,5 @@ type Enemy struct {
 	HP    int    `json:"hp"`
 	MaxHP int    `json:"maxHp"`
 }
+
+func (e Enemy) TypeName() string { return e.Type }

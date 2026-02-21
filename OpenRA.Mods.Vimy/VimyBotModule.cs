@@ -67,9 +67,10 @@ namespace OpenRA.Mods.Vimy
 
 		void SendHello(IBot bot)
 		{
-			var data = $"{{\"player\":\"{bot.Player.PlayerName}\"}}";
+			var faction = bot.Player.Faction.InternalName;
+			var data = $"{{\"player\":\"{bot.Player.PlayerName}\",\"faction\":\"{faction}\"}}";
 			SendEnvelope("hello", data);
-			Log.Write("debug", $"Sent hello for player {bot.Player.PlayerName}");
+			Log.Write("debug", $"Sent hello for player {bot.Player.PlayerName}, faction {faction}");
 		}
 
 		void IBotTick.BotTick(IBot bot)

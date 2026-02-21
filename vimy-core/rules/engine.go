@@ -33,12 +33,12 @@ func NewEngine(rules []*Rule) (*Engine, error) {
 
 // Evaluate runs all rules against the game state, highest priority first.
 // Exclusive rules block lower-priority rules in the same category.
-func (e *Engine) Evaluate(gs model.GameState, conn *ipc.Connection) error {
+func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connection) error {
 	e.mu.RLock()
 	rules := e.rules
 	e.mu.RUnlock()
 
-	env := RuleEnv{State: gs, Memory: e.Memory}
+	env := RuleEnv{State: gs, Faction: faction, Memory: e.Memory}
 	fired := make(map[string]bool) // category → exclusive rule already fired
 
 	for _, r := range rules {

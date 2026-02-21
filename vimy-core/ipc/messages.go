@@ -8,7 +8,8 @@ const (
 )
 
 type HelloMessage struct {
-	Player string `json:"player"`
+	Player  string `json:"player"`
+	Faction string `json:"faction"`
 }
 
 type AckMessage struct {
