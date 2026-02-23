@@ -95,6 +95,10 @@ func (t *DoctrineClassView) PropertySpecialized_infantry_weight() (ClassProperty
 	return t.inner.Property("specialized_infantry_weight")
 }
 
+func (t *DoctrineClassView) PropertySuperweapon_priority() (ClassPropertyView, error) {
+	return t.inner.Property("superweapon_priority")
+}
+
 func (t *TypeBuilder) Doctrine() (*DoctrineClassView, error) {
 	bld, err := t.inner.Class("Doctrine")
 	if err != nil {

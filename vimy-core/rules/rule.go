@@ -5,10 +5,12 @@ import (
 	"github.com/nstehr/vimy/vimy-core/ipc"
 )
 
-// ActionFunc executes a rule's side effects (sending commands via conn).
+// ActionFunc sends commands to the OpenRA mod when a rule's condition is true.
 type ActionFunc func(env RuleEnv, conn *ipc.Connection) error
 
-// Rule pairs a compiled boolean expression with an action to fire when true.
+// Rule is the atomic unit of AI behavior: a condition → action pair.
+// The engine evaluates rules by priority and uses Category + Exclusive
+// to prevent conflicting actions on the same production queue.
 type Rule struct {
 	Name         string       // human-readable identifier
 	Priority     int          // higher = evaluated first

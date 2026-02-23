@@ -1,8 +1,8 @@
 package rules
 
-// ActionRegistry maps action names to their implementations.
-// The compiler references action functions directly, but the registry
-// enables future serialization and introspection.
+// ActionRegistry enables serialization and introspection of rule sets.
+// The compiler references action functions directly; this provides the
+// reverse mapping for debugging and future LLM-driven rule authoring.
 var ActionRegistry = map[string]ActionFunc{
 	"produce_mcv":          ActionProduceMCV,
 	"deploy_mcv":           ActionDeployMCV,
@@ -43,4 +43,11 @@ var ActionRegistry = map[string]ActionFunc{
 	"air_attack_enemy":           ActionAirAttackEnemy,
 	"air_attack_known_base":      ActionAirAttackKnownBase,
 	"naval_attack_enemy":         ActionNavalAttackEnemy,
+	"produce_missile_silo":       ActionProduceMissileSilo,
+	"produce_iron_curtain":       ActionProduceIronCurtain,
+	"fire_nuke":                  ActionFireNuke,
+	"fire_iron_curtain":          ActionFireIronCurtain,
+	"fire_spy_plane":             ActionFireSpyPlane,
+	"fire_paratroopers":          ActionFireParatroopers,
+	"fire_parabombs":             ActionFireParabombs,
 }

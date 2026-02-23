@@ -2,12 +2,71 @@ package rules
 
 import "fmt"
 
-// CompileDoctrine generates a complete rule set from a doctrine's weights.
-// All conditions are built via fmt.Sprintf with interpolated values —
-// the compiler never generates invalid expr.
+// Doctrine gate thresholds control which rule blocks CompileDoctrine emits.
+// Named constants make the vocabulary self-documenting across 40+ guard checks.
+const (
+	DoctrineEnabled     = 0.1 // non-trivial weight; include basic rules
+	DoctrineModerate    = 0.2 // enough priority to warrant moderate investment
+	DoctrineSignificant = 0.3 // warrants dedicated buildings or rule blocks
+	DoctrineHigh        = 0.4 // advanced capabilities (tech center, attack aircraft)
+	DoctrineDominant    = 0.5 // heavy investment (economy scaling, extra buildings)
+	DoctrineExtreme     = 0.6 // extra production buildings for this domain
+)
+
+// Priority offsets encode relative rule ordering constraints that aren't
+// obvious from bare integer literals.
+const (
+	SquadFormBonus    = 5  // form-squad fires just above its squad-act rule
+	KnownBaseDiscount = 10 // attack-known-base fires below direct-enemy attack
+	AirDomainOffset   = 5  // air attack base priority below ground
+	NavalDomainOffset = 15 // naval attack base priority below ground
+)
+
+// Gameplay thresholds used inside expr condition strings (require fmt.Sprintf).
+const (
+	LowPowerHeadroom    = 50 // PowerExcess below this triggers advanced power
+	IronCurtainMinUnits = 3  // minimum idle ground units to fire iron curtain
+)
+
+// buildingSaving prevents unit production from consuming cash needed for
+// a high-value building (e.g. tech center at 1500 credits). Once the
+// building exists, the savings constraint is released.
+type buildingSaving struct {
+	existsExpr string // expr condition that the building already exists
+	cost       int    // cash needed to queue the building
+}
+
+// buildCashCondition generates a cash check that prevents unit production
+// from starving out expensive buildings. Without this, a doctrine wanting a
+// tech center might never save 1500 credits because infantry keep spending
+// at 100 each.
+func buildCashCondition(unitCost int, savings []buildingSaving) string {
+	cond := fmt.Sprintf("Cash() >= %d", unitCost)
+	for _, s := range savings {
+		cond += fmt.Sprintf(` && (%s || Cash() >= %d)`, s.existsExpr, unitCost+s.cost)
+	}
+	return cond
+}
+
+// CompileDoctrine translates a Doctrine's continuous 0–1 weights into a
+// discrete rule set. Each weight controls which rules are included, their
+// relative priorities, and the thresholds in their conditions.
+// All expr strings are constructed via fmt.Sprintf — never from user input.
 func CompileDoctrine(d Doctrine) []*Rule {
 	d.Validate()
 	var rules []*Rule
+
+	// Building savings prevent unit spam from starving expensive queued buildings.
+	// Added to all production rules' cash conditions below.
+	var savings []buildingSaving
+	if d.TechPriority > DoctrineSignificant {
+		savings = append(savings, buildingSaving{`HasRole("tech_center")`, 1500})
+	}
+	if d.SuperweaponPriority > DoctrineSignificant {
+		savings = append(savings, buildingSaving{
+			`HasRole("missile_silo") || HasRole("iron_curtain")`, 2500,
+		})
+	}
 
 	// --- Core rules (always present) ---
 
@@ -48,6 +107,15 @@ func CompileDoctrine(d Doctrine) []*Rule {
 	})
 
 	rules = append(rules, &Rule{
+		Name:         "cancel-stuck-aircraft",
+		Priority:     891,
+		Category:     "aircraft_maintenance",
+		Exclusive:    true,
+		ConditionSrc: `QueueReady("Aircraft")`,
+		Action:       ActionCancelStuckAircraft,
+	})
+
+	rules = append(rules, &Rule{
 		Name:         "capture-building",
 		Priority:     850,
 		Category:     "economy",
@@ -70,6 +138,24 @@ func CompileDoctrine(d Doctrine) []*Rule {
 	// exclusive "rebuild" category so only one rebuild queues per tick.
 	// Harvester rebuild uses the Vehicle queue (not Building), but shares
 	// the category so only one rebuild decision is made per tick.
+
+	rules = append(rules, &Rule{
+		Name:         "rebuild-power-plant",
+		Priority:     840,
+		Category:     "rebuild",
+		Exclusive:    true,
+		ConditionSrc: `LostRole("power_plant") && PowerExcess() < 0 && !QueueBusy("Building") && CanBuildRole("power_plant") && Cash() >= 300`,
+		Action:       ActionProducePowerPlant,
+	})
+
+	rules = append(rules, &Rule{
+		Name:         "rebuild-advanced-power",
+		Priority:     835,
+		Category:     "rebuild",
+		Exclusive:    true,
+		ConditionSrc: `LostRole("advanced_power") && PowerExcess() < 0 && !QueueBusy("Building") && CanBuildRole("advanced_power") && Cash() >= 500`,
+		Action:       ActionProduceAdvancedPower,
+	})
 
 	rules = append(rules, &Rule{
 		Name:         "rebuild-harvester",
@@ -153,6 +239,24 @@ func CompileDoctrine(d Doctrine) []*Rule {
 	})
 
 	rules = append(rules, &Rule{
+		Name:         "rebuild-missile-silo",
+		Priority:     790,
+		Category:     "rebuild",
+		Exclusive:    true,
+		ConditionSrc: `LostRole("missile_silo") && !QueueBusy("Defense") && CanBuildRole("missile_silo") && Cash() >= 2500`,
+		Action:       ActionProduceMissileSilo,
+	})
+
+	rules = append(rules, &Rule{
+		Name:         "rebuild-iron-curtain",
+		Priority:     785,
+		Category:     "rebuild",
+		Exclusive:    true,
+		ConditionSrc: `LostRole("iron_curtain") && !QueueBusy("Defense") && CanBuildRole("iron_curtain") && Cash() >= 2500`,
+		Action:       ActionProduceIronCurtain,
+	})
+
+	rules = append(rules, &Rule{
 		Name:         "repair-buildings",
 		Priority:     200,
 		Category:     "maintenance",
@@ -170,7 +274,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Action:       ActionSendIdleHarvesters,
 	})
 
-	// --- Economy rules (parameterized by EconomyPriority) ---
+	// --- Economy ---
 
 	powerCashThreshold := lerp(500, 200, d.EconomyPriority)
 	rules = append(rules, &Rule{
@@ -195,9 +299,9 @@ func CompileDoctrine(d Doctrine) []*Rule {
 
 	// --- Prerequisite buildings ---
 
-	// Radar dome unlocks airfield, war factory, naval yard, and higher-tier units.
-	// Build it when any of those paths are desired.
-	if d.VehicleWeight > 0.1 || d.AirWeight > 0.1 || d.NavalWeight > 0.1 || d.TechPriority > 0.3 {
+	// Radar is the tech-tree gate for vehicles, aircraft, and naval —
+	// include it whenever any of those paths are desired.
+	if d.VehicleWeight > DoctrineEnabled || d.AirWeight > DoctrineEnabled || d.NavalWeight > DoctrineEnabled || d.TechPriority > DoctrineSignificant {
 		rules = append(rules, &Rule{
 			Name:         "build-radar",
 			Priority:     710,
@@ -208,12 +312,15 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
-	// --- Military building rules (enabled by unit weights) ---
-	// Priorities scale with corresponding weight so the doctrine's emphasis
-	// determines build order (e.g. air-heavy → airfield before war factory).
+	// --- Military buildings ---
+	// Priorities scale with weight so the doctrine's emphasis determines
+	// build order (e.g. air-heavy → airfield before war factory).
 
-	if d.InfantryWeight > 0.1 {
+	if d.InfantryWeight > DoctrineEnabled || d.GroundDefensePriority > DoctrineModerate {
 		barracksPriority := lerp(600, 700, d.InfantryWeight)
+		if d.GroundDefensePriority > DoctrineModerate {
+			barracksPriority = max(barracksPriority, lerp(600, 700, d.GroundDefensePriority))
+		}
 		rules = append(rules, &Rule{
 			Name:         "build-barracks",
 			Priority:     barracksPriority,
@@ -224,7 +331,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
-	if d.VehicleWeight > 0.1 {
+	if d.VehicleWeight > DoctrineEnabled {
 		warFactoryPriority := lerp(580, 680, d.VehicleWeight)
 		rules = append(rules, &Rule{
 			Name:         "build-war-factory",
@@ -236,7 +343,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
-	if d.AirWeight > 0.1 {
+	if d.AirWeight > DoctrineEnabled {
 		airfieldPriority := lerp(580, 680, d.AirWeight)
 		rules = append(rules, &Rule{
 			Name:         "build-airfield",
@@ -248,7 +355,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
-	if d.VehicleWeight > 0.3 {
+	if d.VehicleWeight > DoctrineSignificant {
 		rules = append(rules, &Rule{
 			Name:         "build-service-depot",
 			Priority:     570,
@@ -259,7 +366,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
-	if d.NavalWeight > 0.1 {
+	if d.NavalWeight > DoctrineEnabled {
 		navalYardPriority := lerp(540, 620, d.NavalWeight)
 		rules = append(rules, &Rule{
 			Name:         "build-naval-yard",
@@ -271,11 +378,11 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
-	// --- Ground defensive structures (gated by GroundDefensePriority) ---
+	// --- Ground defenses ---
 
-	if d.GroundDefensePriority > 0.2 {
+	if d.GroundDefensePriority > DoctrineModerate {
 		defenseCap := lerp(1, 5, d.GroundDefensePriority)
-		defenseCash := lerp(1500, 600, d.GroundDefensePriority)
+		defenseCash := lerp(1500, 300, d.GroundDefensePriority)
 		defensePriority := lerp(400, 600, d.GroundDefensePriority)
 		rules = append(rules, &Rule{
 			Name:         "build-base-defense",
@@ -287,24 +394,25 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
-	// --- AA defensive structures (gated by AirDefensePriority) ---
+	// --- AA defenses ---
 
-	if d.AirDefensePriority > 0.3 {
+	if d.AirDefensePriority > DoctrineSignificant {
 		aaCap := lerp(1, 3, d.AirDefensePriority)
+		aaCash := lerp(1200, 500, d.AirDefensePriority)
 		aaPriority := lerp(400, 600, d.AirDefensePriority)
 		rules = append(rules, &Rule{
 			Name:         "build-aa-defense",
 			Priority:     aaPriority,
 			Category:     "defense",
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`!QueueBusy("Defense") && PowerExcess() >= 0 && CanBuildRole("aa_defense") && RoleCount("aa_defense") < %d && Cash() >= 800`, aaCap),
+			ConditionSrc: fmt.Sprintf(`!QueueBusy("Defense") && PowerExcess() >= 0 && CanBuildRole("aa_defense") && RoleCount("aa_defense") < %d && Cash() >= %d`, aaCap, aaCash),
 			Action:       ActionProduceAADefense,
 		})
 	}
 
-	// --- Tech progression (gated by TechPriority) ---
+	// --- Tech progression ---
 
-	if d.TechPriority > 0.4 {
+	if d.TechPriority > DoctrineHigh {
 		techCenterPriority := lerp(600, 660, d.TechPriority)
 		rules = append(rules, &Rule{
 			Name:         "build-tech-center",
@@ -316,9 +424,31 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
-	// --- Extra production buildings (gated by high unit weights) ---
+	// --- Superweapon buildings ---
 
-	if d.InfantryWeight > 0.6 {
+	if d.SuperweaponPriority > DoctrineSignificant {
+		rules = append(rules, &Rule{
+			Name:         "build-missile-silo",
+			Priority:     650,
+			Category:     "superweapon_build",
+			Exclusive:    true,
+			ConditionSrc: `!QueueBusy("Defense") && CanBuildRole("missile_silo") && !HasRole("missile_silo") && HasRole("tech_center") && PowerExcess() >= 0 && Cash() >= 2500`,
+			Action:       ActionProduceMissileSilo,
+		})
+
+		rules = append(rules, &Rule{
+			Name:         "build-iron-curtain",
+			Priority:     640,
+			Category:     "superweapon_build",
+			Exclusive:    true,
+			ConditionSrc: `!QueueBusy("Defense") && CanBuildRole("iron_curtain") && !HasRole("iron_curtain") && HasRole("tech_center") && PowerExcess() >= 0 && Cash() >= 2500`,
+			Action:       ActionProduceIronCurtain,
+		})
+	}
+
+	// --- Extra production buildings ---
+
+	if d.InfantryWeight > DoctrineExtreme {
 		extraBarracksCap := lerp(1, 3, d.InfantryWeight)
 		rules = append(rules, &Rule{
 			Name:         "build-extra-barracks",
@@ -330,7 +460,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
-	if d.VehicleWeight > 0.6 {
+	if d.VehicleWeight > DoctrineExtreme {
 		extraWFCap := lerp(1, 2, d.VehicleWeight)
 		rules = append(rules, &Rule{
 			Name:         "build-extra-war-factory",
@@ -342,7 +472,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
-	if d.AirWeight > 0.6 {
+	if d.AirWeight > DoctrineExtreme {
 		extraAirCap := lerp(1, 3, d.AirWeight)
 		rules = append(rules, &Rule{
 			Name:         "build-extra-airfield",
@@ -354,20 +484,20 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
-	// --- Economy scaling (gated by EconomyPriority) ---
+	// --- Economy scaling ---
 
-	if d.EconomyPriority > 0.3 || d.TechPriority > 0.5 {
+	if d.EconomyPriority > DoctrineSignificant || d.TechPriority > DoctrineDominant {
 		rules = append(rules, &Rule{
 			Name:         "build-advanced-power",
 			Priority:     790,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("advanced_power") && PowerExcess() < 50 && Cash() >= 500`,
+			ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("advanced_power") && PowerExcess() < %d && Cash() >= 500`, LowPowerHeadroom),
 			Action:       ActionProduceAdvancedPower,
 		})
 	}
 
-	if d.EconomyPriority > 0.5 {
+	if d.EconomyPriority > DoctrineDominant {
 		siloCap := lerp(0, 2, d.EconomyPriority)
 		rules = append(rules, &Rule{
 			Name:         "build-ore-silo",
@@ -379,132 +509,155 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
-	// --- Production rules (parameterized by unit weights) ---
+	// --- Unit production ---
 
-	if d.InfantryWeight > 0.1 {
+	if d.InfantryWeight > DoctrineEnabled {
 		infantryCap := lerp(5, 20, d.InfantryWeight)
 		rules = append(rules, &Rule{
 			Name:         "produce-infantry",
 			Priority:     500,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuild("Infantry","e1") && UnitCount("e1") < %d && Cash() >= 100`, infantryCap),
+			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuild("Infantry","e1") && UnitCount("e1") < %d && %s`, infantryCap, buildCashCondition(100, savings)),
 			Action:       ActionProduceInfantry,
 		})
 	}
 
-	if d.SpecializedInfantryWeight > 0.1 {
+	if d.SpecializedInfantryWeight > DoctrineEnabled {
 		specialistCap := lerp(1, 6, d.SpecializedInfantryWeight)
 		rules = append(rules, &Rule{
 			Name:         "produce-specialist-infantry",
 			Priority:     490,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuildAnySpecialist() && SpecialistInfantryCount() < %d && Cash() >= 300`, specialistCap),
+			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuildAnySpecialist() && SpecialistInfantryCount() < %d && %s`, specialistCap, buildCashCondition(300, savings)),
 			Action:       ActionProduceSpecialistInfantry,
 		})
 	}
 
-	if d.VehicleWeight > 0.1 {
+	if d.VehicleWeight > DoctrineEnabled {
 		vehicleCap := lerp(3, 10, d.VehicleWeight)
 		rules = append(rules, &Rule{
 			Name:         "produce-vehicle",
 			Priority:     480,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildAnyCombatVehicle() && CombatVehicleCount() < %d && Cash() >= 800`, vehicleCap),
+			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildAnyCombatVehicle() && CombatVehicleCount() < %d && %s`, vehicleCap, buildCashCondition(800, savings)),
 			Action:       ActionProduceVehicle,
 		})
 	}
 
-	if d.AirWeight > 0.1 {
+	if d.AirWeight > DoctrineEnabled {
 		airCap := lerp(2, 8, d.AirWeight)
 		rules = append(rules, &Rule{
 			Name:         "produce-aircraft",
 			Priority:     460,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`HasRole("airfield") && !QueueBusy("Aircraft") && CanBuildAnyCombatAircraft() && CombatAircraftCount() < %d && Cash() >= 800`, airCap),
+			ConditionSrc: fmt.Sprintf(`HasRole("airfield") && !QueueBusy("Aircraft") && CanBuildAnyCombatAircraft() && CombatAircraftCount() < %d && %s`, airCap, buildCashCondition(800, savings)),
 			Action:       ActionProduceAircraft,
 		})
 	}
 
-	if d.NavalWeight > 0.1 {
+	if d.NavalWeight > DoctrineEnabled {
 		navalCap := lerp(2, 6, d.NavalWeight)
 		rules = append(rules, &Rule{
 			Name:         "produce-ship",
 			Priority:     440,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("submarine") || CanBuildRole("destroyer")) && (RoleCount("submarine") + RoleCount("destroyer")) < %d && Cash() >= 1000`, navalCap),
+			ConditionSrc: fmt.Sprintf(`HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("submarine") || CanBuildRole("destroyer")) && (RoleCount("submarine") + RoleCount("destroyer")) < %d && %s`, navalCap, buildCashCondition(1000, savings)),
 			Action:       ActionProduceShip,
 		})
 	}
 
-	// --- Advanced production rules (gated by TechPriority + unit weights) ---
+	// --- Advanced unit production (requires tech center) ---
 
-	if d.InfantryWeight > 0.1 && d.TechPriority > 0.3 {
+	if d.InfantryWeight > DoctrineEnabled && d.TechPriority > DoctrineSignificant {
 		rocketCap := lerp(2, 8, d.TechPriority*d.InfantryWeight)
 		rules = append(rules, &Rule{
 			Name:         "produce-rocket-soldier",
 			Priority:     495,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuildRole("rocket_soldier") && RoleCount("rocket_soldier") < %d && Cash() >= 300`, rocketCap),
+			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuildRole("rocket_soldier") && RoleCount("rocket_soldier") < %d && %s`, rocketCap, buildCashCondition(300, savings)),
 			Action:       ActionProduceRocketSoldier,
 		})
 	}
 
-	if d.VehicleWeight > 0.1 && d.TechPriority > 0.3 {
+	if d.VehicleWeight > DoctrineEnabled && d.TechPriority > DoctrineSignificant {
 		heavyCap := lerp(1, 5, d.TechPriority*d.VehicleWeight)
 		rules = append(rules, &Rule{
 			Name:         "produce-heavy-vehicle",
 			Priority:     475,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && HasRole("tech_center") && !QueueBusy("Vehicle") && (CanBuildRole("heavy_tank") || CanBuildRole("medium_tank")) && (RoleCount("heavy_tank") + RoleCount("medium_tank")) < %d && Cash() >= 1200`, heavyCap),
+			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && HasRole("tech_center") && !QueueBusy("Vehicle") && (CanBuildRole("heavy_tank") || CanBuildRole("medium_tank")) && (RoleCount("heavy_tank") + RoleCount("medium_tank")) < %d && %s`, heavyCap, buildCashCondition(1200, savings)),
 			Action:       ActionProduceHeavyVehicle,
 		})
 	}
 
-	if d.AirWeight > 0.1 && d.TechPriority > 0.4 {
+	if d.AirWeight > DoctrineEnabled && d.TechPriority > DoctrineHigh {
 		advAirCap := lerp(1, 4, d.TechPriority*d.AirWeight)
 		rules = append(rules, &Rule{
 			Name:         "produce-attack-aircraft",
 			Priority:     455,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`HasRole("airfield") && !QueueBusy("Aircraft") && CanBuildRole("advanced_aircraft") && RoleCount("advanced_aircraft") < %d && Cash() >= 1500`, advAirCap),
+			ConditionSrc: fmt.Sprintf(`HasRole("airfield") && !QueueBusy("Aircraft") && CanBuildRole("advanced_aircraft") && RoleCount("advanced_aircraft") < %d && %s`, advAirCap, buildCashCondition(1500, savings)),
 			Action:       ActionProduceAdvancedAircraft,
 		})
 	}
 
-	if d.NavalWeight > 0.1 && d.TechPriority > 0.3 {
+	if d.NavalWeight > DoctrineEnabled && d.TechPriority > DoctrineSignificant {
 		advNavalCap := lerp(1, 3, d.TechPriority*d.NavalWeight)
 		rules = append(rules, &Rule{
 			Name:         "produce-advanced-ship",
 			Priority:     435,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("cruiser") || CanBuildRole("destroyer")) && (RoleCount("cruiser") + RoleCount("destroyer")) < %d && Cash() >= 2000`, advNavalCap),
+			ConditionSrc: fmt.Sprintf(`HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("cruiser") || CanBuildRole("destroyer")) && (RoleCount("cruiser") + RoleCount("destroyer")) < %d && %s`, advNavalCap, buildCashCondition(2000, savings)),
 			Action:       ActionProduceAdvancedShip,
 		})
 	}
 
-	// --- Defense rules (parameterized by GroundDefensePriority / AirDefensePriority) ---
+	// --- Defense behavior ---
 
-	// Defend-base fires when enemies are near buildings. High defense priority
-	// means responding with fewer idle units and at higher rule priority.
-	defendMinUnits := lerp(3, 1, d.GroundDefensePriority)
 	defendPriority := lerp(350, 500, d.GroundDefensePriority)
-	rules = append(rules, &Rule{
-		Name:         "defend-base",
-		Priority:     defendPriority,
-		Category:     "combat",
-		Exclusive:    false,
-		ConditionSrc: fmt.Sprintf(`BaseUnderAttack() && len(IdleGroundUnits()) >= %d`, defendMinUnits),
-		Action:       ActionDefendBase,
-	})
+
+	// High defense priority: reserve a persistent squad so defenders aren't
+	// poached by attack rules between engagements.
+	if d.GroundDefensePriority > DoctrineSignificant {
+		defenseSize := lerp(2, 5, d.GroundDefensePriority)
+		rules = append(rules, &Rule{
+			Name:         "form-defense-squad",
+			Priority:     defendPriority + SquadFormBonus,
+			Category:     "squad_form",
+			Exclusive:    false,
+			ConditionSrc: fmt.Sprintf(`!SquadExists("ground-defense") && len(UnassignedIdleGround()) >= %d`, defenseSize),
+			Action:       FormSquad("ground-defense", "ground", defenseSize, "defend"),
+		})
+
+		rules = append(rules, &Rule{
+			Name:         "squad-defend-base",
+			Priority:     defendPriority,
+			Category:     "combat",
+			Exclusive:    false,
+			ConditionSrc: `SquadExists("ground-defense") && SquadIdleCount("ground-defense") > 0 && BaseUnderAttack()`,
+			Action:       SquadDefend("ground-defense"),
+		})
+	} else {
+		// Low defense: no reserved squad, just scramble all idle ground units.
+		defendMinUnits := lerp(3, 1, d.GroundDefensePriority)
+		rules = append(rules, &Rule{
+			Name:         "defend-base",
+			Priority:     defendPriority,
+			Category:     "combat",
+			Exclusive:    false,
+			ConditionSrc: fmt.Sprintf(`BaseUnderAttack() && len(IdleGroundUnits()) >= %d`, defendMinUnits),
+			Action:       ActionDefendBase,
+		})
+	}
 
 	airDefendPriority := lerp(350, 500, d.AirDefensePriority)
 	rules = append(rules, &Rule{
@@ -516,68 +669,160 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Action:       ActionAirDefendBase,
 	})
 
-	// --- Ground combat rules (parameterized by Aggression + GroundAttackGroupSize) ---
+	// --- Ground attack ---
 
 	attackPriority := lerp(200, 400, d.Aggression)
+
 	rules = append(rules, &Rule{
-		Name:         "attack-idle-units",
+		Name:         "form-ground-attack",
+		Priority:     attackPriority + SquadFormBonus,
+		Category:     "squad_form",
+		Exclusive:    false,
+		ConditionSrc: fmt.Sprintf(`!SquadExists("ground-attack") && len(UnassignedIdleGround()) >= %d`, d.GroundAttackGroupSize),
+		Action:       FormSquad("ground-attack", "ground", d.GroundAttackGroupSize, "attack"),
+	})
+
+	rules = append(rules, &Rule{
+		Name:         "squad-attack",
 		Priority:     attackPriority,
 		Category:     "combat",
 		Exclusive:    false,
-		ConditionSrc: fmt.Sprintf(`len(IdleGroundUnits()) >= %d && NearestEnemy() != nil`, d.GroundAttackGroupSize),
-		Action:       ActionAttackMoveIdleGroundUnits,
+		ConditionSrc: `SquadExists("ground-attack") && SquadIdleCount("ground-attack") >= SquadSize("ground-attack") && NearestEnemy() != nil`,
+		Action:       SquadAttackMove("ground-attack"),
 	})
 
-	// Attack a remembered enemy base when no enemies are currently visible.
+	// Fallback: attack last-known enemy base when fog of war hides all enemies.
 	rules = append(rules, &Rule{
-		Name:         "attack-known-base",
-		Priority:     attackPriority - 10,
+		Name:         "squad-attack-known-base",
+		Priority:     attackPriority - KnownBaseDiscount,
 		Category:     "combat",
 		Exclusive:    false,
-		ConditionSrc: fmt.Sprintf(`!EnemiesVisible() && HasEnemyIntel() && len(IdleGroundUnits()) >= %d`, d.GroundAttackGroupSize),
-		Action:       ActionAttackKnownBaseGround,
+		ConditionSrc: `SquadExists("ground-attack") && SquadIdleCount("ground-attack") >= SquadSize("ground-attack") && !EnemiesVisible() && HasEnemyIntel()`,
+		Action:       SquadAttackKnownBase("ground-attack"),
 	})
 
-	// --- Air combat rules (gated on AirWeight > 0.1) ---
+	// --- Air attack ---
 
-	if d.AirWeight > 0.1 {
-		airAttackPriority := lerp(200, 400, d.Aggression) - 5
+	if d.AirWeight > DoctrineEnabled {
+		airAttackPriority := lerp(200, 400, d.Aggression) - AirDomainOffset
+
 		rules = append(rules, &Rule{
-			Name:         "air-attack-enemy",
+			Name:         "form-air-attack",
+			Priority:     airAttackPriority + SquadFormBonus,
+			Category:     "squad_form",
+			Exclusive:    false,
+			ConditionSrc: fmt.Sprintf(`!SquadExists("air-attack") && len(UnassignedIdleAir()) >= %d`, d.AirAttackGroupSize),
+			Action:       FormSquad("air-attack", "air", d.AirAttackGroupSize, "attack"),
+		})
+
+		rules = append(rules, &Rule{
+			Name:         "squad-air-attack",
 			Priority:     airAttackPriority,
 			Category:     "air_combat",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`len(IdleCombatAircraft()) >= %d && NearestEnemy() != nil`, d.AirAttackGroupSize),
-			Action:       ActionAirAttackEnemy,
+			ConditionSrc: `SquadExists("air-attack") && SquadIdleCount("air-attack") >= SquadSize("air-attack") && NearestEnemy() != nil`,
+			Action:       SquadAttackMove("air-attack"),
 		})
 
 		rules = append(rules, &Rule{
-			Name:         "air-attack-known-base",
-			Priority:     airAttackPriority - 10,
+			Name:         "squad-air-attack-known-base",
+			Priority:     airAttackPriority - KnownBaseDiscount,
 			Category:     "air_combat",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`!EnemiesVisible() && HasEnemyIntel() && len(IdleCombatAircraft()) >= %d`, d.AirAttackGroupSize),
-			Action:       ActionAirAttackKnownBase,
+			ConditionSrc: `SquadExists("air-attack") && SquadIdleCount("air-attack") >= SquadSize("air-attack") && !EnemiesVisible() && HasEnemyIntel()`,
+			Action:       SquadAttackKnownBase("air-attack"),
 		})
 	}
 
-	// --- Naval combat rules (gated on NavalWeight > 0.1) ---
+	// --- Naval attack ---
 
-	if d.NavalWeight > 0.1 {
-		navalAttackPriority := lerp(200, 400, d.Aggression) - 15
+	if d.NavalWeight > DoctrineEnabled {
+		navalAttackPriority := lerp(200, 400, d.Aggression) - NavalDomainOffset
+
 		rules = append(rules, &Rule{
-			Name:         "naval-attack-enemy",
+			Name:         "form-naval-attack",
+			Priority:     navalAttackPriority + SquadFormBonus,
+			Category:     "squad_form",
+			Exclusive:    false,
+			ConditionSrc: fmt.Sprintf(`!SquadExists("naval-attack") && len(UnassignedIdleNaval()) >= %d`, d.NavalAttackGroupSize),
+			Action:       FormSquad("naval-attack", "naval", d.NavalAttackGroupSize, "attack"),
+		})
+
+		rules = append(rules, &Rule{
+			Name:         "squad-naval-attack",
 			Priority:     navalAttackPriority,
 			Category:     "naval_combat",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`len(IdleNavalUnits()) >= %d && NearestEnemy() != nil`, d.NavalAttackGroupSize),
-			Action:       ActionNavalAttackEnemy,
+			ConditionSrc: `SquadExists("naval-attack") && SquadIdleCount("naval-attack") >= SquadSize("naval-attack") && NearestEnemy() != nil`,
+			Action:       SquadAttackMove("naval-attack"),
 		})
 	}
 
-	// --- Recon rules (parameterized by ScoutPriority) ---
-	// Only scout when we haven't located the enemy yet.
-	// Requires the ground army to reach attack strength before sending scouts.
+	// --- Superweapon fire ---
+
+	if d.SuperweaponPriority > DoctrineEnabled {
+		rules = append(rules, &Rule{
+			Name:         "fire-nuke",
+			Priority:     880,
+			Category:     "superweapon",
+			Exclusive:    true,
+			ConditionSrc: `SupportPowerReady("NukePowerInfoOrder")`,
+			Action:       ActionFireNuke,
+		})
+
+		rules = append(rules, &Rule{
+			Name:         "fire-iron-curtain",
+			Priority:     870,
+			Category:     "superweapon",
+			Exclusive:    true,
+			ConditionSrc: fmt.Sprintf(`SupportPowerReady("GrantExternalConditionPowerInfoOrder") && len(IdleGroundUnits()) >= %d`, IronCurtainMinUnits),
+			Action:       ActionFireIronCurtain,
+		})
+	}
+
+	// --- Airfield support powers ---
+
+	if d.AirWeight > DoctrineEnabled {
+		rules = append(rules, &Rule{
+			Name:         "fire-spy-plane",
+			Priority:     860,
+			Category:     "superweapon",
+			Exclusive:    true,
+			ConditionSrc: `SupportPowerReady("SovietSpyPlane") && !HasEnemyIntel()`,
+			Action:       ActionFireSpyPlane,
+		})
+
+		rules = append(rules, &Rule{
+			Name:         "fire-spy-plane-update",
+			Priority:     250,
+			Category:     "superweapon",
+			Exclusive:    true,
+			ConditionSrc: `SupportPowerReady("SovietSpyPlane") && HasEnemyIntel() && !EnemiesVisible()`,
+			Action:       ActionFireSpyPlane,
+		})
+
+		rules = append(rules, &Rule{
+			Name:         "fire-paratroopers",
+			Priority:     855,
+			Category:     "superweapon",
+			Exclusive:    true,
+			ConditionSrc: `SupportPowerReady("SovietParatroopers") && (HasEnemyIntel() || EnemiesVisible())`,
+			Action:       ActionFireParatroopers,
+		})
+
+		rules = append(rules, &Rule{
+			Name:         "fire-parabombs",
+			Priority:     845,
+			Category:     "superweapon",
+			Exclusive:    true,
+			ConditionSrc: `SupportPowerReady("UkraineParabombs") && (HasEnemyIntel() || EnemiesVisible())`,
+			Action:       ActionFireParabombs,
+		})
+	}
+
+	// --- Recon ---
+	// Scouts are only sent when the enemy hasn't been located yet, and only
+	// after reaching attack strength — so scouting doesn't weaken the army.
 
 	scoutPriority := lerp(250, 400, d.ScoutPriority)
 	rules = append(rules, &Rule{
@@ -585,7 +830,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Priority:     scoutPriority,
 		Category:     "recon",
 		Exclusive:    false,
-		ConditionSrc: fmt.Sprintf(`!EnemiesVisible() && !HasEnemyIntel() && len(IdleGroundUnits()) >= %d`, d.GroundAttackGroupSize),
+		ConditionSrc: fmt.Sprintf(`!EnemiesVisible() && !HasEnemyIntel() && len(UnassignedIdleGround()) >= %d`, d.GroundAttackGroupSize),
 		Action:       ActionScoutWithIdleUnits,
 	})
 

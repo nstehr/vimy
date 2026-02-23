@@ -2,8 +2,8 @@ package rules
 
 import "math"
 
-// Doctrine represents a high-level strategic posture produced by the LLM.
-// Weights are 0.0–1.0; the compiler maps them to concrete rule parameters.
+// Doctrine is the LLM's output — a strategic posture expressed as continuous
+// 0–1 weights. CompileDoctrine translates these into discrete rule sets.
 type Doctrine struct {
 	Name                  string  `json:"name"`
 	Rationale             string  `json:"rationale"`
@@ -21,9 +21,10 @@ type Doctrine struct {
 	NavalAttackGroupSize  int     `json:"naval_attack_group_size"`
 	ScoutPriority              float64 `json:"scout_priority"`
 	SpecializedInfantryWeight  float64 `json:"specialized_infantry_weight"`
+	SuperweaponPriority        float64 `json:"superweapon_priority"`
 }
 
-// DefaultDoctrine returns a balanced baseline doctrine.
+// DefaultDoctrine is used when no LLM strategist is configured.
 func DefaultDoctrine() Doctrine {
 	return Doctrine{
 		Name:                  "Balanced",
@@ -44,7 +45,7 @@ func DefaultDoctrine() Doctrine {
 	}
 }
 
-// Validate clamps all weights to their valid ranges.
+// Validate sanitizes LLM output — the model may produce out-of-range values.
 func (d *Doctrine) Validate() {
 	d.EconomyPriority = clamp(d.EconomyPriority, 0, 1)
 	d.Aggression = clamp(d.Aggression, 0, 1)
@@ -57,12 +58,12 @@ func (d *Doctrine) Validate() {
 	d.NavalWeight = clamp(d.NavalWeight, 0, 1)
 	d.ScoutPriority = clamp(d.ScoutPriority, 0, 1)
 	d.SpecializedInfantryWeight = clamp(d.SpecializedInfantryWeight, 0, 1)
+	d.SuperweaponPriority = clamp(d.SuperweaponPriority, 0, 1)
 	d.GroundAttackGroupSize = clampInt(d.GroundAttackGroupSize, 3, 15)
 	d.AirAttackGroupSize = clampInt(d.AirAttackGroupSize, 1, 8)
 	d.NavalAttackGroupSize = clampInt(d.NavalAttackGroupSize, 2, 10)
 }
 
-// clampInt restricts v to [min, max].
 func clampInt(v, min, max int) int {
 	if v < min {
 		return min
@@ -73,17 +74,15 @@ func clampInt(v, min, max int) int {
 	return v
 }
 
-// lerp linearly interpolates between min and max by t (0–1), returning an int.
+// lerp maps a 0–1 doctrine weight to a concrete integer range (e.g. unit cap, cash threshold).
 func lerp(min, max int, t float64) int {
 	return min + int(math.Round(float64(max-min)*t))
 }
 
-// lerpf linearly interpolates between min and max by t (0–1), returning a float64.
 func lerpf(min, max, t float64) float64 {
 	return min + (max-min)*t
 }
 
-// clamp restricts v to [min, max].
 func clamp(v, min, max float64) float64 {
 	if v < min {
 		return min

@@ -8,6 +8,7 @@ type GameState struct {
 	ProductionQueues []ProductionQueue `json:"productionQueues"`
 	Enemies          []Enemy           `json:"enemies"`
 	Capturables      []Enemy           `json:"capturables"`
+	SupportPowers    []SupportPower    `json:"supportPowers"`
 	MapWidth         int               `json:"mapWidth"`
 	MapHeight        int               `json:"mapHeight"`
 }
@@ -64,3 +65,10 @@ type Enemy struct {
 }
 
 func (e Enemy) TypeName() string { return e.Type }
+
+type SupportPower struct {
+	Key            string `json:"key"`
+	Ready          bool   `json:"ready"`
+	RemainingTicks int    `json:"remainingTicks"`
+	TotalTicks     int    `json:"totalTicks"`
+}

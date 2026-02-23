@@ -8,7 +8,8 @@ import (
 	"github.com/nstehr/vimy/vimy-core/model"
 )
 
-// RuleEnv wraps game state and exposes helper methods callable from expr expressions.
+// RuleEnv is the expression evaluation context. All exported methods are
+// callable from expr rule conditions (e.g. `Cash() >= 500`).
 type RuleEnv struct {
 	State   model.GameState
 	Faction string
@@ -106,7 +107,6 @@ func (e RuleEnv) MapHeight() int { return e.State.MapHeight }
 
 func (e RuleEnv) EnemiesVisible() bool { return len(e.State.Enemies) > 0 }
 
-// isAircraft returns true if the unit type matches any combat aircraft role.
 func isAircraft(u model.Unit) bool {
 	for _, r := range combatAircraftRoles {
 		role := roles[r]
@@ -119,7 +119,6 @@ func isAircraft(u model.Unit) bool {
 	return false
 }
 
-// isNaval returns true if the unit type matches any combat naval role.
 func isNaval(u model.Unit) bool {
 	for _, r := range combatNavalRoles {
 		role := roles[r]
@@ -132,7 +131,8 @@ func isNaval(u model.Unit) bool {
 	return false
 }
 
-// IdleGroundUnits returns idle units excluding harvesters, MCVs, aircraft, and naval units.
+// IdleGroundUnits returns idle land combat units — excludes economic units
+// (harvesters, MCVs) and other domains (aircraft, naval).
 func (e RuleEnv) IdleGroundUnits() []model.Unit {
 	var out []model.Unit
 	for _, u := range e.State.Units {
@@ -150,7 +150,6 @@ func (e RuleEnv) IdleGroundUnits() []model.Unit {
 	return out
 }
 
-// IdleNavalUnits returns idle units matching any combat naval role.
 func (e RuleEnv) IdleNavalUnits() []model.Unit {
 	var out []model.Unit
 	for _, u := range e.State.Units {
@@ -164,7 +163,6 @@ func (e RuleEnv) IdleNavalUnits() []model.Unit {
 	return out
 }
 
-// IdleCombatAircraft returns idle units matching any combat aircraft role.
 func (e RuleEnv) IdleCombatAircraft() []model.Unit {
 	var out []model.Unit
 	for _, u := range e.State.Units {
@@ -185,10 +183,8 @@ func (e RuleEnv) IdleCombatAircraft() []model.Unit {
 	return out
 }
 
-// CapturableCount returns the number of visible capturable buildings.
 func (e RuleEnv) CapturableCount() int { return len(e.State.Capturables) }
 
-// NearestCapturable returns the closest capturable building to our base.
 func (e RuleEnv) NearestCapturable() *model.Enemy {
 	if len(e.State.Capturables) == 0 {
 		return nil
@@ -212,7 +208,6 @@ func (e RuleEnv) NearestCapturable() *model.Enemy {
 	return nearest
 }
 
-// IdleEngineers returns idle units matching the engineer type.
 func (e RuleEnv) IdleEngineers() []model.Unit {
 	var out []model.Unit
 	for _, u := range e.State.Units {
@@ -223,7 +218,48 @@ func (e RuleEnv) IdleEngineers() []model.Unit {
 	return out
 }
 
-// ResourcesNearCap returns true when stored resources exceed 80% of capacity.
+func (e RuleEnv) SupportPowerReady(key string) bool {
+	for _, sp := range e.State.SupportPowers {
+		if strings.EqualFold(sp.Key, key) {
+			return sp.Ready
+		}
+	}
+	return false
+}
+
+func (e RuleEnv) HasSupportPower(key string) bool {
+	for _, sp := range e.State.SupportPowers {
+		if strings.EqualFold(sp.Key, key) {
+			return true
+		}
+	}
+	return false
+}
+
+// GroundUnitCentroid returns where idle ground units are clustered.
+// Used to target iron curtain on our own forces.
+func (e RuleEnv) GroundUnitCentroid() (int, int) {
+	idle := e.IdleGroundUnits()
+	if len(idle) > 0 {
+		sumX, sumY := 0, 0
+		for _, u := range idle {
+			sumX += u.X
+			sumY += u.Y
+		}
+		return sumX / len(idle), sumY / len(idle)
+	}
+	if len(e.State.Buildings) > 0 {
+		sumX, sumY := 0, 0
+		for _, b := range e.State.Buildings {
+			sumX += b.X
+			sumY += b.Y
+		}
+		return sumX / len(e.State.Buildings), sumY / len(e.State.Buildings)
+	}
+	return 0, 0
+}
+
+// ResourcesNearCap triggers ore silo construction before resources overflow.
 func (e RuleEnv) ResourcesNearCap() bool {
 	if e.State.Player.ResourceCapacity <= 0 {
 		return false
@@ -231,13 +267,103 @@ func (e RuleEnv) ResourcesNearCap() bool {
 	return float64(e.State.Player.Resources) > 0.8*float64(e.State.Player.ResourceCapacity)
 }
 
-// rebuildableRoles is the fixed list of roles eligible for rebuild tracking.
-var rebuildableRoles = []string{
-	"barracks", "war_factory", "radar", "tech_center", "airfield", "naval_yard", "refinery", "service_depot",
+func (e RuleEnv) SquadExists(name string) bool {
+	squads := getSquads(e.Memory)
+	sq, ok := squads[name]
+	return ok && len(sq.UnitIDs) > 0
 }
 
-// updateBuiltRoles tracks which roles the AI has successfully built.
-// Called at the start of each evaluation to maintain memory of past builds.
+func (e RuleEnv) SquadSize(name string) int {
+	squads := getSquads(e.Memory)
+	if sq, ok := squads[name]; ok {
+		return len(sq.UnitIDs)
+	}
+	return 0
+}
+
+func (e RuleEnv) SquadIdleCount(name string) int {
+	squads := getSquads(e.Memory)
+	sq, ok := squads[name]
+	if !ok {
+		return 0
+	}
+	idleSet := make(map[int]bool)
+	for _, u := range e.State.Units {
+		if u.Idle {
+			idleSet[u.ID] = true
+		}
+	}
+	n := 0
+	for _, id := range sq.UnitIDs {
+		if idleSet[id] {
+			n++
+		}
+	}
+	return n
+}
+
+func (e RuleEnv) UnassignedIdleGround() []model.Unit {
+	assigned := squadUnitIDSet(e.Memory)
+	var out []model.Unit
+	for _, u := range e.IdleGroundUnits() {
+		if !assigned[u.ID] {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+func (e RuleEnv) UnassignedIdleAir() []model.Unit {
+	assigned := squadUnitIDSet(e.Memory)
+	var out []model.Unit
+	for _, u := range e.IdleCombatAircraft() {
+		if !assigned[u.ID] {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+func (e RuleEnv) UnassignedIdleNaval() []model.Unit {
+	assigned := squadUnitIDSet(e.Memory)
+	var out []model.Unit
+	for _, u := range e.IdleNavalUnits() {
+		if !assigned[u.ID] {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// recordSuperweaponFire tracks launches so the strategist LLM can see fire history.
+func recordSuperweaponFire(env RuleEnv, key string) {
+	fires, _ := env.Memory["superweaponFires"].(map[string]int)
+	if fires == nil {
+		fires = make(map[string]int)
+	}
+	fires[key]++
+	env.Memory["superweaponFires"] = fires
+}
+
+// GetSuperweaponFires returns cumulative fire counts (used by strategist summarizer).
+func GetSuperweaponFires(memory map[string]any) map[string]int {
+	if v, ok := memory["superweaponFires"].(map[string]int); ok {
+		return v
+	}
+	return nil
+}
+
+// rebuildableRoles lists roles that get rebuild rules if destroyed. Tracked in
+// memory so LostRole() can detect when a previously-owned building is gone.
+var rebuildableRoles = []string{
+	"power_plant", "advanced_power",
+	"barracks", "war_factory", "radar", "tech_center", "airfield", "naval_yard", "refinery", "service_depot",
+	"missile_silo", "iron_curtain",
+}
+
+// updateBuiltRoles records which roles exist so LostRole() can later detect
+// destruction. Without this, the AI wouldn't know to rebuild something
+// it once had.
 func updateBuiltRoles(env RuleEnv) {
 	builtRoles, _ := env.Memory["builtRoles"].(map[string]bool)
 	if builtRoles == nil {
@@ -251,7 +377,7 @@ func updateBuiltRoles(env RuleEnv) {
 	env.Memory["builtRoles"] = builtRoles
 }
 
-// LostRole returns true if the role was previously built but no longer exists.
+// LostRole detects destruction: true if we had this building before but don't now.
 func (e RuleEnv) LostRole(name string) bool {
 	builtRoles, _ := e.Memory["builtRoles"].(map[string]bool)
 	return builtRoles[name] && !e.HasRole(name)
@@ -259,14 +385,16 @@ func (e RuleEnv) LostRole(name string) bool {
 
 // EnemyBaseIntel records a known enemy base position.
 type EnemyBaseIntel struct {
-	Owner string
-	X     int
-	Y     int
-	Tick  int
+	Owner         string
+	X             int
+	Y             int
+	Tick          int
+	FromBuildings bool // true if derived from building sightings (high confidence)
 }
 
-// knownBuildingTypes is the set of RA building type names used to identify
-// enemy structures (as opposed to mobile units).
+// knownBuildingTypes distinguishes enemy buildings from mobile units in the
+// Enemies list. Building sightings give high-confidence base positions;
+// unit sightings might just be an attack force passing through.
 var knownBuildingTypes = map[string]bool{
 	// Production
 	"fact": true, "barr": true, "tent": true, "weap": true, "kenn": true,
@@ -282,8 +410,7 @@ var knownBuildingTypes = map[string]bool{
 	"tsla": true, "agun": true, "sam": true,
 }
 
-// isKnownBuildingType returns true if the type (possibly a faction variant like "afld.ukraine")
-// matches any entry in knownBuildingTypes.
+// isKnownBuildingType handles faction variants (e.g. "afld.ukraine" → "afld").
 func isKnownBuildingType(t string) bool {
 	base := strings.ToLower(t)
 	if idx := strings.IndexByte(base, '.'); idx >= 0 {
@@ -292,10 +419,9 @@ func isKnownBuildingType(t string) bool {
 	return knownBuildingTypes[base]
 }
 
-// updateIntel records the centroid of visible enemies per owner.
-// Prefers building positions (high confidence) but falls back to unit
-// positions when no buildings are visible for that owner.
-// Called at the start of each evaluation.
+// updateIntel maintains a map of known enemy base positions. Building sightings
+// always update (high confidence); unit sightings only seed initial intel to
+// avoid overwriting a known base location with a roaming attack force.
 func updateIntel(env RuleEnv) {
 	type acc struct {
 		sumX, sumY, count int
@@ -331,28 +457,29 @@ func updateIntel(env RuleEnv) {
 
 	bases := getEnemyBases(env.Memory)
 
-	// Building sightings always update intel (high confidence).
+	// Building sightings always overwrite — structures don't move.
 	for owner, a := range buildingsByOwner {
 		bases[owner] = EnemyBaseIntel{
-			Owner: owner,
-			X:     a.sumX / a.count,
-			Y:     a.sumY / a.count,
-			Tick:  env.State.Tick,
+			Owner:         owner,
+			X:             a.sumX / a.count,
+			Y:             a.sumY / a.count,
+			Tick:          env.State.Tick,
+			FromBuildings: true,
 		}
 	}
 
-	// Unit sightings only update intel if we have no existing intel
-	// for that owner (avoid overwriting building-based positions with
-	// less accurate unit positions or enemy attack forces near our base).
+	// Unit sightings only seed initial intel — don't let a passing enemy
+	// patrol overwrite a confirmed building-based position.
 	for owner, a := range unitsByOwner {
 		if _, exists := bases[owner]; exists {
 			continue
 		}
 		bases[owner] = EnemyBaseIntel{
-			Owner: owner,
-			X:     a.sumX / a.count,
-			Y:     a.sumY / a.count,
-			Tick:  env.State.Tick,
+			Owner:         owner,
+			X:             a.sumX / a.count,
+			Y:             a.sumY / a.count,
+			Tick:          env.State.Tick,
+			FromBuildings: false,
 		}
 	}
 
@@ -366,14 +493,18 @@ func getEnemyBases(memory map[string]any) map[string]EnemyBaseIntel {
 	return make(map[string]EnemyBaseIntel)
 }
 
-// HasEnemyIntel returns true if at least one enemy base position is known.
+// HasEnemyIntel requires building-based intel. Unit-only sightings don't
+// count — scouting should continue until we find the actual base.
 func (e RuleEnv) HasEnemyIntel() bool {
-	bases := getEnemyBases(e.Memory)
-	return len(bases) > 0
+	for _, base := range getEnemyBases(e.Memory) {
+		if base.FromBuildings {
+			return true
+		}
+	}
+	return false
 }
 
-// NearestEnemyBase returns the position of the closest known enemy base
-// relative to our buildings.
+// NearestEnemyBase returns the closest remembered enemy base for fog-of-war attacks.
 func (e RuleEnv) NearestEnemyBase() *EnemyBaseIntel {
 	bases := getEnemyBases(e.Memory)
 	if len(bases) == 0 {
@@ -401,13 +532,13 @@ func (e RuleEnv) NearestEnemyBase() *EnemyBaseIntel {
 	return nearest
 }
 
-// EnemyBaseCount returns the number of known enemy bases.
 func (e RuleEnv) EnemyBaseCount() int {
 	return len(getEnemyBases(e.Memory))
 }
 
-// BaseUnderAttack returns true if any visible enemy is within 20% of the map
-// diagonal of any owned building.
+// BaseUnderAttack uses a 20% map-diagonal proximity threshold. This avoids
+// false positives from distant enemies while catching attacks that haven't
+// reached buildings yet.
 func (e RuleEnv) BaseUnderAttack() bool {
 	if len(e.State.Buildings) == 0 || len(e.State.Enemies) == 0 {
 		return false
@@ -429,7 +560,6 @@ func (e RuleEnv) BaseUnderAttack() bool {
 	return false
 }
 
-// CanBuildAnyCombatVehicle returns true if any combat vehicle role is buildable in the Vehicle queue.
 func (e RuleEnv) CanBuildAnyCombatVehicle() bool {
 	for _, r := range combatVehicleRoles {
 		if e.CanBuildRole(r) {
@@ -439,7 +569,6 @@ func (e RuleEnv) CanBuildAnyCombatVehicle() bool {
 	return false
 }
 
-// CombatVehicleCount returns the total count of all owned combat vehicles.
 func (e RuleEnv) CombatVehicleCount() int {
 	n := 0
 	for _, r := range combatVehicleRoles {
@@ -448,7 +577,8 @@ func (e RuleEnv) CombatVehicleCount() int {
 	return n
 }
 
-// BestBuildableVehicle returns the actual item name of the highest-priority buildable combat vehicle, or "".
+// BestBuildableVehicle returns the highest-priority buildable combat vehicle.
+// Priority order comes from combatVehicleRoles (mammoth > heavy > light > ...).
 func (e RuleEnv) BestBuildableVehicle() string {
 	for _, r := range combatVehicleRoles {
 		if item := e.BuildableType(r); item != "" {
@@ -458,7 +588,6 @@ func (e RuleEnv) BestBuildableVehicle() string {
 	return ""
 }
 
-// CanBuildAnyCombatAircraft returns true if any combat aircraft role is buildable.
 func (e RuleEnv) CanBuildAnyCombatAircraft() bool {
 	for _, r := range combatAircraftRoles {
 		if e.CanBuildRole(r) {
@@ -468,7 +597,6 @@ func (e RuleEnv) CanBuildAnyCombatAircraft() bool {
 	return false
 }
 
-// CombatAircraftCount returns the total count of all owned combat aircraft.
 func (e RuleEnv) CombatAircraftCount() int {
 	n := 0
 	for _, r := range combatAircraftRoles {
@@ -477,7 +605,6 @@ func (e RuleEnv) CombatAircraftCount() int {
 	return n
 }
 
-// CanBuildAnySpecialist returns true if any specialist infantry role is buildable.
 func (e RuleEnv) CanBuildAnySpecialist() bool {
 	for _, r := range specialistInfantryRoles {
 		if e.CanBuildRole(r) {
@@ -487,7 +614,6 @@ func (e RuleEnv) CanBuildAnySpecialist() bool {
 	return false
 }
 
-// SpecialistInfantryCount returns the total count of all owned specialist infantry.
 func (e RuleEnv) SpecialistInfantryCount() int {
 	n := 0
 	for _, r := range specialistInfantryRoles {
@@ -496,7 +622,8 @@ func (e RuleEnv) SpecialistInfantryCount() int {
 	return n
 }
 
-// BestBuildableSpecialist returns the actual item name of the highest-priority buildable specialist infantry, or "".
+// BestBuildableSpecialist picks the best available elite infantry
+// (priority: tanya > shock trooper > flamethrower > medic).
 func (e RuleEnv) BestBuildableSpecialist() string {
 	for _, r := range specialistInfantryRoles {
 		if item := e.BuildableType(r); item != "" {
@@ -506,7 +633,8 @@ func (e RuleEnv) BestBuildableSpecialist() string {
 	return ""
 }
 
-// BestBuildableAircraft returns the actual item name of the highest-priority buildable combat aircraft, or "".
+// BestBuildableAircraft picks the best available combat aircraft
+// (prefers advanced: longbow/MiG over basic: blackhawk/yak).
 func (e RuleEnv) BestBuildableAircraft() string {
 	for _, r := range combatAircraftRoles {
 		if item := e.BuildableType(r); item != "" {
@@ -516,7 +644,7 @@ func (e RuleEnv) BestBuildableAircraft() string {
 	return ""
 }
 
-// HasRole returns true if the player has any building or unit matching the role's type variants.
+// HasRole abstracts over faction-specific types (e.g. "barracks" matches both "barr" and "tent").
 func (e RuleEnv) HasRole(name string) bool {
 	r, ok := roles[name]
 	if !ok {
@@ -525,7 +653,6 @@ func (e RuleEnv) HasRole(name string) bool {
 	return containsAnyType(e.State.Buildings, r.types) || containsAnyType(e.State.Units, r.types)
 }
 
-// RoleCount returns the total count of buildings and units matching the role's type variants.
 func (e RuleEnv) RoleCount(name string) int {
 	r, ok := roles[name]
 	if !ok {
@@ -534,7 +661,6 @@ func (e RuleEnv) RoleCount(name string) int {
 	return countAnyType(e.State.Buildings, r.types) + countAnyType(e.State.Units, r.types)
 }
 
-// CanBuildRole returns true if any of the role's type variants appear in the role's queue's buildable list.
 func (e RuleEnv) CanBuildRole(name string) bool {
 	r, ok := roles[name]
 	if !ok {
@@ -555,8 +681,8 @@ func (e RuleEnv) CanBuildRole(name string) bool {
 	return false
 }
 
-// BuildableType returns the first buildable type variant for the role, or "" if none.
-// Returns the actual buildable name (which may be a faction variant like "afld.ukraine").
+// BuildableType resolves a role to its actual buildable name for the current faction
+// (e.g. "barracks" → "tent" for Allies, "barr" for Soviets).
 func (e RuleEnv) BuildableType(name string) string {
 	r, ok := roles[name]
 	if !ok {

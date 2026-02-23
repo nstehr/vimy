@@ -1,6 +1,7 @@
 package rules
 
-// DefaultRules returns the seed rule set for autonomous play.
+// DefaultRules returns a hardcoded rule set for play without an LLM strategist.
+// Superseded by CompileDoctrine when a strategist is active.
 func DefaultRules() []*Rule {
 	return []*Rule{
 		{

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nstehr/vimy/vimy-core/ipc"
+	"github.com/nstehr/vimy/vimy-core/model"
 )
 
 func ActionProduceMCV(env RuleEnv, conn *ipc.Connection) error {
@@ -19,7 +20,8 @@ func ActionProduceMCV(env RuleEnv, conn *ipc.Connection) error {
 }
 
 func ActionDeployMCV(env RuleEnv, conn *ipc.Connection) error {
-	// Cooldown: don't retry deploy for 50 ticks (~20s) after sending.
+	// Cooldown: the C# side needs time to process the deploy order.
+	// Without this, the sidecar would spam deploy commands every tick.
 	if lastTick, ok := env.Memory["deployMCVTick"].(int); ok {
 		if env.State.Tick-lastTick < 50 {
 			return nil
@@ -141,6 +143,22 @@ func ActionProduceNavalYard(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
+// ActionCancelStuckAircraft works around an OpenRA quirk: aircraft production
+// completes but sometimes can't spawn (no free pad). Cancelling frees the queue.
+func ActionCancelStuckAircraft(env RuleEnv, conn *ipc.Connection) error {
+	for _, pq := range env.State.ProductionQueues {
+		if strings.EqualFold(pq.Type, QueueAircraft) && pq.CurrentItem != "" && pq.CurrentProgress >= 100 {
+			slog.Info("cancelling stuck aircraft production", "item", pq.CurrentItem)
+			return conn.Send(ipc.TypeCancelProduction, ipc.CancelProductionCommand{
+				Queue: QueueAircraft,
+				Item:  pq.CurrentItem,
+				Count: 1,
+			})
+		}
+	}
+	return nil
+}
+
 func ActionPlaceBuilding(env RuleEnv, conn *ipc.Connection) error {
 	for _, pq := range env.State.ProductionQueues {
 		if strings.EqualFold(pq.Type, QueueBuilding) && pq.CurrentItem != "" && pq.CurrentProgress >= 100 {
@@ -234,8 +252,8 @@ func ActionPlaceDefense(env RuleEnv, conn *ipc.Connection) error {
 	return nil
 }
 
-// randomBaseOffset picks a random point within a radius of the base centroid.
-// The C# side uses this as the search center for placement validation.
+// randomBaseOffset provides a hint for the C# placement algorithm.
+// The engine spiral-searches from this point to find valid placement cells.
 func randomBaseOffset(env RuleEnv) (int, int) {
 	buildings := env.State.Buildings
 	if len(buildings) == 0 {
@@ -471,8 +489,8 @@ func ActionScoutWithIdleUnits(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
-// generateWaypoints returns 9 map waypoints for scouting: center, 4 corners, 4 edge midpoints.
-// Returns nil if map dimensions are zero.
+// generateWaypoints creates a 9-point search pattern (center, corners, edges)
+// with 10% margins to avoid map-edge pathing issues.
 func generateWaypoints(mapW, mapH int) [][2]int {
 	if mapW == 0 || mapH == 0 {
 		return nil
@@ -537,7 +555,7 @@ func ActionProduceHarvester(env RuleEnv, conn *ipc.Connection) error {
 }
 
 func ActionSendIdleHarvesters(env RuleEnv, conn *ipc.Connection) error {
-	// Heuristic: send harvesters toward the first refinery location, or base center.
+	// Send toward refinery so the harvest command picks nearby ore patches.
 	tx, ty := 0, 0
 	for _, b := range env.State.Buildings {
 		if matchesType(b.Type, Refinery) {
@@ -642,6 +660,119 @@ func ActionAirAttackKnownBase(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
+// --- Superweapon building production ---
+// These use the Defense queue despite being buildings — matches OpenRA's
+// categorization of superweapons as "defense" items.
+
+func ActionProduceMissileSilo(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("missile_silo")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing missile silo", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueDefense,
+		Item:  item,
+		Count: 1,
+	})
+}
+
+func ActionProduceIronCurtain(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("iron_curtain")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing iron curtain", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueDefense,
+		Item:  item,
+		Count: 1,
+	})
+}
+
+// --- Superweapon fire actions ---
+
+func ActionFireNuke(env RuleEnv, conn *ipc.Connection) error {
+	x, y := 0, 0
+	if base := env.NearestEnemyBase(); base != nil {
+		x, y = base.X, base.Y
+	} else if enemy := env.NearestEnemy(); enemy != nil {
+		x, y = enemy.X, enemy.Y
+	} else {
+		x, y = env.MapWidth()/2, env.MapHeight()/2
+	}
+	recordSuperweaponFire(env, "nuke")
+	slog.Info("firing nuke", "x", x, "y", y)
+	return conn.Send(ipc.TypeSupportPower, ipc.SupportPowerCommand{
+		PowerKey: "NukePowerInfoOrder",
+		X:        x,
+		Y:        y,
+	})
+}
+
+func ActionFireIronCurtain(env RuleEnv, conn *ipc.Connection) error {
+	x, y := env.GroundUnitCentroid()
+	recordSuperweaponFire(env, "iron_curtain")
+	slog.Info("firing iron curtain on own units", "x", x, "y", y)
+	return conn.Send(ipc.TypeSupportPower, ipc.SupportPowerCommand{
+		PowerKey: "GrantExternalConditionPowerInfoOrder",
+		X:        x,
+		Y:        y,
+	})
+}
+
+func ActionFireSpyPlane(env RuleEnv, conn *ipc.Connection) error {
+	x, y := 0, 0
+	if base := env.NearestEnemyBase(); base != nil {
+		x, y = base.X, base.Y
+	} else {
+		x, y = env.MapWidth()/2, env.MapHeight()/2
+	}
+	recordSuperweaponFire(env, "spy_plane")
+	slog.Info("firing spy plane", "x", x, "y", y)
+	return conn.Send(ipc.TypeSupportPower, ipc.SupportPowerCommand{
+		PowerKey: "SovietSpyPlane",
+		X:        x,
+		Y:        y,
+	})
+}
+
+func ActionFireParatroopers(env RuleEnv, conn *ipc.Connection) error {
+	x, y := 0, 0
+	if base := env.NearestEnemyBase(); base != nil {
+		x, y = base.X, base.Y
+	} else if enemy := env.NearestEnemy(); enemy != nil {
+		x, y = enemy.X, enemy.Y
+	} else {
+		return nil
+	}
+	recordSuperweaponFire(env, "paratroopers")
+	slog.Info("firing paratroopers", "x", x, "y", y)
+	return conn.Send(ipc.TypeSupportPower, ipc.SupportPowerCommand{
+		PowerKey: "SovietParatroopers",
+		X:        x,
+		Y:        y,
+	})
+}
+
+func ActionFireParabombs(env RuleEnv, conn *ipc.Connection) error {
+	x, y := 0, 0
+	if base := env.NearestEnemyBase(); base != nil {
+		x, y = base.X, base.Y
+	} else if enemy := env.NearestEnemy(); enemy != nil {
+		x, y = enemy.X, enemy.Y
+	} else {
+		return nil
+	}
+	recordSuperweaponFire(env, "parabombs")
+	slog.Info("firing parabombs", "x", x, "y", y)
+	return conn.Send(ipc.TypeSupportPower, ipc.SupportPowerCommand{
+		PowerKey: "UkraineParabombs",
+		X:        x,
+		Y:        y,
+	})
+}
+
 func ActionNavalAttackEnemy(env RuleEnv, conn *ipc.Connection) error {
 	enemy := env.NearestEnemy()
 	if enemy == nil {
@@ -661,4 +792,247 @@ func ActionNavalAttackEnemy(env RuleEnv, conn *ipc.Connection) error {
 		X:        enemy.X,
 		Y:        enemy.Y,
 	})
+}
+
+// --- Capped attack group factories ---
+// These cap the number of units sent per order, keeping some as reserves.
+// Superseded by squad-based actions in compiled doctrines but still used
+// by the seed rule set.
+
+func GroundAttackGroup(maxUnits int) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		enemy := env.NearestEnemy()
+		if enemy == nil {
+			return nil
+		}
+		idle := env.IdleGroundUnits()
+		if len(idle) == 0 {
+			return nil
+		}
+		n := min(maxUnits, len(idle))
+		ids := make([]uint32, n)
+		for i := range n {
+			ids[i] = uint32(idle[i].ID)
+		}
+		slog.Debug("attack-moving ground group", "count", n, "total_idle", len(idle), "target", enemy.ID)
+		return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
+			ActorIDs: ids,
+			X:        enemy.X,
+			Y:        enemy.Y,
+		})
+	}
+}
+
+func GroundAttackKnownBaseGroup(maxUnits int) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		base := env.NearestEnemyBase()
+		if base == nil {
+			return nil
+		}
+		idle := env.IdleGroundUnits()
+		if len(idle) == 0 {
+			return nil
+		}
+		n := min(maxUnits, len(idle))
+		ids := make([]uint32, n)
+		for i := range n {
+			ids[i] = uint32(idle[i].ID)
+		}
+		slog.Debug("ground attacking known base (group)", "count", n, "total_idle", len(idle), "owner", base.Owner, "x", base.X, "y", base.Y)
+		return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
+			ActorIDs: ids,
+			X:        base.X,
+			Y:        base.Y,
+		})
+	}
+}
+
+func AirAttackGroup(maxUnits int) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		enemy := env.NearestEnemy()
+		if enemy == nil {
+			return nil
+		}
+		aircraft := env.IdleCombatAircraft()
+		if len(aircraft) == 0 {
+			return nil
+		}
+		n := min(maxUnits, len(aircraft))
+		for i := range n {
+			u := aircraft[i]
+			slog.Debug("air attack enemy (group)", "aircraft", u.ID, "target", enemy.ID)
+			if err := conn.Send(ipc.TypeAttack, ipc.AttackCommand{
+				ActorID:  uint32(u.ID),
+				TargetID: uint32(enemy.ID),
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+func AirAttackKnownBaseGroup(maxUnits int) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		base := env.NearestEnemyBase()
+		if base == nil {
+			return nil
+		}
+		aircraft := env.IdleCombatAircraft()
+		if len(aircraft) == 0 {
+			return nil
+		}
+		n := min(maxUnits, len(aircraft))
+		ids := make([]uint32, n)
+		for i := range n {
+			ids[i] = uint32(aircraft[i].ID)
+		}
+		slog.Debug("air attacking known base (group)", "count", n, "total_idle", len(aircraft), "owner", base.Owner, "x", base.X, "y", base.Y)
+		return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
+			ActorIDs: ids,
+			X:        base.X,
+			Y:        base.Y,
+		})
+	}
+}
+
+// --- Squad action factories ---
+
+// FormSquad assigns unit IDs to a named squad in memory but does NOT issue
+// orders. Formation and action are separate rules so the compiler can set
+// different priorities and conditions for each (e.g. form at priority+5,
+// act at priority).
+func FormSquad(name, domain string, size int, role string) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		var pool []model.Unit
+		switch domain {
+		case "ground":
+			pool = env.UnassignedIdleGround()
+		case "air":
+			pool = env.UnassignedIdleAir()
+		case "naval":
+			pool = env.UnassignedIdleNaval()
+		default:
+			pool = env.UnassignedIdleGround()
+		}
+		if len(pool) < size {
+			return nil
+		}
+		ids := make([]int, size)
+		for i := range size {
+			ids[i] = pool[i].ID
+		}
+		squads := getSquads(env.Memory)
+		squads[name] = &Squad{
+			Name:    name,
+			Domain:  domain,
+			UnitIDs: ids,
+			Role:    role,
+		}
+		env.Memory["squads"] = squads
+		slog.Info("squad formed", "name", name, "domain", domain, "role", role, "size", size)
+		return nil
+	}
+}
+
+func SquadAttackMove(name string) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		enemy := env.NearestEnemy()
+		if enemy == nil {
+			return nil
+		}
+		ids := squadIdleActorIDs(env, name)
+		if len(ids) == 0 {
+			return nil
+		}
+		slog.Debug("squad attack-move", "squad", name, "count", len(ids), "target", enemy.ID)
+		return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
+			ActorIDs: ids,
+			X:        enemy.X,
+			Y:        enemy.Y,
+		})
+	}
+}
+
+func SquadAttackKnownBase(name string) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		base := env.NearestEnemyBase()
+		if base == nil {
+			return nil
+		}
+		ids := squadIdleActorIDs(env, name)
+		if len(ids) == 0 {
+			return nil
+		}
+		slog.Debug("squad attacking known base", "squad", name, "count", len(ids), "owner", base.Owner, "x", base.X, "y", base.Y)
+		return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
+			ActorIDs: ids,
+			X:        base.X,
+			Y:        base.Y,
+		})
+	}
+}
+
+func SquadDefend(name string) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		enemy := env.NearestEnemy()
+		if enemy == nil {
+			return nil
+		}
+		ids := squadIdleActorIDs(env, name)
+		if len(ids) == 0 {
+			return nil
+		}
+		slog.Debug("squad defending", "squad", name, "count", len(ids), "target", enemy.ID)
+		return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
+			ActorIDs: ids,
+			X:        enemy.X,
+			Y:        enemy.Y,
+		})
+	}
+}
+
+func squadIdleActorIDs(env RuleEnv, name string) []uint32 {
+	squads := getSquads(env.Memory)
+	sq, ok := squads[name]
+	if !ok {
+		return nil
+	}
+	idleSet := make(map[int]bool)
+	for _, u := range env.State.Units {
+		if u.Idle {
+			idleSet[u.ID] = true
+		}
+	}
+	var ids []uint32
+	for _, id := range sq.UnitIDs {
+		if idleSet[id] {
+			ids = append(ids, uint32(id))
+		}
+	}
+	return ids
+}
+
+func NavalAttackGroup(maxUnits int) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		enemy := env.NearestEnemy()
+		if enemy == nil {
+			return nil
+		}
+		idle := env.IdleNavalUnits()
+		if len(idle) == 0 {
+			return nil
+		}
+		n := min(maxUnits, len(idle))
+		ids := make([]uint32, n)
+		for i := range n {
+			ids[i] = uint32(idle[i].ID)
+		}
+		slog.Debug("naval attacking enemy (group)", "count", n, "total_idle", len(idle), "target", enemy.ID)
+		return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
+			ActorIDs: ids,
+			X:        enemy.X,
+			Y:        enemy.Y,
+		})
+	}
 }

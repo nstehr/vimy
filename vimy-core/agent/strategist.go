@@ -58,6 +58,10 @@ func (s *Strategist) UpdateState(gs model.GameState) {
 	shouldSignal := first || (gs.Tick-s.lastTick >= s.interval)
 	s.mu.Unlock()
 
+	// TODO(phase-8): Add event-driven re-evaluation mechanism so the strategist
+	// can react immediately to significant game events (e.g. superweapon fires)
+	// rather than waiting for the next interval boundary.
+
 	if shouldSignal {
 		select {
 		case s.ready <- struct{}{}:
@@ -117,6 +121,7 @@ func (s *Strategist) evaluate(ctx context.Context) {
 		"airAttackGroup", doctrine.AirAttackGroupSize,
 		"navalAttackGroup", doctrine.NavalAttackGroupSize,
 		"specialistInfantry", doctrine.SpecializedInfantryWeight,
+		"superweapon", doctrine.SuperweaponPriority,
 	)
 
 	compiled := rules.CompileDoctrine(doctrine)
@@ -149,6 +154,7 @@ func fromBAML(d types.Doctrine) rules.Doctrine {
 		NavalAttackGroupSize:  int(d.Naval_attack_group_size),
 		ScoutPriority:             d.Scout_priority,
 		SpecializedInfantryWeight: d.Specialized_infantry_weight,
+		SuperweaponPriority:       d.Superweapon_priority,
 	}
 }
 
@@ -205,6 +211,54 @@ func summarize(gs model.GameState, memory map[string]any) string {
 		if pq.CurrentItem != "" {
 			fmt.Fprintf(&b, "Queue %s: producing %s (%d%%)\n", pq.Type, pq.CurrentItem, pq.CurrentProgress)
 		}
+	}
+
+	// Support powers
+	if len(gs.SupportPowers) > 0 {
+		fmt.Fprintf(&b, "Support Powers:")
+		for _, sp := range gs.SupportPowers {
+			status := "charging"
+			if sp.Ready {
+				status = "READY"
+			} else if sp.TotalTicks > 0 {
+				pct := 100 - (100 * sp.RemainingTicks / sp.TotalTicks)
+				status = fmt.Sprintf("%d%%", pct)
+			}
+			fmt.Fprintf(&b, " %s(%s)", sp.Key, status)
+		}
+		fmt.Fprintln(&b)
+	}
+
+	// Superweapon fire history
+	totalFires := rules.GetSuperweaponFires(memory)
+	lastSeenFires, _ := memory["superweaponFiresSnapshot"].(map[string]int)
+	if len(totalFires) > 0 {
+		fmt.Fprintf(&b, "Superweapon launches:")
+		for key, total := range totalFires {
+			recent := total - lastSeenFires[key]
+			if recent > 0 {
+				fmt.Fprintf(&b, " %s=%d (+%d since last eval)", key, total, recent)
+			} else {
+				fmt.Fprintf(&b, " %s=%d", key, total)
+			}
+		}
+		fmt.Fprintln(&b)
+
+		// Snapshot for next eval's delta
+		snapshot := make(map[string]int)
+		for k, v := range totalFires {
+			snapshot[k] = v
+		}
+		memory["superweaponFiresSnapshot"] = snapshot
+	}
+
+	// Squads
+	if squads := rules.GetSquads(memory); len(squads) > 0 {
+		fmt.Fprintf(&b, "Squads:")
+		for _, sq := range squads {
+			fmt.Fprintf(&b, " %s(%s, %d units)", sq.Name, sq.Role, len(sq.UnitIDs))
+		}
+		fmt.Fprintln(&b)
 	}
 
 	// Enemies

@@ -13,14 +13,16 @@ import (
 	"github.com/nstehr/vimy/vimy-core/model"
 )
 
-// Engine evaluates rules against game state each tick.
+// Engine runs compiled rules against game state each tick.
+// Rules fire in priority order; exclusive rules block lower-priority rules
+// in the same category, preventing conflicting orders on the same queue.
 type Engine struct {
 	mu     sync.RWMutex
 	rules  []*Rule
 	Memory map[string]any
 }
 
-// NewEngine compiles all rule conditions and returns a ready engine.
+// NewEngine compiles all rule conditions into expr bytecode and sorts by priority.
 func NewEngine(rules []*Rule) (*Engine, error) {
 	compiled, err := compileRules(rules)
 	if err != nil {
@@ -32,8 +34,7 @@ func NewEngine(rules []*Rule) (*Engine, error) {
 	}, nil
 }
 
-// Evaluate runs all rules against the game state, highest priority first.
-// Exclusive rules block lower-priority rules in the same category.
+// Evaluate runs all rules against the current game state.
 func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connection) error {
 	e.mu.RLock()
 	rules := e.rules
@@ -42,6 +43,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	env := RuleEnv{State: gs, Faction: faction, Memory: e.Memory}
 	updateIntel(env)
 	updateBuiltRoles(env)
+	updateSquads(env)
 	logMilitaryDiagnostics(env)
 	fired := make(map[string]bool) // category → exclusive rule already fired
 
@@ -81,8 +83,10 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	return nil
 }
 
-// Swap atomically replaces the rule set. Compiles new rules first; if compilation
-// fails the old rules remain active.
+// Swap atomically replaces the rule set (called by the strategist when the LLM
+// generates a new doctrine). Compiles first; if compilation fails the old rules
+// remain active. Squads are cleared because the new rules may define different
+// squad names and sizes.
 func (e *Engine) Swap(newRules []*Rule) error {
 	compiled, err := compileRules(newRules)
 	if err != nil {
@@ -94,13 +98,14 @@ func (e *Engine) Swap(newRules []*Rule) error {
 	}
 	e.mu.Lock()
 	e.rules = compiled
+	delete(e.Memory, "squads")
 	e.mu.Unlock()
 	slog.Info("rule set swapped", "count", len(compiled), "rules", names)
 	return nil
 }
 
-// logIdleDiagnostics logs production queue state when no rules fire,
-// throttled to once every 100 ticks to avoid log spam.
+// logIdleDiagnostics helps debug "why isn't the AI doing anything?" —
+// dumps queue state when zero rules fire. Throttled to avoid log spam.
 var lastDiagTick int
 
 func logIdleDiagnostics(gs model.GameState) {
@@ -126,8 +131,8 @@ func logIdleDiagnostics(gs model.GameState) {
 	)
 }
 
-// logMilitaryDiagnostics logs army/combat state periodically, regardless of
-// whether other rules fire. Helps diagnose why attack/scout rules don't trigger.
+// logMilitaryDiagnostics helps debug "why doesn't the AI attack?" — fires
+// every 100 ticks regardless of rule activity.
 var lastMilitaryDiagTick int
 
 func logMilitaryDiagnostics(env RuleEnv) {
@@ -153,7 +158,6 @@ func logMilitaryDiagnostics(env RuleEnv) {
 	)
 }
 
-// compileRules compiles all rule conditions and sorts by priority descending.
 func compileRules(rules []*Rule) ([]*Rule, error) {
 	for _, r := range rules {
 		prog, err := expr.Compile(r.ConditionSrc, expr.Env(RuleEnv{}), expr.AsBool())

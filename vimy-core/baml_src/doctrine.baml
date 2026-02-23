@@ -15,6 +15,7 @@ class Doctrine {
   naval_attack_group_size int @description("Minimum naval units before launching a naval attack (2-10)")
   scout_priority float @description("0.0-1.0: reconnaissance investment")
   specialized_infantry_weight float @description("0.0-1.0: investment in elite infantry (flamethrowers, shock troopers, Tanya, medics) — requires prerequisite buildings already built via other priorities")
+  superweapon_priority float @description("0.0-1.0: investment in superweapon buildings (Missile Silo, Iron Curtain) and eagerness to use them — requires tech center already built via tech_priority. Set above 0.3 to build superweapon structures. Airfield powers (spy plane, paratroopers) are governed by air_weight instead")
 }
 
 function GenerateDoctrine(directive: string, situation: string, faction: string) -> Doctrine {
@@ -47,6 +48,7 @@ function GenerateDoctrine(directive: string, situation: string, faction: string)
     - naval_attack_group_size: how many ships to accumulate before attacking
     - Scout priority: higher = more reconnaissance, important when enemy position unknown
     - Specialized infantry (flamethrowers, commandos, medics) require prerequisite structures — set above 0 only when those are likely available
+    - Superweapon priority controls building the Missile Silo (nuke) and Iron Curtain — both require a tech center. Set above 0.3 to invest. Airfield support powers (spy plane, paratroopers, parabombs) come free with the airfield and are controlled by air_weight instead
 
     {{ ctx.output_format }}
   "#

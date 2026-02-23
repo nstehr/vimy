@@ -117,6 +117,22 @@ func TestValidate(t *testing.T) {
 		t.Errorf("SpecializedInfantryWeight = %f, want 0.0 (clamped)", d4.SpecializedInfantryWeight)
 	}
 
+	if d.SuperweaponPriority != 0.0 {
+		t.Errorf("SuperweaponPriority = %f, want 0.0 (clamped from unset)", d.SuperweaponPriority)
+	}
+
+	d5 := Doctrine{SuperweaponPriority: 1.5}
+	d5.Validate()
+	if d5.SuperweaponPriority != 1.0 {
+		t.Errorf("SuperweaponPriority = %f, want 1.0 (clamped)", d5.SuperweaponPriority)
+	}
+
+	d6 := Doctrine{SuperweaponPriority: -0.5}
+	d6.Validate()
+	if d6.SuperweaponPriority != 0.0 {
+		t.Errorf("SuperweaponPriority = %f, want 0.0 (clamped)", d6.SuperweaponPriority)
+	}
+
 	d2 := Doctrine{GroundAttackGroupSize: 100, AirAttackGroupSize: 100, NavalAttackGroupSize: 100}
 	d2.Validate()
 	if d2.GroundAttackGroupSize != 15 {

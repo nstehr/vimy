@@ -7,8 +7,9 @@ type typed interface {
 	TypeName() string
 }
 
-// matchesType checks if name matches type t, handling OpenRA faction variants.
-// "afld.ukraine" matches base type "afld"; "afld" matches "afld" exactly.
+// matchesType handles OpenRA's faction variant naming (e.g. "afld.ukraine"
+// matches "afld"). Without this, faction-specific buildings would be invisible
+// to role-based queries.
 func matchesType(name, t string) bool {
 	if strings.EqualFold(name, t) {
 		return true
@@ -20,7 +21,6 @@ func matchesType(name, t string) bool {
 	return false
 }
 
-// containsType returns true if any item's TypeName matches t (case-insensitive).
 func containsType[T typed](items []T, t string) bool {
 	for _, item := range items {
 		if matchesType(item.TypeName(), t) {
@@ -30,7 +30,6 @@ func containsType[T typed](items []T, t string) bool {
 	return false
 }
 
-// countType counts items whose TypeName matches t (case-insensitive).
 func countType[T typed](items []T, t string) int {
 	n := 0
 	for _, item := range items {
@@ -41,7 +40,6 @@ func countType[T typed](items []T, t string) int {
 	return n
 }
 
-// containsAnyType returns true if any item's TypeName matches any of the given types.
 func containsAnyType[T typed](items []T, types []string) bool {
 	for _, item := range items {
 		for _, t := range types {
@@ -53,7 +51,6 @@ func containsAnyType[T typed](items []T, types []string) bool {
 	return false
 }
 
-// countAnyType counts items whose TypeName matches any of the given types.
 func countAnyType[T typed](items []T, types []string) int {
 	n := 0
 	for _, item := range items {
@@ -67,7 +64,7 @@ func countAnyType[T typed](items []T, types []string) int {
 	return n
 }
 
-// Production queue type constants.
+// Production queue type constants — must match OpenRA's queue type names.
 const (
 	QueueBuilding = "Building"
 	QueueDefense  = "Defense"
@@ -77,7 +74,7 @@ const (
 	QueueAircraft = "Aircraft"
 )
 
-// Unit type constants.
+// Unit type constants — OpenRA internal names (not display names).
 const (
 	MCV           = "mcv"  // Mobile Construction Vehicle
 	Harvester     = "harv" // Ore Harvester
@@ -109,7 +106,7 @@ const (
 	Cruiser       = "ca"   // Allied Cruiser
 )
 
-// Building type constants.
+// Building type constants — OpenRA internal names (not display names).
 const (
 	ConstructionYard = "fact" // Construction Yard
 	PowerPlant       = "powr" // Power Plant
@@ -127,15 +124,18 @@ const (
 	NavalYard        = "syrd" // Allied Naval Yard (Shipyard)
 	SubPen           = "spen" // Soviet Sub Pen
 	ServiceDepot     = "fix"  // Service Depot (unlocks Heavy Tank)
+	MissileSilo      = "mslo" // Soviet Missile Silo (Nuke)
+	IronCurtain      = "iron" // Soviet Iron Curtain
 )
 
-// role maps a logical role name to its production queue and all faction-variant type names.
+// role abstracts over faction-specific type names. The compiler and env
+// methods use roles so rules say "barracks" instead of checking for both
+// "barr" (Soviet) and "tent" (Allied).
 type role struct {
-	queue string   // production queue constant
-	types []string // all faction variants for this role
+	queue string   // which production queue builds this
+	types []string // all faction variants (e.g. barr + tent for barracks)
 }
 
-// roles is the static registry of logical roles to concrete type names.
 var roles = map[string]role{
 	"barracks":          {queue: QueueBuilding, types: []string{AlliedBarracks, SovietBarracks}},
 	"power_plant":       {queue: QueueBuilding, types: []string{PowerPlant}},
@@ -147,6 +147,8 @@ var roles = map[string]role{
 	"airfield":          {queue: QueueBuilding, types: []string{Airfield, Helipad}},
 	"naval_yard":        {queue: QueueBuilding, types: []string{NavalYard, SubPen}},
 	"service_depot":     {queue: QueueBuilding, types: []string{ServiceDepot}},
+	"missile_silo":      {queue: QueueDefense, types: []string{MissileSilo}},
+	"iron_curtain":      {queue: QueueDefense, types: []string{IronCurtain}},
 	"basic_aircraft":    {queue: QueueAircraft, types: []string{BlackHawk, Yak}},
 	"advanced_aircraft": {queue: QueueAircraft, types: []string{Longbow, MiG}},
 	"light_tank":        {queue: QueueVehicle, types: []string{LightTank}},
@@ -178,25 +180,25 @@ var roles = map[string]role{
 	"harvester":         {queue: QueueVehicle, types: []string{Harvester}},
 }
 
-// combatVehicleRoles lists roles that represent combat vehicles, ordered by preference.
-// Used by generic vehicle production helpers to work across all factions.
+// combatVehicleRoles determines production priority — first buildable role wins.
+// Order: heaviest armor first, then support vehicles.
 var combatVehicleRoles = []string{
 	"heavy_tank", "medium_tank", "light_tank",
 	"v2_launcher", "artillery", "ranger",
 	"flak_truck", "apc", "demo_truck",
 }
 
-// combatAircraftRoles lists roles that represent combat aircraft, ordered by preference.
+// combatAircraftRoles: advanced (longbow/MiG) preferred over basic (blackhawk/yak).
 var combatAircraftRoles = []string{
 	"advanced_aircraft", "basic_aircraft",
 }
 
-// combatNavalRoles lists roles that represent combat naval units, ordered by preference.
+// combatNavalRoles: heaviest firepower first.
 var combatNavalRoles = []string{
 	"cruiser", "destroyer", "submarine", "gunboat",
 }
 
-// specialistInfantryRoles lists roles for elite infantry, ordered by priority (best first).
+// specialistInfantryRoles: most impactful unit first.
 var specialistInfantryRoles = []string{
 	"tanya", "shock_trooper", "flamethrower", "medic",
 }

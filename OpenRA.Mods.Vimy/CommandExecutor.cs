@@ -90,6 +90,14 @@ namespace OpenRA.Mods.Vimy
 			var queueType = root.GetProperty("queue").GetString();
 			var item = root.GetProperty("item").GetString();
 
+			// Optional placement hint from sidecar.
+			CPos? hint = null;
+			if (root.TryGetProperty("hint_x", out var hx) && root.TryGetProperty("hint_y", out var hy)
+				&& hx.GetInt32() != 0 && hy.GetInt32() != 0)
+			{
+				hint = new CPos(hx.GetInt32(), hy.GetInt32());
+			}
+
 			var queue = FindQueue(bot, queueType);
 			if (queue == null)
 			{
@@ -105,7 +113,7 @@ namespace OpenRA.Mods.Vimy
 				return;
 			}
 
-			var location = ChooseBuildLocation(world, bot.Player, actorInfo, bi);
+			var location = ChooseBuildLocation(world, bot.Player, actorInfo, bi, hint);
 			if (location == null)
 			{
 				Log.Write("debug", $"CommandExecutor: place_building — no valid location for '{item}'");
@@ -352,7 +360,7 @@ namespace OpenRA.Mods.Vimy
 			return actor != null && !actor.IsDead && actor.IsInWorld && actor.Owner == bot.Player;
 		}
 
-		static CPos? ChooseBuildLocation(World world, Player player, ActorInfo actorInfo, BuildingInfo bi)
+		static CPos? ChooseBuildLocation(World world, Player player, ActorInfo actorInfo, BuildingInfo bi, CPos? hint = null)
 		{
 			// Find center of our base from existing buildings
 			var ownBuildings = world.ActorsHavingTrait<Building>()
@@ -362,11 +370,18 @@ namespace OpenRA.Mods.Vimy
 			if (ownBuildings.Length == 0)
 				return null;
 
-			var centerX = (int)ownBuildings.Average(a => a.Location.X);
-			var centerY = (int)ownBuildings.Average(a => a.Location.Y);
-			var center = new CPos(centerX, centerY);
+			// Use hint as search center when provided, otherwise base centroid.
+			CPos center;
+			if (hint.HasValue)
+				center = hint.Value;
+			else
+			{
+				var centerX = (int)ownBuildings.Average(a => a.Location.X);
+				var centerY = (int)ownBuildings.Average(a => a.Location.Y);
+				center = new CPos(centerX, centerY);
+			}
 
-			// Search outward from base center
+			// Search outward from center
 			foreach (var cell in world.Map.FindTilesInAnnulus(center, 0, 20))
 			{
 				if (!world.CanPlaceBuilding(cell, actorInfo, bi, null))
