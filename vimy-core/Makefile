@@ -10,7 +10,7 @@ build:
 	go build -o bin/vimy .
 
 run:
-	go run .
+	go run . $(ARGS)
 
 clean:
 	rm -rf bin/

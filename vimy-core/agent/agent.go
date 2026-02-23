@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -12,14 +13,16 @@ import (
 
 // Agent owns the decision-making for a single player session.
 type Agent struct {
-	Conn    *ipc.Connection
-	Player  string
-	Faction string
-	Engine  *rules.Engine
+	Conn       *ipc.Connection
+	Player     string
+	Faction    string
+	Engine     *rules.Engine
+	Strategist *Strategist
+	ctx        context.Context
 }
 
-func New(conn *ipc.Connection, engine *rules.Engine) *Agent {
-	return &Agent{Conn: conn, Engine: engine}
+func New(conn *ipc.Connection, engine *rules.Engine, strategist *Strategist, ctx context.Context) *Agent {
+	return &Agent{Conn: conn, Engine: engine, Strategist: strategist, ctx: ctx}
 }
 
 // HandleHello completes the handshake so the mod knows the bridge is ready.
@@ -32,6 +35,11 @@ func (a *Agent) HandleHello(env ipc.Envelope) (*ipc.Envelope, error) {
 	a.Player = hello.Player
 	a.Faction = hello.Faction
 	slog.Info("player identified", "player", a.Player, "faction", a.Faction)
+
+	if a.Strategist != nil {
+		a.Strategist.SetFaction(hello.Faction)
+		go a.Strategist.Start(a.ctx)
+	}
 
 	ack, err := ipc.NewEnvelope(ipc.TypeAck, ipc.AckMessage{Status: "ok"})
 	if err != nil {
@@ -55,7 +63,7 @@ func (a *Agent) HandleGameState(env ipc.Envelope) (*ipc.Envelope, error) {
 		buildingTypes[b.Type]++
 	}
 
-	slog.Info("game state received",
+	slog.Debug("game state received",
 		"player", gs.Player.Name,
 		"tick", gs.Tick,
 		"cash", gs.Player.Cash,
@@ -66,6 +74,10 @@ func (a *Agent) HandleGameState(env ipc.Envelope) (*ipc.Envelope, error) {
 		"enemies", len(gs.Enemies),
 		"queues", len(gs.ProductionQueues),
 	)
+
+	if a.Strategist != nil {
+		a.Strategist.UpdateState(gs)
+	}
 
 	if err := a.Engine.Evaluate(gs, a.Faction, a.Conn); err != nil {
 		slog.Error("rule engine error", "error", err)

@@ -11,8 +11,8 @@ func TestDefaultRulesCompile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewEngine(DefaultRules()) failed: %v", err)
 	}
-	if len(engine.rules) != 11 {
-		t.Errorf("expected 11 rules, got %d", len(engine.rules))
+	if len(engine.rules) != 13 {
+		t.Errorf("expected 13 rules, got %d", len(engine.rules))
 	}
 	// Verify priority ordering (descending).
 	for i := 1; i < len(engine.rules); i++ {
@@ -52,6 +52,60 @@ func TestContainsType(t *testing.T) {
 	}
 	if countType(units, "mcv") != 0 {
 		t.Errorf("countType(mcv) = %d, want 0", countType(units, "mcv"))
+	}
+}
+
+func TestFactionVariantMatching(t *testing.T) {
+	// Buildings with faction suffixes (e.g. Ukraine faction).
+	buildings := []model.Building{
+		{Type: "afld.ukraine"},
+		{Type: "powr"},
+	}
+
+	if !containsType(buildings, "afld") {
+		t.Error("containsType should match faction variant afld.ukraine against afld")
+	}
+	if countType(buildings, "afld") != 1 {
+		t.Errorf("countType(afld) = %d, want 1", countType(buildings, "afld"))
+	}
+
+	// CanBuildRole with faction variant in buildable list.
+	env := RuleEnv{
+		State: model.GameState{
+			ProductionQueues: []model.ProductionQueue{
+				{
+					Type:      "Building",
+					Buildable: []string{"powr", "afld.ukraine", "proc"},
+				},
+			},
+		},
+	}
+	if !env.CanBuildRole("airfield") {
+		t.Error("CanBuildRole(airfield) should match afld.ukraine in buildable")
+	}
+
+	// BuildableType should return the actual faction variant name.
+	got := env.BuildableType("airfield")
+	if got != "afld.ukraine" {
+		t.Errorf("BuildableType(airfield) = %q, want %q", got, "afld.ukraine")
+	}
+
+	// CanBuild with faction variant.
+	if !env.CanBuild("Building", "afld") {
+		t.Error("CanBuild(Building, afld) should match afld.ukraine in buildable")
+	}
+
+	// HasRole with faction variant building.
+	envRole := RuleEnv{
+		State: model.GameState{
+			Buildings: buildings,
+		},
+	}
+	if !envRole.HasRole("airfield") {
+		t.Error("HasRole(airfield) should match afld.ukraine building")
+	}
+	if envRole.RoleCount("airfield") != 1 {
+		t.Errorf("RoleCount(airfield) = %d, want 1", envRole.RoleCount("airfield"))
 	}
 }
 

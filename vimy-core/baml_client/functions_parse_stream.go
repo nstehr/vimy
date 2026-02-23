@@ -25,8 +25,8 @@ type parse_stream struct{}
 
 var ParseStream = &parse_stream{}
 
-// / Parse version of ExtractResume (Takes in string and returns stream_types.Resume)
-func (*parse_stream) ExtractResume(text string, opts ...CallOptionFunc) (stream_types.Resume, error) {
+// / Parse version of GenerateDoctrine (Takes in string and returns stream_types.Doctrine)
+func (*parse_stream) GenerateDoctrine(text string, opts ...CallOptionFunc) (stream_types.Doctrine, error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -58,16 +58,16 @@ func (*parse_stream) ExtractResume(text string, opts ...CallOptionFunc) (stream_
 	if err != nil {
 		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
 		// and include the type of the args you're passing in.
-		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: ExtractResume: %w", err)
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: GenerateDoctrine: %w", err)
 		panic(wrapped_err)
 	}
 
-	result, err := bamlRuntime.CallFunctionParse(context.Background(), "ExtractResume", encoded)
+	result, err := bamlRuntime.CallFunctionParse(context.Background(), "GenerateDoctrine", encoded)
 	if err != nil {
-		return stream_types.Resume{}, err
+		return stream_types.Doctrine{}, err
 	}
 
-	casted := (result).(stream_types.Resume)
+	casted := (result).(stream_types.Doctrine)
 
 	return casted, nil
 }

@@ -21,7 +21,7 @@ import (
 	"github.com/nstehr/vimy/vimy-core/baml_client/types"
 )
 
-func ExtractResume(ctx context.Context, resume string, opts ...CallOptionFunc) (types.Resume, error) {
+func GenerateDoctrine(ctx context.Context, directive string, situation string, faction string, opts ...CallOptionFunc) (types.Doctrine, error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -37,7 +37,7 @@ func ExtractResume(ctx context.Context, resume string, opts ...CallOptionFunc) (
 	}
 
 	args := baml.BamlFunctionArguments{
-		Kwargs: map[string]any{"resume": resume},
+		Kwargs: map[string]any{"directive": directive, "situation": situation, "faction": faction},
 		Env:    getEnvVars(callOpts.env),
 	}
 
@@ -63,34 +63,34 @@ func ExtractResume(ctx context.Context, resume string, opts ...CallOptionFunc) (
 	}
 
 	if callOpts.onTick == nil {
-		result, err := bamlRuntime.CallFunction(ctx, "ExtractResume", encoded, callOpts.onTick)
+		result, err := bamlRuntime.CallFunction(ctx, "GenerateDoctrine", encoded, callOpts.onTick)
 		if err != nil {
-			return types.Resume{}, err
+			return types.Doctrine{}, err
 		}
 
 		if result.Error != nil {
-			return types.Resume{}, result.Error
+			return types.Doctrine{}, result.Error
 		}
 
-		casted := (result.Data).(types.Resume)
+		casted := (result.Data).(types.Doctrine)
 
 		return casted, nil
 	} else {
-		channel, err := bamlRuntime.CallFunctionStream(ctx, "ExtractResume", encoded, callOpts.onTick)
+		channel, err := bamlRuntime.CallFunctionStream(ctx, "GenerateDoctrine", encoded, callOpts.onTick)
 		if err != nil {
-			return types.Resume{}, err
+			return types.Doctrine{}, err
 		}
 
 		for result := range channel {
 			if result.Error != nil {
-				return types.Resume{}, result.Error
+				return types.Doctrine{}, result.Error
 			}
 
 			if result.HasData {
-				return result.Data.(types.Resume), nil
+				return result.Data.(types.Doctrine), nil
 			}
 		}
 
-		return types.Resume{}, fmt.Errorf("No data returned from stream")
+		return types.Doctrine{}, fmt.Errorf("No data returned from stream")
 	}
 }

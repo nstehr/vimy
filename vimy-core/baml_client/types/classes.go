@@ -20,20 +20,32 @@ import (
 	"github.com/boundaryml/baml/engine/language_client_go/pkg/cffi"
 )
 
-type Resume struct {
-	Name       string   `json:"name"`
-	Email      string   `json:"email"`
-	Experience []string `json:"experience"`
-	Skills     []string `json:"skills"`
+type Doctrine struct {
+	Name                        string  `json:"name"`
+	Rationale                   string  `json:"rationale"`
+	Economy_priority            float64 `json:"economy_priority"`
+	Aggression                  float64 `json:"aggression"`
+	Ground_defense_priority     float64 `json:"ground_defense_priority"`
+	Air_defense_priority        float64 `json:"air_defense_priority"`
+	Tech_priority               float64 `json:"tech_priority"`
+	Infantry_weight             float64 `json:"infantry_weight"`
+	Vehicle_weight              float64 `json:"vehicle_weight"`
+	Air_weight                  float64 `json:"air_weight"`
+	Naval_weight                float64 `json:"naval_weight"`
+	Ground_attack_group_size    int64   `json:"ground_attack_group_size"`
+	Air_attack_group_size       int64   `json:"air_attack_group_size"`
+	Naval_attack_group_size     int64   `json:"naval_attack_group_size"`
+	Scout_priority              float64 `json:"scout_priority"`
+	Specialized_infantry_weight float64 `json:"specialized_infantry_weight"`
 }
 
-func (c *Resume) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+func (c *Doctrine) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 	typeName := holder.Name
 	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
 		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
 	}
-	if typeName.Name != "Resume" {
-		panic(fmt.Sprintf("expected Resume, got %s", typeName.Name))
+	if typeName.Name != "Doctrine" {
+		panic(fmt.Sprintf("expected Doctrine, got %s", typeName.Name))
 	}
 
 	for _, field := range holder.Fields {
@@ -44,38 +56,98 @@ func (c *Resume) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		case "name":
 			c.Name = baml.Decode(valueHolder).Interface().(string)
 
-		case "email":
-			c.Email = baml.Decode(valueHolder).Interface().(string)
+		case "rationale":
+			c.Rationale = baml.Decode(valueHolder).Interface().(string)
 
-		case "experience":
-			c.Experience = baml.Decode(valueHolder).Interface().([]string)
+		case "economy_priority":
+			c.Economy_priority = baml.Decode(valueHolder).Float()
 
-		case "skills":
-			c.Skills = baml.Decode(valueHolder).Interface().([]string)
+		case "aggression":
+			c.Aggression = baml.Decode(valueHolder).Float()
+
+		case "ground_defense_priority":
+			c.Ground_defense_priority = baml.Decode(valueHolder).Float()
+
+		case "air_defense_priority":
+			c.Air_defense_priority = baml.Decode(valueHolder).Float()
+
+		case "tech_priority":
+			c.Tech_priority = baml.Decode(valueHolder).Float()
+
+		case "infantry_weight":
+			c.Infantry_weight = baml.Decode(valueHolder).Float()
+
+		case "vehicle_weight":
+			c.Vehicle_weight = baml.Decode(valueHolder).Float()
+
+		case "air_weight":
+			c.Air_weight = baml.Decode(valueHolder).Float()
+
+		case "naval_weight":
+			c.Naval_weight = baml.Decode(valueHolder).Float()
+
+		case "ground_attack_group_size":
+			c.Ground_attack_group_size = baml.Decode(valueHolder).Int()
+
+		case "air_attack_group_size":
+			c.Air_attack_group_size = baml.Decode(valueHolder).Int()
+
+		case "naval_attack_group_size":
+			c.Naval_attack_group_size = baml.Decode(valueHolder).Int()
+
+		case "scout_priority":
+			c.Scout_priority = baml.Decode(valueHolder).Float()
+
+		case "specialized_infantry_weight":
+			c.Specialized_infantry_weight = baml.Decode(valueHolder).Float()
 
 		default:
 
-			panic(fmt.Sprintf("unexpected field: %s in class Resume", key))
+			panic(fmt.Sprintf("unexpected field: %s in class Doctrine", key))
 
 		}
 	}
 
 }
 
-func (c Resume) Encode() (*cffi.HostValue, error) {
+func (c Doctrine) Encode() (*cffi.HostValue, error) {
 	fields := map[string]any{}
 
 	fields["name"] = c.Name
 
-	fields["email"] = c.Email
+	fields["rationale"] = c.Rationale
 
-	fields["experience"] = c.Experience
+	fields["economy_priority"] = c.Economy_priority
 
-	fields["skills"] = c.Skills
+	fields["aggression"] = c.Aggression
 
-	return baml.EncodeClass("Resume", fields, nil)
+	fields["ground_defense_priority"] = c.Ground_defense_priority
+
+	fields["air_defense_priority"] = c.Air_defense_priority
+
+	fields["tech_priority"] = c.Tech_priority
+
+	fields["infantry_weight"] = c.Infantry_weight
+
+	fields["vehicle_weight"] = c.Vehicle_weight
+
+	fields["air_weight"] = c.Air_weight
+
+	fields["naval_weight"] = c.Naval_weight
+
+	fields["ground_attack_group_size"] = c.Ground_attack_group_size
+
+	fields["air_attack_group_size"] = c.Air_attack_group_size
+
+	fields["naval_attack_group_size"] = c.Naval_attack_group_size
+
+	fields["scout_priority"] = c.Scout_priority
+
+	fields["specialized_infantry_weight"] = c.Specialized_infantry_weight
+
+	return baml.EncodeClass("Doctrine", fields, nil)
 }
 
-func (c Resume) BamlTypeName() string {
-	return "Resume"
+func (c Doctrine) BamlTypeName() string {
+	return "Doctrine"
 }

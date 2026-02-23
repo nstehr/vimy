@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net"
@@ -24,7 +25,12 @@ const banner = `
 
 Doctrine-Driven RTS Intelligence`
 
+var directive string
+
 func main() {
+	flag.StringVar(&directive, "doctrine", "", "initial doctrine directive (e.g. \"Blitzkrieg\", \"guerrilla warfare\")")
+	flag.Parse()
+
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
@@ -32,7 +38,7 @@ func main() {
 
 	fmt.Println(banner)
 
-	slog.Info("starting vimy")
+	slog.Info("starting vimy", "doctrine", directive)
 
 	const socketPath = "/tmp/vimy.sock"
 
@@ -68,7 +74,7 @@ func main() {
 				}
 			}
 			slog.Info("new connection accepted")
-			go handleConn(conn)
+			go handleConn(ctx, conn)
 		}
 	}()
 
@@ -76,7 +82,7 @@ func main() {
 	slog.Info("shutting down")
 }
 
-func handleConn(conn net.Conn) {
+func handleConn(ctx context.Context, conn net.Conn) {
 	engine, err := rules.NewEngine(rules.DefaultRules())
 	if err != nil {
 		slog.Error("failed to create rule engine", "error", err)
@@ -85,8 +91,13 @@ func handleConn(conn net.Conn) {
 	}
 	slog.Info("rule engine initialized", "rules", len(rules.DefaultRules()))
 
+	var strategist *agent.Strategist
+	if directive != "" {
+		strategist = agent.NewStrategist(engine, directive, 500)
+	}
+
 	c := ipc.NewConnection(conn, nil)
-	a := agent.New(c, engine)
+	a := agent.New(c, engine, strategist, ctx)
 	c.RegisterHandler(ipc.TypeHello, a.HandleHello)
 	c.RegisterHandler(ipc.TypeGameState, a.HandleGameState)
 	c.ReadLoop()

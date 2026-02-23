@@ -15,11 +15,11 @@ package type_builder
 
 import baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
 
-type ResumeClassView struct {
+type DoctrineClassView struct {
 	inner baml.ClassBuilder
 }
 
-func (t *ResumeClassView) ListProperties() ([]ClassPropertyView, error) {
+func (t *DoctrineClassView) ListProperties() ([]ClassPropertyView, error) {
 	result, err := t.inner.ListProperties()
 	if err != nil {
 		return nil, err
@@ -31,30 +31,78 @@ func (t *ResumeClassView) ListProperties() ([]ClassPropertyView, error) {
 	return builders, nil
 }
 
-func (t *ResumeClassView) PropertyName() (ClassPropertyView, error) {
+func (t *DoctrineClassView) PropertyName() (ClassPropertyView, error) {
 	return t.inner.Property("name")
 }
 
-func (t *ResumeClassView) PropertyEmail() (ClassPropertyView, error) {
-	return t.inner.Property("email")
+func (t *DoctrineClassView) PropertyRationale() (ClassPropertyView, error) {
+	return t.inner.Property("rationale")
 }
 
-func (t *ResumeClassView) PropertyExperience() (ClassPropertyView, error) {
-	return t.inner.Property("experience")
+func (t *DoctrineClassView) PropertyEconomy_priority() (ClassPropertyView, error) {
+	return t.inner.Property("economy_priority")
 }
 
-func (t *ResumeClassView) PropertySkills() (ClassPropertyView, error) {
-	return t.inner.Property("skills")
+func (t *DoctrineClassView) PropertyAggression() (ClassPropertyView, error) {
+	return t.inner.Property("aggression")
 }
 
-func (t *TypeBuilder) Resume() (*ResumeClassView, error) {
-	bld, err := t.inner.Class("Resume")
+func (t *DoctrineClassView) PropertyGround_defense_priority() (ClassPropertyView, error) {
+	return t.inner.Property("ground_defense_priority")
+}
+
+func (t *DoctrineClassView) PropertyAir_defense_priority() (ClassPropertyView, error) {
+	return t.inner.Property("air_defense_priority")
+}
+
+func (t *DoctrineClassView) PropertyTech_priority() (ClassPropertyView, error) {
+	return t.inner.Property("tech_priority")
+}
+
+func (t *DoctrineClassView) PropertyInfantry_weight() (ClassPropertyView, error) {
+	return t.inner.Property("infantry_weight")
+}
+
+func (t *DoctrineClassView) PropertyVehicle_weight() (ClassPropertyView, error) {
+	return t.inner.Property("vehicle_weight")
+}
+
+func (t *DoctrineClassView) PropertyAir_weight() (ClassPropertyView, error) {
+	return t.inner.Property("air_weight")
+}
+
+func (t *DoctrineClassView) PropertyNaval_weight() (ClassPropertyView, error) {
+	return t.inner.Property("naval_weight")
+}
+
+func (t *DoctrineClassView) PropertyGround_attack_group_size() (ClassPropertyView, error) {
+	return t.inner.Property("ground_attack_group_size")
+}
+
+func (t *DoctrineClassView) PropertyAir_attack_group_size() (ClassPropertyView, error) {
+	return t.inner.Property("air_attack_group_size")
+}
+
+func (t *DoctrineClassView) PropertyNaval_attack_group_size() (ClassPropertyView, error) {
+	return t.inner.Property("naval_attack_group_size")
+}
+
+func (t *DoctrineClassView) PropertyScout_priority() (ClassPropertyView, error) {
+	return t.inner.Property("scout_priority")
+}
+
+func (t *DoctrineClassView) PropertySpecialized_infantry_weight() (ClassPropertyView, error) {
+	return t.inner.Property("specialized_infantry_weight")
+}
+
+func (t *TypeBuilder) Doctrine() (*DoctrineClassView, error) {
+	bld, err := t.inner.Class("Doctrine")
 	if err != nil {
 		return nil, err
 	}
-	return &ResumeClassView{inner: bld}, nil
+	return &DoctrineClassView{inner: bld}, nil
 }
 
-func (t *ResumeClassView) Type() (baml.Type, error) {
+func (t *DoctrineClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }

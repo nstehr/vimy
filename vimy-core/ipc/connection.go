@@ -66,7 +66,7 @@ func (c *Connection) ReadLoop() {
 				slog.Error("failed to send response", "type", resp.Type, "error", err)
 				return
 			}
-			slog.Info("sent response", "type", resp.Type)
+			slog.Debug("sent response", "type", resp.Type)
 		}
 	}
 }

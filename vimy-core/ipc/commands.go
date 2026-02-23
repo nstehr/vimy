@@ -25,6 +25,8 @@ type ProduceCommand struct {
 type PlaceBuildingCommand struct {
 	Queue string `json:"queue"`
 	Item  string `json:"item"`
+	HintX int    `json:"hint_x,omitempty"` // optional placement search center
+	HintY int    `json:"hint_y,omitempty"` // optional placement search center
 }
 
 type AttackMoveCommand struct {

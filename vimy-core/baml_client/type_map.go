@@ -21,6 +21,6 @@ import (
 )
 
 var typeMap = map[string]reflect.Type{
-	"TYPES.Resume":        reflect.TypeOf(types.Resume{}),
-	"STREAM_TYPES.Resume": reflect.TypeOf(stream_types.Resume{}),
+	"TYPES.Doctrine":        reflect.TypeOf(types.Doctrine{}),
+	"STREAM_TYPES.Doctrine": reflect.TypeOf(stream_types.Doctrine{}),
 }

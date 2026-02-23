@@ -42,8 +42,8 @@ func (s *StreamValue[TStream, TFinal]) Stream() *TStream {
 	return s.as_stream
 }
 
-// / Streaming version of ExtractResume
-func (*stream) ExtractResume(ctx context.Context, resume string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Resume, types.Resume], error) {
+// / Streaming version of GenerateDoctrine
+func (*stream) GenerateDoctrine(ctx context.Context, directive string, situation string, faction string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Doctrine, types.Doctrine], error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -51,7 +51,7 @@ func (*stream) ExtractResume(ctx context.Context, resume string, opts ...CallOpt
 	}
 
 	args := baml.BamlFunctionArguments{
-		Kwargs: map[string]any{"resume": resume},
+		Kwargs: map[string]any{"directive": directive, "situation": situation, "faction": faction},
 		Env:    getEnvVars(callOpts.env),
 	}
 
@@ -75,20 +75,20 @@ func (*stream) ExtractResume(ctx context.Context, resume string, opts ...CallOpt
 	if err != nil {
 		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
 		// and include the type of the args you're passing in.
-		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: ExtractResume: %w", err)
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: GenerateDoctrine: %w", err)
 		panic(wrapped_err)
 	}
 
-	internal_channel, err := bamlRuntime.CallFunctionStream(ctx, "ExtractResume", encoded, callOpts.onTick)
+	internal_channel, err := bamlRuntime.CallFunctionStream(ctx, "GenerateDoctrine", encoded, callOpts.onTick)
 	if err != nil {
 		return nil, err
 	}
 
-	channel := make(chan StreamValue[stream_types.Resume, types.Resume])
+	channel := make(chan StreamValue[stream_types.Doctrine, types.Doctrine])
 	go func() {
 		for result := range internal_channel {
 			if result.Error != nil {
-				channel <- StreamValue[stream_types.Resume, types.Resume]{
+				channel <- StreamValue[stream_types.Doctrine, types.Doctrine]{
 					IsError: true,
 					Error:   result.Error,
 				}
@@ -96,14 +96,14 @@ func (*stream) ExtractResume(ctx context.Context, resume string, opts ...CallOpt
 				return
 			}
 			if result.HasData {
-				data := (result.Data).(types.Resume)
-				channel <- StreamValue[stream_types.Resume, types.Resume]{
+				data := (result.Data).(types.Doctrine)
+				channel <- StreamValue[stream_types.Doctrine, types.Doctrine]{
 					IsFinal:  true,
 					as_final: &data,
 				}
 			} else {
-				data := (result.StreamData).(stream_types.Resume)
-				channel <- StreamValue[stream_types.Resume, types.Resume]{
+				data := (result.StreamData).(stream_types.Doctrine)
+				channel <- StreamValue[stream_types.Doctrine, types.Doctrine]{
 					IsFinal:   false,
 					as_stream: &data,
 				}

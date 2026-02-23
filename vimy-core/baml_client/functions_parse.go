@@ -25,8 +25,8 @@ type parse struct{}
 
 var Parse = &parse{}
 
-// / Parse version of ExtractResume (Takes in string and returns types.Resume)
-func (*parse) ExtractResume(text string, opts ...CallOptionFunc) (types.Resume, error) {
+// / Parse version of GenerateDoctrine (Takes in string and returns types.Doctrine)
+func (*parse) GenerateDoctrine(text string, opts ...CallOptionFunc) (types.Doctrine, error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -58,16 +58,16 @@ func (*parse) ExtractResume(text string, opts ...CallOptionFunc) (types.Resume, 
 	if err != nil {
 		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
 		// and include the type of the args you're passing in.
-		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: ExtractResume: %w", err)
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: GenerateDoctrine: %w", err)
 		panic(wrapped_err)
 	}
 
-	result, err := bamlRuntime.CallFunctionParse(context.Background(), "ExtractResume", encoded)
+	result, err := bamlRuntime.CallFunctionParse(context.Background(), "GenerateDoctrine", encoded)
 	if err != nil {
-		return types.Resume{}, err
+		return types.Doctrine{}, err
 	}
 
-	casted := (result).(types.Resume)
+	casted := (result).(types.Doctrine)
 
 	return casted, nil
 }

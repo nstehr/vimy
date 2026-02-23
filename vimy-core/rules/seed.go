@@ -60,11 +60,19 @@ func DefaultRules() []*Rule {
 			Action:       ActionProduceInfantry,
 		},
 		{
+			Name:         "defend-base",
+			Priority:     400,
+			Category:     "combat",
+			Exclusive:    false,
+			ConditionSrc: `BaseUnderAttack() && len(IdleGroundUnits()) >= 2`,
+			Action:       ActionDefendBase,
+		},
+		{
 			Name:         "scout-with-idle-units",
 			Priority:     350,
 			Category:     "recon",
 			Exclusive:    false,
-			ConditionSrc: `!EnemiesVisible() && len(IdleMilitaryUnits()) >= 2`,
+			ConditionSrc: `!EnemiesVisible() && !HasEnemyIntel() && len(IdleGroundUnits()) >= 5`,
 			Action:       ActionScoutWithIdleUnits,
 		},
 		{
@@ -72,8 +80,16 @@ func DefaultRules() []*Rule {
 			Priority:     300,
 			Category:     "combat",
 			Exclusive:    false,
-			ConditionSrc: `len(IdleMilitaryUnits()) >= 5 && NearestEnemy() != nil`,
-			Action:       ActionAttackMoveIdleUnits,
+			ConditionSrc: `len(IdleGroundUnits()) >= 5 && NearestEnemy() != nil`,
+			Action:       ActionAttackMoveIdleGroundUnits,
+		},
+		{
+			Name:         "attack-known-base",
+			Priority:     290,
+			Category:     "combat",
+			Exclusive:    false,
+			ConditionSrc: `!EnemiesVisible() && HasEnemyIntel() && len(IdleGroundUnits()) >= 5`,
+			Action:       ActionAttackKnownBaseGround,
 		},
 		{
 			Name:         "repair-buildings",
@@ -86,7 +102,7 @@ func DefaultRules() []*Rule {
 		{
 			Name:         "return-idle-harvesters",
 			Priority:     100,
-			Category:     "economy",
+			Category:     "harvester",
 			Exclusive:    false,
 			ConditionSrc: `len(IdleHarvesters()) > 0`,
 			Action:       ActionSendIdleHarvesters,

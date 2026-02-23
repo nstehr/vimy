@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/expr-lang/expr"
@@ -39,8 +40,12 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	e.mu.RUnlock()
 
 	env := RuleEnv{State: gs, Faction: faction, Memory: e.Memory}
+	updateIntel(env)
+	updateBuiltRoles(env)
+	logMilitaryDiagnostics(env)
 	fired := make(map[string]bool) // category → exclusive rule already fired
 
+	anyFired := false
 	for _, r := range rules {
 		if fired[r.Category] {
 			continue
@@ -57,6 +62,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 			continue
 		}
 
+		anyFired = true
 		slog.Info("rule fired", "rule", r.Name, "priority", r.Priority, "category", r.Category)
 
 		if err := r.Action(env, conn); err != nil {
@@ -66,6 +72,10 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 		if r.Exclusive {
 			fired[r.Category] = true
 		}
+	}
+
+	if !anyFired {
+		logIdleDiagnostics(gs)
 	}
 
 	return nil
@@ -78,11 +88,69 @@ func (e *Engine) Swap(newRules []*Rule) error {
 	if err != nil {
 		return err
 	}
+	names := make([]string, len(compiled))
+	for i, r := range compiled {
+		names[i] = r.Name
+	}
 	e.mu.Lock()
 	e.rules = compiled
 	e.mu.Unlock()
-	slog.Info("rule set swapped", "count", len(compiled))
+	slog.Info("rule set swapped", "count", len(compiled), "rules", names)
 	return nil
+}
+
+// logIdleDiagnostics logs production queue state when no rules fire,
+// throttled to once every 100 ticks to avoid log spam.
+var lastDiagTick int
+
+func logIdleDiagnostics(gs model.GameState) {
+	if gs.Tick-lastDiagTick < 100 {
+		return
+	}
+	lastDiagTick = gs.Tick
+
+	for _, pq := range gs.ProductionQueues {
+		slog.Warn("idle diagnostics",
+			"queue", pq.Type,
+			"busy", pq.CurrentItem != "" && pq.CurrentProgress < 100,
+			"ready", pq.CurrentItem != "" && pq.CurrentProgress >= 100,
+			"buildable", strings.Join(pq.Buildable, ","),
+		)
+	}
+	slog.Warn("idle diagnostics",
+		"cash", gs.Player.Cash,
+		"resources", gs.Player.Resources,
+		"powerProvided", gs.Player.PowerProvided,
+		"powerDrained", gs.Player.PowerDrained,
+		"powerState", gs.Player.PowerState,
+	)
+}
+
+// logMilitaryDiagnostics logs army/combat state periodically, regardless of
+// whether other rules fire. Helps diagnose why attack/scout rules don't trigger.
+var lastMilitaryDiagTick int
+
+func logMilitaryDiagnostics(env RuleEnv) {
+	if env.State.Tick-lastMilitaryDiagTick < 100 {
+		return
+	}
+	lastMilitaryDiagTick = env.State.Tick
+
+	totalUnits := len(env.State.Units)
+	idleGround := len(env.IdleGroundUnits())
+	idleAir := len(env.IdleCombatAircraft())
+	idleNaval := len(env.IdleNavalUnits())
+	enemiesVisible := env.EnemiesVisible()
+	hasIntel := env.HasEnemyIntel()
+
+	slog.Info("military diagnostics",
+		"totalUnits", totalUnits,
+		"idleGround", idleGround,
+		"idleCombatAir", idleAir,
+		"idleNaval", idleNaval,
+		"enemiesVisible", enemiesVisible,
+		"hasEnemyIntel", hasIntel,
+	)
 }
 
 // compileRules compiles all rule conditions and sorts by priority descending.

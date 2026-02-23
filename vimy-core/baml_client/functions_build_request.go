@@ -24,8 +24,8 @@ type build_request struct{}
 
 var Request = &build_request{}
 
-// Build HTTP request for ExtractResume (returns baml.HTTPRequest)
-func (*build_request) ExtractResume(resume string, opts ...CallOptionFunc) (baml.HTTPRequest, error) {
+// Build HTTP request for GenerateDoctrine (returns baml.HTTPRequest)
+func (*build_request) GenerateDoctrine(directive string, situation string, faction string, opts ...CallOptionFunc) (baml.HTTPRequest, error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -41,7 +41,7 @@ func (*build_request) ExtractResume(resume string, opts ...CallOptionFunc) (baml
 	}
 
 	args := baml.BamlFunctionArguments{
-		Kwargs: map[string]any{"resume": resume, "stream": false},
+		Kwargs: map[string]any{"directive": directive, "situation": situation, "faction": faction, "stream": false},
 		Env:    getEnvVars(callOpts.env),
 	}
 
@@ -63,9 +63,9 @@ func (*build_request) ExtractResume(resume string, opts ...CallOptionFunc) (baml
 
 	encoded, err := args.Encode()
 	if err != nil {
-		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: ExtractResume: %w", err)
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: GenerateDoctrine: %w", err)
 		panic(wrapped_err)
 	}
 
-	return bamlRuntime.BuildRequest(context.Background(), "ExtractResume", encoded)
+	return bamlRuntime.BuildRequest(context.Background(), "GenerateDoctrine", encoded)
 }

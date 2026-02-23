@@ -7,6 +7,7 @@ type GameState struct {
 	Units            []Unit            `json:"units"`
 	ProductionQueues []ProductionQueue `json:"productionQueues"`
 	Enemies          []Enemy           `json:"enemies"`
+	Capturables      []Enemy           `json:"capturables"`
 	MapWidth         int               `json:"mapWidth"`
 	MapHeight        int               `json:"mapHeight"`
 }
