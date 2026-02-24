@@ -225,7 +225,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Priority:     800,
 		Category:     "rebuild",
 		Exclusive:    true,
-		ConditionSrc: `LostRole("naval_yard") && !QueueBusy("Building") && CanBuildRole("naval_yard") && Cash() >= 300`,
+		ConditionSrc: `MapHasWater() && LostRole("naval_yard") && !QueueBusy("Building") && CanBuildRole("naval_yard") && Cash() >= 300`,
 		Action:       ActionProduceNavalYard,
 	})
 
@@ -293,21 +293,22 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Priority:     750,
 		Category:     "economy",
 		Exclusive:    true,
-		ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("refinery") && RoleCount("refinery") < %d && Cash() >= %d`, refineryMax, refineryCashThreshold),
+		ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("refinery") && RoleCount("refinery") < %d && (RoleCount("refinery") < 2 || HasRole("barracks") || HasRole("war_factory")) && Cash() >= %d`, refineryMax, refineryCashThreshold),
 		Action:       ActionProduceRefinery,
 	})
 
 	// --- Prerequisite buildings ---
 
 	// Radar is the tech-tree gate for vehicles, aircraft, and naval —
-	// include it whenever any of those paths are desired.
+	// include it whenever any of those paths are desired. Requires at
+	// least one military building so it doesn't jump ahead of barracks.
 	if d.VehicleWeight > DoctrineEnabled || d.AirWeight > DoctrineEnabled || d.NavalWeight > DoctrineEnabled || d.TechPriority > DoctrineSignificant {
 		rules = append(rules, &Rule{
 			Name:         "build-radar",
 			Priority:     710,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("radar") && !HasRole("radar") && PowerExcess() >= 0 && Cash() >= 1000`,
+			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("radar") && !HasRole("radar") && (HasRole("barracks") || HasRole("war_factory")) && PowerExcess() >= 0 && Cash() >= 1000`,
 			Action:       ActionProduceRadar,
 		})
 	}
@@ -316,7 +317,14 @@ func CompileDoctrine(d Doctrine) []*Rule {
 	// Priorities scale with weight so the doctrine's emphasis determines
 	// build order (e.g. air-heavy → airfield before war factory).
 
+	// needsBarracks tracks whether barracks is already included by the
+	// infantry/defense path. If radar is included but barracks isn't,
+	// we add it as a prerequisite building (barracks is the cheapest
+	// tech-tree gate to radar in RA).
+	barracksIncluded := false
+
 	if d.InfantryWeight > DoctrineEnabled || d.GroundDefensePriority > DoctrineModerate {
+		barracksIncluded = true
 		barracksPriority := lerp(600, 700, d.InfantryWeight)
 		if d.GroundDefensePriority > DoctrineModerate {
 			barracksPriority = max(barracksPriority, lerp(600, 700, d.GroundDefensePriority))
@@ -340,6 +348,21 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Exclusive:    true,
 			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("war_factory") && !HasRole("war_factory") && PowerExcess() >= 0 && Cash() >= 2000`,
 			Action:       ActionProduceWarFactory,
+		})
+	}
+
+	// If radar is included but no military building rule exists yet,
+	// add barracks as a prerequisite — it's the cheapest tech-tree gate
+	// to radar in RA and prevents a deadlock where radar can never be built.
+	radarIncluded := d.VehicleWeight > DoctrineEnabled || d.AirWeight > DoctrineEnabled || d.NavalWeight > DoctrineEnabled || d.TechPriority > DoctrineSignificant
+	if radarIncluded && !barracksIncluded && d.VehicleWeight <= DoctrineEnabled {
+		rules = append(rules, &Rule{
+			Name:         "build-barracks-prereq",
+			Priority:     600,
+			Category:     "economy",
+			Exclusive:    true,
+			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("barracks") && !HasRole("barracks") && PowerExcess() >= 0 && Cash() >= 300`,
+			Action:       ActionProduceBarracks,
 		})
 	}
 
@@ -373,7 +396,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     navalYardPriority,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("naval_yard") && !HasRole("naval_yard") && PowerExcess() >= 0 && Cash() >= 500`,
+			ConditionSrc: `MapHasWater() && !QueueBusy("Building") && CanBuildRole("naval_yard") && !HasRole("naval_yard") && PowerExcess() >= 0 && Cash() >= 500`,
 			Action:       ActionProduceNavalYard,
 		})
 	}
@@ -511,6 +534,18 @@ func CompileDoctrine(d Doctrine) []*Rule {
 
 	// --- Unit production ---
 
+	// Vehicle-cost reservation: when the doctrine wants both infantry and
+	// vehicles, infantry rules save 800 cash headroom so vehicle production
+	// can start. The reservation releases once vehicles reach their cap.
+	infantrySavings := append([]buildingSaving(nil), savings...)
+	if d.VehicleWeight > DoctrineModerate {
+		vehicleCapForSaving := lerp(3, 10, d.VehicleWeight)
+		infantrySavings = append(infantrySavings, buildingSaving{
+			existsExpr: fmt.Sprintf("CombatVehicleCount() >= %d", vehicleCapForSaving),
+			cost:       800,
+		})
+	}
+
 	if d.InfantryWeight > DoctrineEnabled {
 		infantryCap := lerp(5, 20, d.InfantryWeight)
 		rules = append(rules, &Rule{
@@ -518,7 +553,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     500,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuild("Infantry","e1") && UnitCount("e1") < %d && %s`, infantryCap, buildCashCondition(100, savings)),
+			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuild("Infantry","e1") && UnitCount("e1") < %d && %s`, infantryCap, buildCashCondition(100, infantrySavings)),
 			Action:       ActionProduceInfantry,
 		})
 	}
@@ -530,7 +565,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     490,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuildAnySpecialist() && SpecialistInfantryCount() < %d && %s`, specialistCap, buildCashCondition(300, savings)),
+			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuildAnySpecialist() && SpecialistInfantryCount() < %d && %s`, specialistCap, buildCashCondition(300, infantrySavings)),
 			Action:       ActionProduceSpecialistInfantry,
 		})
 	}
@@ -566,7 +601,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     440,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("submarine") || CanBuildRole("destroyer")) && (RoleCount("submarine") + RoleCount("destroyer")) < %d && %s`, navalCap, buildCashCondition(1000, savings)),
+			ConditionSrc: fmt.Sprintf(`MapHasWater() && HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("submarine") || CanBuildRole("destroyer")) && (RoleCount("submarine") + RoleCount("destroyer")) < %d && %s`, navalCap, buildCashCondition(1000, savings)),
 			Action:       ActionProduceShip,
 		})
 	}
@@ -580,7 +615,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     495,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuildRole("rocket_soldier") && RoleCount("rocket_soldier") < %d && %s`, rocketCap, buildCashCondition(300, savings)),
+			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuildRole("rocket_soldier") && RoleCount("rocket_soldier") < %d && %s`, rocketCap, buildCashCondition(300, infantrySavings)),
 			Action:       ActionProduceRocketSoldier,
 		})
 	}
@@ -616,7 +651,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     435,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("cruiser") || CanBuildRole("destroyer")) && (RoleCount("cruiser") + RoleCount("destroyer")) < %d && %s`, advNavalCap, buildCashCondition(2000, savings)),
+			ConditionSrc: fmt.Sprintf(`MapHasWater() && HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("cruiser") || CanBuildRole("destroyer")) && (RoleCount("cruiser") + RoleCount("destroyer")) < %d && %s`, advNavalCap, buildCashCondition(2000, savings)),
 			Action:       ActionProduceAdvancedShip,
 		})
 	}
@@ -698,7 +733,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Category:     "combat",
 		Exclusive:    false,
 		ConditionSrc: `SquadExists("ground-attack") && SquadIdleCount("ground-attack") >= SquadSize("ground-attack") && !EnemiesVisible() && HasEnemyIntel()`,
-		Action:       SquadAttackKnownBase("ground-attack"),
+		Action:       SquadAttackKnownBase("ground-attack", d.Aggression),
 	})
 
 	// --- Air attack ---
@@ -730,7 +765,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Category:     "air_combat",
 			Exclusive:    false,
 			ConditionSrc: `SquadExists("air-attack") && SquadIdleCount("air-attack") >= SquadSize("air-attack") && !EnemiesVisible() && HasEnemyIntel()`,
-			Action:       SquadAttackKnownBase("air-attack"),
+			Action:       SquadAttackKnownBase("air-attack", d.Aggression),
 		})
 	}
 
@@ -744,7 +779,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     navalAttackPriority + SquadFormBonus,
 			Category:     "squad_form",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`!SquadExists("naval-attack") && len(UnassignedIdleNaval()) >= %d`, d.NavalAttackGroupSize),
+			ConditionSrc: fmt.Sprintf(`MapHasWater() && !SquadExists("naval-attack") && len(UnassignedIdleNaval()) >= %d`, d.NavalAttackGroupSize),
 			Action:       FormSquad("naval-attack", "naval", d.NavalAttackGroupSize, "attack"),
 		})
 
@@ -753,7 +788,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     navalAttackPriority,
 			Category:     "naval_combat",
 			Exclusive:    false,
-			ConditionSrc: `SquadExists("naval-attack") && SquadIdleCount("naval-attack") >= SquadSize("naval-attack") && NearestEnemy() != nil`,
+			ConditionSrc: `MapHasWater() && SquadExists("naval-attack") && SquadIdleCount("naval-attack") >= SquadSize("naval-attack") && NearestEnemy() != nil`,
 			Action:       SquadAttackMove("naval-attack"),
 		})
 	}

@@ -21,6 +21,24 @@ import (
 )
 
 var typeMap = map[string]reflect.Type{
-	"TYPES.Doctrine":        reflect.TypeOf(types.Doctrine{}),
-	"STREAM_TYPES.Doctrine": reflect.TypeOf(stream_types.Doctrine{}),
+	"TYPES.ActiveProduction":          reflect.TypeOf(types.ActiveProduction{}),
+	"STREAM_TYPES.ActiveProduction":   reflect.TypeOf(stream_types.ActiveProduction{}),
+	"TYPES.Doctrine":                  reflect.TypeOf(types.Doctrine{}),
+	"STREAM_TYPES.Doctrine":           reflect.TypeOf(stream_types.Doctrine{}),
+	"TYPES.EnemyBase":                 reflect.TypeOf(types.EnemyBase{}),
+	"STREAM_TYPES.EnemyBase":          reflect.TypeOf(stream_types.EnemyBase{}),
+	"TYPES.GameEvent":                 reflect.TypeOf(types.GameEvent{}),
+	"STREAM_TYPES.GameEvent":          reflect.TypeOf(stream_types.GameEvent{}),
+	"TYPES.GameSituation":             reflect.TypeOf(types.GameSituation{}),
+	"STREAM_TYPES.GameSituation":      reflect.TypeOf(stream_types.GameSituation{}),
+	"TYPES.PowerStatus":               reflect.TypeOf(types.PowerStatus{}),
+	"STREAM_TYPES.PowerStatus":        reflect.TypeOf(stream_types.PowerStatus{}),
+	"TYPES.SquadInfo":                 reflect.TypeOf(types.SquadInfo{}),
+	"STREAM_TYPES.SquadInfo":          reflect.TypeOf(stream_types.SquadInfo{}),
+	"TYPES.SuperweaponFire":           reflect.TypeOf(types.SuperweaponFire{}),
+	"STREAM_TYPES.SuperweaponFire":    reflect.TypeOf(stream_types.SuperweaponFire{}),
+	"TYPES.SupportPowerStatus":        reflect.TypeOf(types.SupportPowerStatus{}),
+	"STREAM_TYPES.SupportPowerStatus": reflect.TypeOf(stream_types.SupportPowerStatus{}),
+	"TYPES.TypeCount":                 reflect.TypeOf(types.TypeCount{}),
+	"STREAM_TYPES.TypeCount":          reflect.TypeOf(stream_types.TypeCount{}),
 }

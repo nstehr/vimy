@@ -20,6 +20,60 @@ import (
 	"github.com/boundaryml/baml/engine/language_client_go/pkg/cffi"
 )
 
+type ActiveProduction struct {
+	Queue    *string `json:"queue"`
+	Item     *string `json:"item"`
+	Progress *int64  `json:"progress"`
+}
+
+func (c *ActiveProduction) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "ActiveProduction" {
+		panic(fmt.Sprintf("expected ActiveProduction, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "queue":
+			c.Queue = baml.Decode(valueHolder).Interface().(*string)
+
+		case "item":
+			c.Item = baml.Decode(valueHolder).Interface().(*string)
+
+		case "progress":
+			c.Progress = baml.Decode(valueHolder).Interface().(*int64)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class ActiveProduction", key))
+
+		}
+	}
+
+}
+
+func (c ActiveProduction) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["queue"] = c.Queue
+
+	fields["item"] = c.Item
+
+	fields["progress"] = c.Progress
+
+	return baml.EncodeClass("ActiveProduction", fields, nil)
+}
+
+func (c ActiveProduction) BamlTypeName() string {
+	return "ActiveProduction"
+}
+
 type Doctrine struct {
 	Name                        *string  `json:"name"`
 	Rationale                   *string  `json:"rationale"`
@@ -156,4 +210,520 @@ func (c Doctrine) Encode() (*cffi.HostValue, error) {
 
 func (c Doctrine) BamlTypeName() string {
 	return "Doctrine"
+}
+
+type EnemyBase struct {
+	Owner          *string `json:"owner"`
+	X              *int64  `json:"x"`
+	Y              *int64  `json:"y"`
+	Last_seen_tick *int64  `json:"last_seen_tick"`
+}
+
+func (c *EnemyBase) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "EnemyBase" {
+		panic(fmt.Sprintf("expected EnemyBase, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "owner":
+			c.Owner = baml.Decode(valueHolder).Interface().(*string)
+
+		case "x":
+			c.X = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "y":
+			c.Y = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "last_seen_tick":
+			c.Last_seen_tick = baml.Decode(valueHolder).Interface().(*int64)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class EnemyBase", key))
+
+		}
+	}
+
+}
+
+func (c EnemyBase) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["owner"] = c.Owner
+
+	fields["x"] = c.X
+
+	fields["y"] = c.Y
+
+	fields["last_seen_tick"] = c.Last_seen_tick
+
+	return baml.EncodeClass("EnemyBase", fields, nil)
+}
+
+func (c EnemyBase) BamlTypeName() string {
+	return "EnemyBase"
+}
+
+type GameEvent struct {
+	Kind   *string `json:"kind"`
+	Tick   *int64  `json:"tick"`
+	Detail *string `json:"detail"`
+}
+
+func (c *GameEvent) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "GameEvent" {
+		panic(fmt.Sprintf("expected GameEvent, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "kind":
+			c.Kind = baml.Decode(valueHolder).Interface().(*string)
+
+		case "tick":
+			c.Tick = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "detail":
+			c.Detail = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class GameEvent", key))
+
+		}
+	}
+
+}
+
+func (c GameEvent) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["kind"] = c.Kind
+
+	fields["tick"] = c.Tick
+
+	fields["detail"] = c.Detail
+
+	return baml.EncodeClass("GameEvent", fields, nil)
+}
+
+func (c GameEvent) BamlTypeName() string {
+	return "GameEvent"
+}
+
+type GameSituation struct {
+	Tick              *int64               `json:"tick"`
+	Phase             *string              `json:"phase"`
+	Cash              *int64               `json:"cash"`
+	Resources         *int64               `json:"resources"`
+	Resource_capacity *int64               `json:"resource_capacity"`
+	Power             *PowerStatus         `json:"power"`
+	Buildings         []TypeCount          `json:"buildings"`
+	Units             []TypeCount          `json:"units"`
+	Idle_unit_count   *int64               `json:"idle_unit_count"`
+	Active_production []ActiveProduction   `json:"active_production"`
+	Support_powers    []SupportPowerStatus `json:"support_powers"`
+	Superweapon_fires []SuperweaponFire    `json:"superweapon_fires"`
+	Squads            []SquadInfo          `json:"squads"`
+	Enemies_visible   *int64               `json:"enemies_visible"`
+	Known_enemy_bases []EnemyBase          `json:"known_enemy_bases"`
+	Map_width         *int64               `json:"map_width"`
+	Map_height        *int64               `json:"map_height"`
+	Recent_events     []GameEvent          `json:"recent_events"`
+}
+
+func (c *GameSituation) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "GameSituation" {
+		panic(fmt.Sprintf("expected GameSituation, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "tick":
+			c.Tick = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "phase":
+			c.Phase = baml.Decode(valueHolder).Interface().(*string)
+
+		case "cash":
+			c.Cash = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "resources":
+			c.Resources = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "resource_capacity":
+			c.Resource_capacity = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "power":
+			c.Power = baml.Decode(valueHolder).Interface().(*PowerStatus)
+
+		case "buildings":
+			c.Buildings = baml.Decode(valueHolder).Interface().([]TypeCount)
+
+		case "units":
+			c.Units = baml.Decode(valueHolder).Interface().([]TypeCount)
+
+		case "idle_unit_count":
+			c.Idle_unit_count = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "active_production":
+			c.Active_production = baml.Decode(valueHolder).Interface().([]ActiveProduction)
+
+		case "support_powers":
+			c.Support_powers = baml.Decode(valueHolder).Interface().([]SupportPowerStatus)
+
+		case "superweapon_fires":
+			c.Superweapon_fires = baml.Decode(valueHolder).Interface().([]SuperweaponFire)
+
+		case "squads":
+			c.Squads = baml.Decode(valueHolder).Interface().([]SquadInfo)
+
+		case "enemies_visible":
+			c.Enemies_visible = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "known_enemy_bases":
+			c.Known_enemy_bases = baml.Decode(valueHolder).Interface().([]EnemyBase)
+
+		case "map_width":
+			c.Map_width = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "map_height":
+			c.Map_height = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "recent_events":
+			c.Recent_events = baml.Decode(valueHolder).Interface().([]GameEvent)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class GameSituation", key))
+
+		}
+	}
+
+}
+
+func (c GameSituation) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["tick"] = c.Tick
+
+	fields["phase"] = c.Phase
+
+	fields["cash"] = c.Cash
+
+	fields["resources"] = c.Resources
+
+	fields["resource_capacity"] = c.Resource_capacity
+
+	fields["power"] = c.Power
+
+	fields["buildings"] = c.Buildings
+
+	fields["units"] = c.Units
+
+	fields["idle_unit_count"] = c.Idle_unit_count
+
+	fields["active_production"] = c.Active_production
+
+	fields["support_powers"] = c.Support_powers
+
+	fields["superweapon_fires"] = c.Superweapon_fires
+
+	fields["squads"] = c.Squads
+
+	fields["enemies_visible"] = c.Enemies_visible
+
+	fields["known_enemy_bases"] = c.Known_enemy_bases
+
+	fields["map_width"] = c.Map_width
+
+	fields["map_height"] = c.Map_height
+
+	fields["recent_events"] = c.Recent_events
+
+	return baml.EncodeClass("GameSituation", fields, nil)
+}
+
+func (c GameSituation) BamlTypeName() string {
+	return "GameSituation"
+}
+
+type PowerStatus struct {
+	Drained  *int64  `json:"drained"`
+	Provided *int64  `json:"provided"`
+	State    *string `json:"state"`
+}
+
+func (c *PowerStatus) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "PowerStatus" {
+		panic(fmt.Sprintf("expected PowerStatus, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "drained":
+			c.Drained = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "provided":
+			c.Provided = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "state":
+			c.State = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class PowerStatus", key))
+
+		}
+	}
+
+}
+
+func (c PowerStatus) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["drained"] = c.Drained
+
+	fields["provided"] = c.Provided
+
+	fields["state"] = c.State
+
+	return baml.EncodeClass("PowerStatus", fields, nil)
+}
+
+func (c PowerStatus) BamlTypeName() string {
+	return "PowerStatus"
+}
+
+type SquadInfo struct {
+	Name       *string `json:"name"`
+	Role       *string `json:"role"`
+	Unit_count *int64  `json:"unit_count"`
+}
+
+func (c *SquadInfo) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "SquadInfo" {
+		panic(fmt.Sprintf("expected SquadInfo, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "name":
+			c.Name = baml.Decode(valueHolder).Interface().(*string)
+
+		case "role":
+			c.Role = baml.Decode(valueHolder).Interface().(*string)
+
+		case "unit_count":
+			c.Unit_count = baml.Decode(valueHolder).Interface().(*int64)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class SquadInfo", key))
+
+		}
+	}
+
+}
+
+func (c SquadInfo) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["name"] = c.Name
+
+	fields["role"] = c.Role
+
+	fields["unit_count"] = c.Unit_count
+
+	return baml.EncodeClass("SquadInfo", fields, nil)
+}
+
+func (c SquadInfo) BamlTypeName() string {
+	return "SquadInfo"
+}
+
+type SuperweaponFire struct {
+	Key          *string `json:"key"`
+	Total_fires  *int64  `json:"total_fires"`
+	Recent_fires *int64  `json:"recent_fires"`
+}
+
+func (c *SuperweaponFire) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "SuperweaponFire" {
+		panic(fmt.Sprintf("expected SuperweaponFire, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "key":
+			c.Key = baml.Decode(valueHolder).Interface().(*string)
+
+		case "total_fires":
+			c.Total_fires = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "recent_fires":
+			c.Recent_fires = baml.Decode(valueHolder).Interface().(*int64)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class SuperweaponFire", key))
+
+		}
+	}
+
+}
+
+func (c SuperweaponFire) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["key"] = c.Key
+
+	fields["total_fires"] = c.Total_fires
+
+	fields["recent_fires"] = c.Recent_fires
+
+	return baml.EncodeClass("SuperweaponFire", fields, nil)
+}
+
+func (c SuperweaponFire) BamlTypeName() string {
+	return "SuperweaponFire"
+}
+
+type SupportPowerStatus struct {
+	Key    *string `json:"key"`
+	Status *string `json:"status"`
+}
+
+func (c *SupportPowerStatus) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "SupportPowerStatus" {
+		panic(fmt.Sprintf("expected SupportPowerStatus, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "key":
+			c.Key = baml.Decode(valueHolder).Interface().(*string)
+
+		case "status":
+			c.Status = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class SupportPowerStatus", key))
+
+		}
+	}
+
+}
+
+func (c SupportPowerStatus) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["key"] = c.Key
+
+	fields["status"] = c.Status
+
+	return baml.EncodeClass("SupportPowerStatus", fields, nil)
+}
+
+func (c SupportPowerStatus) BamlTypeName() string {
+	return "SupportPowerStatus"
+}
+
+type TypeCount struct {
+	Type  *string `json:"type"`
+	Count *int64  `json:"count"`
+}
+
+func (c *TypeCount) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "TypeCount" {
+		panic(fmt.Sprintf("expected TypeCount, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "type":
+			c.Type = baml.Decode(valueHolder).Interface().(*string)
+
+		case "count":
+			c.Count = baml.Decode(valueHolder).Interface().(*int64)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class TypeCount", key))
+
+		}
+	}
+
+}
+
+func (c TypeCount) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["type"] = c.Type
+
+	fields["count"] = c.Count
+
+	return baml.EncodeClass("TypeCount", fields, nil)
+}
+
+func (c TypeCount) BamlTypeName() string {
+	return "TypeCount"
 }

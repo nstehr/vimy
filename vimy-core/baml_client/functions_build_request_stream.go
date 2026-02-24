@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
+	"github.com/nstehr/vimy/vimy-core/baml_client/types"
 )
 
 type build_request_stream struct{}
@@ -25,7 +26,7 @@ type build_request_stream struct{}
 var StreamRequest = &build_request_stream{}
 
 // Build streaming HTTP request for GenerateDoctrine (returns baml.HTTPRequest)
-func (*build_request_stream) GenerateDoctrine(directive string, situation string, faction string, opts ...CallOptionFunc) (baml.HTTPRequest, error) {
+func (*build_request_stream) GenerateDoctrine(directive string, situation types.GameSituation, faction string, opts ...CallOptionFunc) (baml.HTTPRequest, error) {
 
 	var callOpts callOption
 	for _, opt := range opts {

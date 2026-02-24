@@ -17,9 +17,10 @@ import (
 // Rules fire in priority order; exclusive rules block lower-priority rules
 // in the same category, preventing conflicting orders on the same queue.
 type Engine struct {
-	mu     sync.RWMutex
-	rules  []*Rule
-	Memory map[string]any
+	mu      sync.RWMutex
+	rules   []*Rule
+	Memory  map[string]any
+	Terrain *model.TerrainGrid
 }
 
 // NewEngine compiles all rule conditions into expr bytecode and sorts by priority.
@@ -40,7 +41,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	rules := e.rules
 	e.mu.RUnlock()
 
-	env := RuleEnv{State: gs, Faction: faction, Memory: e.Memory}
+	env := RuleEnv{State: gs, Faction: faction, Memory: e.Memory, Terrain: e.Terrain}
 	updateIntel(env)
 	updateBuiltRoles(env)
 	updateSquads(env)
@@ -102,6 +103,14 @@ func (e *Engine) Swap(newRules []*Rule) error {
 	e.mu.Unlock()
 	slog.Info("rule set swapped", "count", len(compiled), "rules", names)
 	return nil
+}
+
+// SetTerrain stores the coarse terrain grid received during the hello handshake.
+func (e *Engine) SetTerrain(grid *model.TerrainGrid) {
+	e.mu.Lock()
+	e.Terrain = grid
+	e.mu.Unlock()
+	slog.Info("terrain grid set", "cols", grid.Cols, "rows", grid.Rows, "cellW", grid.CellW, "cellH", grid.CellH)
 }
 
 // logIdleDiagnostics helps debug "why isn't the AI doing anything?" —

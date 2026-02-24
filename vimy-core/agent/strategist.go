@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 
 	baml_client "github.com/nstehr/vimy/vimy-core/baml_client"
@@ -24,6 +23,9 @@ type Strategist struct {
 	interval  int    // re-evaluate every N ticks
 	lastTick  int    // tick of last evaluation
 	ready     chan struct{}
+	prevSnap  *stateSnapshot // previous state snapshot for event diff
+	cooldown  int            // minimum ticks between event-driven evaluations
+	pending   []Event        // events accumulated since last evaluation
 }
 
 // NewStrategist creates a strategist. If directive is empty, defaults to "balanced".
@@ -38,6 +40,7 @@ func NewStrategist(engine *rules.Engine, directive string, interval int) *Strate
 		engine:    engine,
 		directive: directive,
 		interval:  interval,
+		cooldown:  100,
 		ready:     make(chan struct{}, 1),
 	}
 }
@@ -49,18 +52,56 @@ func (s *Strategist) SetFaction(f string) {
 	s.mu.Unlock()
 }
 
-// UpdateState stores the latest game state. Signals readiness on the first call
-// and on interval boundaries.
+// UpdateState stores the latest game state, detects events, and signals
+// readiness on the first call, interval boundaries, or significant events.
 func (s *Strategist) UpdateState(gs model.GameState) {
 	s.mu.Lock()
 	first := s.latest == nil
 	s.latest = &gs
-	shouldSignal := first || (gs.Tick-s.lastTick >= s.interval)
-	s.mu.Unlock()
 
-	// TODO(phase-8): Add event-driven re-evaluation mechanism so the strategist
-	// can react immediately to significant game events (e.g. superweapon fires)
-	// rather than waiting for the next interval boundary.
+	// Detect events against the previous snapshot.
+	// prevSnap's domain ID sets are accumulated (high-water mark) so that
+	// losses add up across multiple state updates instead of resetting each tick.
+	events := detectEvents(gs, s.engine.Memory, s.prevSnap)
+	snap := takeSnapshot(gs, s.engine.Memory)
+
+	if s.prevSnap != nil {
+		snap.lastCounterTick = s.prevSnap.lastCounterTick
+
+		counterFired := false
+		for _, e := range events {
+			if e.Kind == EventStrategyCountered {
+				snap.lastCounterTick = gs.Tick
+				counterFired = true
+			}
+		}
+
+		if counterFired {
+			// Counter event fired: reset baseline to fresh snapshot.
+			snap.lossBaselineTick = gs.Tick
+		} else if gs.Tick-s.prevSnap.lossBaselineTick < counterCooldownTicks {
+			// Within accumulation window: carry forward union of unit IDs
+			// so losses accumulate across multiple game state updates.
+			snap.infantryIDs = mergeIDSets(s.prevSnap.infantryIDs, snap.infantryIDs)
+			snap.vehicleIDs = mergeIDSets(s.prevSnap.vehicleIDs, snap.vehicleIDs)
+			snap.aircraftIDs = mergeIDSets(s.prevSnap.aircraftIDs, snap.aircraftIDs)
+			snap.lossBaselineTick = s.prevSnap.lossBaselineTick
+		} else {
+			// Accumulation window expired: reset baseline.
+			snap.lossBaselineTick = gs.Tick
+		}
+	} else {
+		snap.lossBaselineTick = gs.Tick
+	}
+
+	s.prevSnap = &snap
+	s.pending = append(s.pending, events...)
+
+	shouldSignal := first || (gs.Tick-s.lastTick >= s.interval)
+	if !shouldSignal && len(events) > 0 && (gs.Tick-s.lastTick >= s.cooldown) {
+		shouldSignal = true
+	}
+	s.mu.Unlock()
 
 	if shouldSignal {
 		select {
@@ -88,14 +129,21 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	s.mu.Lock()
 	gs := s.latest
 	faction := s.faction
+	events := s.pending
+	s.pending = nil
 	s.mu.Unlock()
 
 	if gs == nil {
 		return
 	}
 
-	situation := summarize(*gs, s.engine.Memory)
-	slog.Debug("strategist evaluating", "tick", gs.Tick, "directive", s.directive)
+	for _, e := range events {
+		slog.Info("event detected", "kind", e.Kind, "tick", e.Tick, "detail", e.Detail)
+	}
+	slog.Debug("strategist evaluating", "tick", gs.Tick, "directive", s.directive, "events", len(events))
+
+	swFires := snapshotSuperweaponFires(s.engine.Memory)
+	situation := buildSituation(*gs, s.engine.Memory, events, swFires)
 
 	bamlDoctrine, err := baml_client.GenerateDoctrine(ctx, s.directive, situation, faction)
 	if err != nil {
@@ -158,35 +206,65 @@ func fromBAML(d types.Doctrine) rules.Doctrine {
 	}
 }
 
-// summarize produces a human-readable text summary of game state for the LLM.
-func summarize(gs model.GameState, memory map[string]any) string {
-	var b strings.Builder
-
-	// Phase heuristic
-	phase := "Early Game"
-	if gs.Tick > 3000 {
-		phase = "Late Game"
-	} else if gs.Tick > 1000 {
-		phase = "Mid Game"
+// snapshotSuperweaponFires computes superweapon fire deltas and updates
+// the memory snapshot for the next evaluation cycle. Returns the fire
+// entries for inclusion in the GameSituation struct.
+func snapshotSuperweaponFires(memory map[string]any) []types.SuperweaponFire {
+	totalFires := rules.GetSuperweaponFires(memory)
+	if len(totalFires) == 0 {
+		return nil
 	}
 
-	fmt.Fprintf(&b, "Tick: %d | Phase: %s\n", gs.Tick, phase)
-	fmt.Fprintf(&b, "Cash: %d | Resources: %d/%d\n",
-		gs.Player.Cash, gs.Player.Resources, gs.Player.ResourceCapacity)
-	fmt.Fprintf(&b, "Power: %d/%d (%s)\n",
-		gs.Player.PowerDrained, gs.Player.PowerProvided, gs.Player.PowerState)
+	lastSeenFires, _ := memory["superweaponFiresSnapshot"].(map[string]int)
+
+	var fires []types.SuperweaponFire
+	for key, total := range totalFires {
+		recent := total - lastSeenFires[key]
+		fires = append(fires, types.SuperweaponFire{
+			Key:          key,
+			Total_fires:  int64(total),
+			Recent_fires: int64(recent),
+		})
+	}
+
+	// Snapshot for next eval's delta
+	snapshot := make(map[string]int, len(totalFires))
+	for k, v := range totalFires {
+		snapshot[k] = v
+	}
+	memory["superweaponFiresSnapshot"] = snapshot
+
+	return fires
+}
+
+// buildSituation constructs a structured GameSituation from the current
+// game state, memory, events, and superweapon fire data. Pure function
+// (aside from reading memory) — no side effects.
+func buildSituation(gs model.GameState, memory map[string]any, events []Event, swFires []types.SuperweaponFire) types.GameSituation {
+	sit := types.GameSituation{
+		Tick:              int64(gs.Tick),
+		Phase:             gamePhase(gs.Tick),
+		Cash:              int64(gs.Player.Cash),
+		Resources:         int64(gs.Player.Resources),
+		Resource_capacity: int64(gs.Player.ResourceCapacity),
+		Power: types.PowerStatus{
+			Drained:  int64(gs.Player.PowerDrained),
+			Provided: int64(gs.Player.PowerProvided),
+			State:    gs.Player.PowerState,
+		},
+		Enemies_visible:   int64(len(gs.Enemies)),
+		Map_width:         int64(gs.MapWidth),
+		Map_height:        int64(gs.MapHeight),
+		Superweapon_fires: swFires,
+	}
 
 	// Buildings summary
 	buildingCounts := make(map[string]int)
 	for _, b := range gs.Buildings {
 		buildingCounts[b.Type]++
 	}
-	if len(buildingCounts) > 0 {
-		fmt.Fprintf(&b, "Buildings:")
-		for t, c := range buildingCounts {
-			fmt.Fprintf(&b, " %dx %s", c, t)
-		}
-		fmt.Fprintln(&b)
+	for t, c := range buildingCounts {
+		sit.Buildings = append(sit.Buildings, types.TypeCount{Type: t, Count: int64(c)})
 	}
 
 	// Units summary
@@ -198,83 +276,68 @@ func summarize(gs model.GameState, memory map[string]any) string {
 			idleCount++
 		}
 	}
-	if len(unitCounts) > 0 {
-		fmt.Fprintf(&b, "Units:")
-		for t, c := range unitCounts {
-			fmt.Fprintf(&b, " %dx %s", c, t)
-		}
-		fmt.Fprintf(&b, " (%d idle)\n", idleCount)
+	for t, c := range unitCounts {
+		sit.Units = append(sit.Units, types.TypeCount{Type: t, Count: int64(c)})
 	}
+	sit.Idle_unit_count = int64(idleCount)
 
-	// Production queues
+	// Active production queues
 	for _, pq := range gs.ProductionQueues {
 		if pq.CurrentItem != "" {
-			fmt.Fprintf(&b, "Queue %s: producing %s (%d%%)\n", pq.Type, pq.CurrentItem, pq.CurrentProgress)
+			sit.Active_production = append(sit.Active_production, types.ActiveProduction{
+				Queue:    pq.Type,
+				Item:     pq.CurrentItem,
+				Progress: int64(pq.CurrentProgress),
+			})
 		}
 	}
 
 	// Support powers
-	if len(gs.SupportPowers) > 0 {
-		fmt.Fprintf(&b, "Support Powers:")
-		for _, sp := range gs.SupportPowers {
-			status := "charging"
-			if sp.Ready {
-				status = "READY"
-			} else if sp.TotalTicks > 0 {
-				pct := 100 - (100 * sp.RemainingTicks / sp.TotalTicks)
-				status = fmt.Sprintf("%d%%", pct)
-			}
-			fmt.Fprintf(&b, " %s(%s)", sp.Key, status)
+	for _, sp := range gs.SupportPowers {
+		status := "charging"
+		if sp.Ready {
+			status = "READY"
+		} else if sp.TotalTicks > 0 {
+			pct := 100 - (100 * sp.RemainingTicks / sp.TotalTicks)
+			status = fmt.Sprintf("%d%%", pct)
 		}
-		fmt.Fprintln(&b)
-	}
-
-	// Superweapon fire history
-	totalFires := rules.GetSuperweaponFires(memory)
-	lastSeenFires, _ := memory["superweaponFiresSnapshot"].(map[string]int)
-	if len(totalFires) > 0 {
-		fmt.Fprintf(&b, "Superweapon launches:")
-		for key, total := range totalFires {
-			recent := total - lastSeenFires[key]
-			if recent > 0 {
-				fmt.Fprintf(&b, " %s=%d (+%d since last eval)", key, total, recent)
-			} else {
-				fmt.Fprintf(&b, " %s=%d", key, total)
-			}
-		}
-		fmt.Fprintln(&b)
-
-		// Snapshot for next eval's delta
-		snapshot := make(map[string]int)
-		for k, v := range totalFires {
-			snapshot[k] = v
-		}
-		memory["superweaponFiresSnapshot"] = snapshot
+		sit.Support_powers = append(sit.Support_powers, types.SupportPowerStatus{
+			Key:    sp.Key,
+			Status: status,
+		})
 	}
 
 	// Squads
 	if squads := rules.GetSquads(memory); len(squads) > 0 {
-		fmt.Fprintf(&b, "Squads:")
 		for _, sq := range squads {
-			fmt.Fprintf(&b, " %s(%s, %d units)", sq.Name, sq.Role, len(sq.UnitIDs))
+			sit.Squads = append(sit.Squads, types.SquadInfo{
+				Name:       sq.Name,
+				Role:       sq.Role,
+				Unit_count: int64(len(sq.UnitIDs)),
+			})
 		}
-		fmt.Fprintln(&b)
 	}
 
-	// Enemies
-	fmt.Fprintf(&b, "Enemies visible: %d\n", len(gs.Enemies))
-
-	// Enemy intel
-	if bases, ok := memory["enemyBases"].(map[string]rules.EnemyBaseIntel); ok && len(bases) > 0 {
-		for owner, base := range bases {
-			fmt.Fprintf(&b, "Known enemy base [%s]: (%d, %d) last seen tick %d\n", owner, base.X, base.Y, base.Tick)
+	// Known enemy bases
+	if bases, ok := memory["enemyBases"].(map[string]rules.EnemyBaseIntel); ok {
+		for _, base := range bases {
+			sit.Known_enemy_bases = append(sit.Known_enemy_bases, types.EnemyBase{
+				Owner:          base.Owner,
+				X:              int64(base.X),
+				Y:              int64(base.Y),
+				Last_seen_tick: int64(base.Tick),
+			})
 		}
-	} else {
-		fmt.Fprintln(&b, "Known enemy bases: none (not yet scouted)")
 	}
 
-	// Map
-	fmt.Fprintf(&b, "Map: %dx%d\n", gs.MapWidth, gs.MapHeight)
+	// Recent events
+	for _, e := range events {
+		sit.Recent_events = append(sit.Recent_events, types.GameEvent{
+			Kind:   string(e.Kind),
+			Tick:   int64(e.Tick),
+			Detail: e.Detail,
+		})
+	}
 
-	return b.String()
+	return sit
 }

@@ -21,7 +21,7 @@ import (
 	"github.com/nstehr/vimy/vimy-core/baml_client/types"
 )
 
-func GenerateDoctrine(ctx context.Context, directive string, situation string, faction string, opts ...CallOptionFunc) (types.Doctrine, error) {
+func GenerateDoctrine(ctx context.Context, directive string, situation types.GameSituation, faction string, opts ...CallOptionFunc) (types.Doctrine, error) {
 
 	var callOpts callOption
 	for _, opt := range opts {

@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"math"
 	"math/rand"
+	"slices"
 	"strings"
 
 	"github.com/nstehr/vimy/vimy-core/ipc"
@@ -239,7 +240,7 @@ func ActionProduceShip(env RuleEnv, conn *ipc.Connection) error {
 func ActionPlaceDefense(env RuleEnv, conn *ipc.Connection) error {
 	for _, pq := range env.State.ProductionQueues {
 		if strings.EqualFold(pq.Type, QueueDefense) && pq.CurrentItem != "" && pq.CurrentProgress >= 100 {
-			hx, hy := randomBaseOffset(env)
+			hx, hy := defenseHint(env)
 			slog.Debug("placing defense", "item", pq.CurrentItem, "hint_x", hx, "hint_y", hy)
 			return conn.Send(ipc.TypePlaceBuilding, ipc.PlaceBuildingCommand{
 				Queue: QueueDefense,
@@ -252,9 +253,11 @@ func ActionPlaceDefense(env RuleEnv, conn *ipc.Connection) error {
 	return nil
 }
 
-// randomBaseOffset provides a hint for the C# placement algorithm.
-// The engine spiral-searches from this point to find valid placement cells.
-func randomBaseOffset(env RuleEnv) (int, int) {
+// defenseHint generates a scored placement hint for defense buildings.
+// It evaluates 16 candidate positions around the base perimeter annulus
+// (70%-110% of radius), scores each by four weighted factors, then picks
+// randomly from the top 3 to balance strategic placement with unpredictability.
+func defenseHint(env RuleEnv) (int, int) {
 	buildings := env.State.Buildings
 	if len(buildings) == 0 {
 		return 0, 0
@@ -283,10 +286,150 @@ func randomBaseOffset(env RuleEnv) (int, int) {
 		radius = 3
 	}
 
-	// Pick a random point within the base radius (uniform disk sampling).
-	angle := rand.Float64() * 2 * math.Pi
-	r := radius * math.Sqrt(rand.Float64())
-	return cx + int(r*math.Cos(angle)), cy + int(r*math.Sin(angle))
+	// Threat direction: unit vector toward nearest known enemy base.
+	var threatX, threatY float64
+	hasThreat := false
+	if base := env.NearestEnemyBase(); base != nil {
+		dx := float64(base.X - cx)
+		dy := float64(base.Y - cy)
+		d := math.Sqrt(dx*dx + dy*dy)
+		if d > 0 {
+			threatX = dx / d
+			threatY = dy / d
+			hasThreat = true
+		}
+	}
+
+	// High-value building positions.
+	highValueTypes := []string{
+		ConstructionYard, Refinery, WarFactory,
+		AlliedTechCenter, SovietTechCenter,
+		MissileSilo, IronCurtain, Airfield, Helipad,
+	}
+	var hvBuildings []model.Building
+	for _, b := range buildings {
+		for _, t := range highValueTypes {
+			if matchesType(b.Type, t) {
+				hvBuildings = append(hvBuildings, b)
+				break
+			}
+		}
+	}
+
+	// Existing defense positions for spread calculation.
+	defenseTypes := []string{"pbox", "hbox", "gun", "ftur", "tsla", "agun", "sam"}
+	var defenses []model.Building
+	for _, b := range buildings {
+		for _, t := range defenseTypes {
+			if matchesType(b.Type, t) {
+				defenses = append(defenses, b)
+				break
+			}
+		}
+	}
+
+	// Generate 16 candidates in the perimeter annulus (70%-110% of radius).
+	type candidate struct {
+		x, y  int
+		score float64
+	}
+	var candidates []candidate
+	for i := range 16 {
+		angle := float64(i) * 2 * math.Pi / 16
+		r := radius * (0.7 + rand.Float64()*0.4)
+		x := cx + int(r*math.Cos(angle))
+		y := cy + int(r*math.Sin(angle))
+
+		// Terrain filter.
+		if env.Terrain != nil {
+			t := env.Terrain.AtMapPos(x, y)
+			if t != model.Land && t != model.Bridge {
+				continue
+			}
+		}
+
+		// Score: threat direction (weight 0.35).
+		var threatScore float64
+		if hasThreat {
+			cdx := float64(x - cx)
+			cdy := float64(y - cy)
+			cd := math.Sqrt(cdx*cdx + cdy*cdy)
+			if cd > 0 {
+				dot := (cdx/cd)*threatX + (cdy/cd)*threatY
+				threatScore = (dot + 1) / 2 // normalize [-1,1] to [0,1]
+			}
+		} else {
+			threatScore = 0.5 // neutral when no intel
+		}
+
+		// Score: high-value protection (weight 0.30).
+		var protectionScore float64
+		if len(hvBuildings) > 0 {
+			minDist := math.MaxFloat64
+			for _, hv := range hvBuildings {
+				dx := float64(x - hv.X)
+				dy := float64(y - hv.Y)
+				d := math.Sqrt(dx*dx + dy*dy)
+				if d < minDist {
+					minDist = d
+				}
+			}
+			protectionScore = 1 - minDist/(2*radius)
+			if protectionScore < 0 {
+				protectionScore = 0
+			}
+		}
+
+		// Score: spread from existing defenses (weight 0.25).
+		var spreadScore float64
+		if len(defenses) > 0 {
+			minDist := math.MaxFloat64
+			for _, def := range defenses {
+				dx := float64(x - def.X)
+				dy := float64(y - def.Y)
+				dist := math.Sqrt(dx*dx + dy*dy)
+				if dist < minDist {
+					minDist = dist
+				}
+			}
+			spreadScore = minDist / radius
+			if spreadScore > 1 {
+				spreadScore = 1
+			}
+		} else {
+			spreadScore = 1.0
+		}
+
+		// Score: perimeter bonus (weight 0.10).
+		distFromCenter := math.Sqrt(float64((x-cx)*(x-cx) + (y-cy)*(y-cy)))
+		perimeterScore := distFromCenter / radius
+		if perimeterScore > 1 {
+			perimeterScore = 1
+		}
+
+		score := 0.35*threatScore + 0.30*protectionScore + 0.25*spreadScore + 0.10*perimeterScore
+		candidates = append(candidates, candidate{x, y, score})
+	}
+
+	// Fallback: all candidates filtered out (water/cliff everywhere).
+	if len(candidates) == 0 {
+		return cx, cy
+	}
+
+	// Sort by score descending, pick randomly from top 3.
+	slices.SortFunc(candidates, func(a, b candidate) int {
+		if a.score > b.score {
+			return -1
+		}
+		if a.score < b.score {
+			return 1
+		}
+		return 0
+	})
+
+	top := min(3, len(candidates))
+	pick := candidates[rand.Intn(top)]
+	return pick.x, pick.y
 }
 
 func ActionProduceDefense(env RuleEnv, conn *ipc.Connection) error {
@@ -463,7 +606,7 @@ func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
 }
 
 func ActionScoutWithIdleUnits(env RuleEnv, conn *ipc.Connection) error {
-	waypoints := generateWaypoints(env.State.MapWidth, env.State.MapHeight)
+	waypoints := generateWaypoints(env.State.MapWidth, env.State.MapHeight, env.Terrain)
 	if len(waypoints) == 0 {
 		return nil
 	}
@@ -490,8 +633,10 @@ func ActionScoutWithIdleUnits(env RuleEnv, conn *ipc.Connection) error {
 }
 
 // generateWaypoints creates a 9-point search pattern (center, corners, edges)
-// with 10% margins to avoid map-edge pathing issues.
-func generateWaypoints(mapW, mapH int) [][2]int {
+// with 10% margins to avoid map-edge pathing issues. When a terrain grid is
+// available, waypoints in Water or Cliff zones are filtered out so ground
+// scouts only visit reachable positions.
+func generateWaypoints(mapW, mapH int, terrain *model.TerrainGrid) [][2]int {
 	if mapW == 0 || mapH == 0 {
 		return nil
 	}
@@ -502,7 +647,7 @@ func generateWaypoints(mapW, mapH int) [][2]int {
 	midX := mapW / 2
 	midY := mapH / 2
 
-	return [][2]int{
+	candidates := [][2]int{
 		{midX, midY},   // center
 		{minX, minY},   // top-left
 		{maxX, minY},   // top-right
@@ -513,6 +658,22 @@ func generateWaypoints(mapW, mapH int) [][2]int {
 		{midX, maxY},   // bottom-mid
 		{minX, midY},   // left-mid
 	}
+
+	if terrain == nil {
+		return candidates
+	}
+
+	var filtered [][2]int
+	for _, wp := range candidates {
+		t := terrain.AtMapPos(wp[0], wp[1])
+		if t == model.Land || t == model.Bridge {
+			filtered = append(filtered, wp)
+		}
+	}
+	if len(filtered) == 0 {
+		return candidates // fallback: don't leave scouts with zero waypoints
+	}
+	return filtered
 }
 
 func ActionProduceEngineer(env RuleEnv, conn *ipc.Connection) error {
@@ -935,6 +1096,35 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 	}
 }
 
+// huntBaseState tracks which radial position a squad is cycling through
+// when hunting around an enemy base. Stored in memory per squad name.
+type huntBaseState struct {
+	BaseX, BaseY int
+	Step         int
+}
+
+// huntOffset converts a hunt step into an (dx, dy) offset from the base centroid.
+// Step 0 returns (0,0) — the centroid itself. Steps 1-16 produce two concentric
+// rings of 8 positions each, spaced 45° apart:
+//
+//	Steps 1-8:   inner ring at radius R   (ring = 1)
+//	Steps 9-16:  outer ring at radius 2R  (ring = 2)
+//
+// idx selects one of 8 compass points (0-7) via modular arithmetic.
+// ring selects which concentric circle via integer division.
+// The squad sweeps close to the centroid first (catching buildings just
+// inside fog of war), then widens to find outlying structures.
+func huntOffset(step, radius int) (int, int) {
+	if step <= 0 {
+		return 0, 0
+	}
+	idx := (step - 1) % 8        // which of 8 compass points (0-7)
+	ring := (step-1)/8 + 1       // which ring: 1 for steps 1-8, 2 for 9-16
+	r := float64(radius * ring)  // inner ring = R, outer ring = 2R
+	angle := float64(idx) * 2 * math.Pi / 8
+	return int(r * math.Cos(angle)), int(r * math.Sin(angle))
+}
+
 func SquadAttackMove(name string) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
 		enemy := env.NearestEnemy()
@@ -954,7 +1144,7 @@ func SquadAttackMove(name string) ActionFunc {
 	}
 }
 
-func SquadAttackKnownBase(name string) ActionFunc {
+func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
 		base := env.NearestEnemyBase()
 		if base == nil {
@@ -964,11 +1154,66 @@ func SquadAttackKnownBase(name string) ActionFunc {
 		if len(ids) == 0 {
 			return nil
 		}
-		slog.Debug("squad attacking known base", "squad", name, "count", len(ids), "owner", base.Owner, "x", base.X, "y", base.Y)
+
+		// Retrieve or initialize hunt state for this squad.
+		memKey := "huntBase:" + name
+		state, _ := env.Memory[memKey].(*huntBaseState)
+		if state == nil {
+			state = &huntBaseState{}
+		}
+
+		// Reset to step 0 (approach centroid) when base intel changes.
+		if state.BaseX != base.X || state.BaseY != base.Y {
+			state.BaseX = base.X
+			state.BaseY = base.Y
+			state.Step = 0
+		}
+
+		tx, ty := base.X, base.Y
+		if state.Step > 0 {
+			// Compute aggression-scaled radius.
+			mapDim := max(env.State.MapWidth, env.State.MapHeight)
+			baseRadius := mapDim / 16
+			scale := 0.25 + aggression*1.25
+			radius := int(float64(baseRadius) * scale)
+			if radius < 1 {
+				radius = 1
+			}
+
+			dx, dy := huntOffset(state.Step, radius)
+			tx = base.X + dx
+			ty = base.Y + dy
+
+			// Clamp to map bounds.
+			tx = max(0, min(tx, env.State.MapWidth-1))
+			ty = max(0, min(ty, env.State.MapHeight-1))
+
+			// Terrain check for ground/naval squads — skip water/cliff.
+			squads := getSquads(env.Memory)
+			sq := squads[name]
+			if sq != nil && sq.Domain != "air" && env.Terrain != nil {
+				t := env.Terrain.AtMapPos(tx, ty)
+				if t != model.Land && t != model.Bridge {
+					tx, ty = base.X, base.Y // fallback to centroid
+				}
+			}
+		}
+
+		slog.Debug("squad attacking known base", "squad", name, "count", len(ids),
+			"owner", base.Owner, "step", state.Step, "x", tx, "y", ty)
+
+		// Advance step: 0→1, 1→2, ..., 16→1 (wrap, skip 0 on subsequent cycles).
+		if state.Step >= 16 {
+			state.Step = 1
+		} else {
+			state.Step++
+		}
+		env.Memory[memKey] = state
+
 		return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
 			ActorIDs: ids,
-			X:        base.X,
-			Y:        base.Y,
+			X:        tx,
+			Y:        ty,
 		})
 	}
 }

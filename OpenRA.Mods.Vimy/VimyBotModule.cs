@@ -68,9 +68,10 @@ namespace OpenRA.Mods.Vimy
 		void SendHello(IBot bot)
 		{
 			var faction = bot.Player.Faction.InternalName;
-			var data = $"{{\"player\":\"{bot.Player.PlayerName}\",\"faction\":\"{faction}\"}}";
+			var terrainJson = TerrainGridSerializer.Serialize(world);
+			var data = $"{{\"player\":\"{bot.Player.PlayerName}\",\"faction\":\"{faction}\",\"terrain\":{terrainJson}}}";
 			SendEnvelope("hello", data);
-			Log.Write("debug", $"Sent hello for player {bot.Player.PlayerName}, faction {faction}");
+			Log.Write("debug", $"Sent hello for player {bot.Player.PlayerName}, faction {faction} (terrain grid included)");
 		}
 
 		void IBotTick.BotTick(IBot bot)

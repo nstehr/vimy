@@ -36,6 +36,22 @@ func (a *Agent) HandleHello(env ipc.Envelope) (*ipc.Envelope, error) {
 	a.Faction = hello.Faction
 	slog.Info("player identified", "player", a.Player, "faction", a.Faction)
 
+	if hello.Terrain != nil {
+		grid := &model.TerrainGrid{
+			Cols:  hello.Terrain.Cols,
+			Rows:  hello.Terrain.Rows,
+			CellW: hello.Terrain.CellW,
+			CellH: hello.Terrain.CellH,
+			Grid:  make([]model.TerrainType, len(hello.Terrain.Grid)),
+		}
+		for i, v := range hello.Terrain.Grid {
+			grid.Grid[i] = model.TerrainType(v)
+		}
+		a.Engine.SetTerrain(grid)
+	} else {
+		slog.Warn("no terrain data in hello — terrain awareness disabled")
+	}
+
 	if a.Strategist != nil {
 		a.Strategist.SetFaction(hello.Faction)
 		go a.Strategist.Start(a.ctx)
@@ -75,12 +91,12 @@ func (a *Agent) HandleGameState(env ipc.Envelope) (*ipc.Envelope, error) {
 		"queues", len(gs.ProductionQueues),
 	)
 
-	if a.Strategist != nil {
-		a.Strategist.UpdateState(gs)
-	}
-
 	if err := a.Engine.Evaluate(gs, a.Faction, a.Conn); err != nil {
 		slog.Error("rule engine error", "error", err)
+	}
+
+	if a.Strategist != nil {
+		a.Strategist.UpdateState(gs)
 	}
 
 	ack, err := ipc.NewEnvelope(ipc.TypeAck, ipc.AckMessage{Status: "ok"})

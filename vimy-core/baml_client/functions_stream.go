@@ -43,7 +43,7 @@ func (s *StreamValue[TStream, TFinal]) Stream() *TStream {
 }
 
 // / Streaming version of GenerateDoctrine
-func (*stream) GenerateDoctrine(ctx context.Context, directive string, situation string, faction string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Doctrine, types.Doctrine], error) {
+func (*stream) GenerateDoctrine(ctx context.Context, directive string, situation types.GameSituation, faction string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Doctrine, types.Doctrine], error) {
 
 	var callOpts callOption
 	for _, opt := range opts {

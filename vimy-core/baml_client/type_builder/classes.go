@@ -15,6 +15,46 @@ package type_builder
 
 import baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
 
+type ActiveProductionClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *ActiveProductionClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *ActiveProductionClassView) PropertyQueue() (ClassPropertyView, error) {
+	return t.inner.Property("queue")
+}
+
+func (t *ActiveProductionClassView) PropertyItem() (ClassPropertyView, error) {
+	return t.inner.Property("item")
+}
+
+func (t *ActiveProductionClassView) PropertyProgress() (ClassPropertyView, error) {
+	return t.inner.Property("progress")
+}
+
+func (t *TypeBuilder) ActiveProduction() (*ActiveProductionClassView, error) {
+	bld, err := t.inner.Class("ActiveProduction")
+	if err != nil {
+		return nil, err
+	}
+	return &ActiveProductionClassView{inner: bld}, nil
+}
+
+func (t *ActiveProductionClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
 type DoctrineClassView struct {
 	inner baml.ClassBuilder
 }
@@ -108,5 +148,381 @@ func (t *TypeBuilder) Doctrine() (*DoctrineClassView, error) {
 }
 
 func (t *DoctrineClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type EnemyBaseClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *EnemyBaseClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *EnemyBaseClassView) PropertyOwner() (ClassPropertyView, error) {
+	return t.inner.Property("owner")
+}
+
+func (t *EnemyBaseClassView) PropertyX() (ClassPropertyView, error) {
+	return t.inner.Property("x")
+}
+
+func (t *EnemyBaseClassView) PropertyY() (ClassPropertyView, error) {
+	return t.inner.Property("y")
+}
+
+func (t *EnemyBaseClassView) PropertyLast_seen_tick() (ClassPropertyView, error) {
+	return t.inner.Property("last_seen_tick")
+}
+
+func (t *TypeBuilder) EnemyBase() (*EnemyBaseClassView, error) {
+	bld, err := t.inner.Class("EnemyBase")
+	if err != nil {
+		return nil, err
+	}
+	return &EnemyBaseClassView{inner: bld}, nil
+}
+
+func (t *EnemyBaseClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type GameEventClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *GameEventClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *GameEventClassView) PropertyKind() (ClassPropertyView, error) {
+	return t.inner.Property("kind")
+}
+
+func (t *GameEventClassView) PropertyTick() (ClassPropertyView, error) {
+	return t.inner.Property("tick")
+}
+
+func (t *GameEventClassView) PropertyDetail() (ClassPropertyView, error) {
+	return t.inner.Property("detail")
+}
+
+func (t *TypeBuilder) GameEvent() (*GameEventClassView, error) {
+	bld, err := t.inner.Class("GameEvent")
+	if err != nil {
+		return nil, err
+	}
+	return &GameEventClassView{inner: bld}, nil
+}
+
+func (t *GameEventClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type GameSituationClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *GameSituationClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *GameSituationClassView) PropertyTick() (ClassPropertyView, error) {
+	return t.inner.Property("tick")
+}
+
+func (t *GameSituationClassView) PropertyPhase() (ClassPropertyView, error) {
+	return t.inner.Property("phase")
+}
+
+func (t *GameSituationClassView) PropertyCash() (ClassPropertyView, error) {
+	return t.inner.Property("cash")
+}
+
+func (t *GameSituationClassView) PropertyResources() (ClassPropertyView, error) {
+	return t.inner.Property("resources")
+}
+
+func (t *GameSituationClassView) PropertyResource_capacity() (ClassPropertyView, error) {
+	return t.inner.Property("resource_capacity")
+}
+
+func (t *GameSituationClassView) PropertyPower() (ClassPropertyView, error) {
+	return t.inner.Property("power")
+}
+
+func (t *GameSituationClassView) PropertyBuildings() (ClassPropertyView, error) {
+	return t.inner.Property("buildings")
+}
+
+func (t *GameSituationClassView) PropertyUnits() (ClassPropertyView, error) {
+	return t.inner.Property("units")
+}
+
+func (t *GameSituationClassView) PropertyIdle_unit_count() (ClassPropertyView, error) {
+	return t.inner.Property("idle_unit_count")
+}
+
+func (t *GameSituationClassView) PropertyActive_production() (ClassPropertyView, error) {
+	return t.inner.Property("active_production")
+}
+
+func (t *GameSituationClassView) PropertySupport_powers() (ClassPropertyView, error) {
+	return t.inner.Property("support_powers")
+}
+
+func (t *GameSituationClassView) PropertySuperweapon_fires() (ClassPropertyView, error) {
+	return t.inner.Property("superweapon_fires")
+}
+
+func (t *GameSituationClassView) PropertySquads() (ClassPropertyView, error) {
+	return t.inner.Property("squads")
+}
+
+func (t *GameSituationClassView) PropertyEnemies_visible() (ClassPropertyView, error) {
+	return t.inner.Property("enemies_visible")
+}
+
+func (t *GameSituationClassView) PropertyKnown_enemy_bases() (ClassPropertyView, error) {
+	return t.inner.Property("known_enemy_bases")
+}
+
+func (t *GameSituationClassView) PropertyMap_width() (ClassPropertyView, error) {
+	return t.inner.Property("map_width")
+}
+
+func (t *GameSituationClassView) PropertyMap_height() (ClassPropertyView, error) {
+	return t.inner.Property("map_height")
+}
+
+func (t *GameSituationClassView) PropertyRecent_events() (ClassPropertyView, error) {
+	return t.inner.Property("recent_events")
+}
+
+func (t *TypeBuilder) GameSituation() (*GameSituationClassView, error) {
+	bld, err := t.inner.Class("GameSituation")
+	if err != nil {
+		return nil, err
+	}
+	return &GameSituationClassView{inner: bld}, nil
+}
+
+func (t *GameSituationClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type PowerStatusClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *PowerStatusClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *PowerStatusClassView) PropertyDrained() (ClassPropertyView, error) {
+	return t.inner.Property("drained")
+}
+
+func (t *PowerStatusClassView) PropertyProvided() (ClassPropertyView, error) {
+	return t.inner.Property("provided")
+}
+
+func (t *PowerStatusClassView) PropertyState() (ClassPropertyView, error) {
+	return t.inner.Property("state")
+}
+
+func (t *TypeBuilder) PowerStatus() (*PowerStatusClassView, error) {
+	bld, err := t.inner.Class("PowerStatus")
+	if err != nil {
+		return nil, err
+	}
+	return &PowerStatusClassView{inner: bld}, nil
+}
+
+func (t *PowerStatusClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type SquadInfoClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *SquadInfoClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *SquadInfoClassView) PropertyName() (ClassPropertyView, error) {
+	return t.inner.Property("name")
+}
+
+func (t *SquadInfoClassView) PropertyRole() (ClassPropertyView, error) {
+	return t.inner.Property("role")
+}
+
+func (t *SquadInfoClassView) PropertyUnit_count() (ClassPropertyView, error) {
+	return t.inner.Property("unit_count")
+}
+
+func (t *TypeBuilder) SquadInfo() (*SquadInfoClassView, error) {
+	bld, err := t.inner.Class("SquadInfo")
+	if err != nil {
+		return nil, err
+	}
+	return &SquadInfoClassView{inner: bld}, nil
+}
+
+func (t *SquadInfoClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type SuperweaponFireClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *SuperweaponFireClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *SuperweaponFireClassView) PropertyKey() (ClassPropertyView, error) {
+	return t.inner.Property("key")
+}
+
+func (t *SuperweaponFireClassView) PropertyTotal_fires() (ClassPropertyView, error) {
+	return t.inner.Property("total_fires")
+}
+
+func (t *SuperweaponFireClassView) PropertyRecent_fires() (ClassPropertyView, error) {
+	return t.inner.Property("recent_fires")
+}
+
+func (t *TypeBuilder) SuperweaponFire() (*SuperweaponFireClassView, error) {
+	bld, err := t.inner.Class("SuperweaponFire")
+	if err != nil {
+		return nil, err
+	}
+	return &SuperweaponFireClassView{inner: bld}, nil
+}
+
+func (t *SuperweaponFireClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type SupportPowerStatusClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *SupportPowerStatusClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *SupportPowerStatusClassView) PropertyKey() (ClassPropertyView, error) {
+	return t.inner.Property("key")
+}
+
+func (t *SupportPowerStatusClassView) PropertyStatus() (ClassPropertyView, error) {
+	return t.inner.Property("status")
+}
+
+func (t *TypeBuilder) SupportPowerStatus() (*SupportPowerStatusClassView, error) {
+	bld, err := t.inner.Class("SupportPowerStatus")
+	if err != nil {
+		return nil, err
+	}
+	return &SupportPowerStatusClassView{inner: bld}, nil
+}
+
+func (t *SupportPowerStatusClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type TypeCountClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *TypeCountClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *TypeCountClassView) PropertyType() (ClassPropertyView, error) {
+	return t.inner.Property("type")
+}
+
+func (t *TypeCountClassView) PropertyCount() (ClassPropertyView, error) {
+	return t.inner.Property("count")
+}
+
+func (t *TypeBuilder) TypeCount() (*TypeCountClassView, error) {
+	bld, err := t.inner.Class("TypeCount")
+	if err != nil {
+		return nil, err
+	}
+	return &TypeCountClassView{inner: bld}, nil
+}
+
+func (t *TypeCountClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }

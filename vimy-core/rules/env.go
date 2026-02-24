@@ -14,6 +14,7 @@ type RuleEnv struct {
 	State   model.GameState
 	Faction string
 	Memory  map[string]any
+	Terrain *model.TerrainGrid
 }
 
 func (e RuleEnv) HasUnit(t string) bool      { return containsType(e.State.Units, t) }
@@ -104,6 +105,35 @@ func (e RuleEnv) DamagedBuildings() []model.Building {
 
 func (e RuleEnv) MapWidth() int  { return e.State.MapWidth }
 func (e RuleEnv) MapHeight() int { return e.State.MapHeight }
+
+// TerrainAt converts map coordinates to coarse grid and returns the terrain type.
+// Returns Land if no terrain grid is available (safe default).
+func (e RuleEnv) TerrainAt(mapX, mapY int) model.TerrainType {
+	if e.Terrain == nil {
+		return model.Land
+	}
+	return e.Terrain.AtMapPos(mapX, mapY)
+}
+
+// IsLandAt returns true if the map position is passable ground.
+func (e RuleEnv) IsLandAt(mapX, mapY int) bool {
+	t := e.TerrainAt(mapX, mapY)
+	return t == model.Land || t == model.Bridge
+}
+
+// IsWaterAt returns true if the map position is water.
+func (e RuleEnv) IsWaterAt(mapX, mapY int) bool {
+	return e.TerrainAt(mapX, mapY) == model.Water
+}
+
+// MapHasWater returns true if any zone in the terrain grid is water.
+// Returns false if no terrain grid is available (don't gate naval on missing data).
+func (e RuleEnv) MapHasWater() bool {
+	if e.Terrain == nil {
+		return true // assume water possible when no terrain data
+	}
+	return e.Terrain.HasWater()
+}
 
 func (e RuleEnv) EnemiesVisible() bool { return len(e.State.Enemies) > 0 }
 
