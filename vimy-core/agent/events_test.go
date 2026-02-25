@@ -218,12 +218,20 @@ func TestDetectEvents_EnemyBaseDiscovered_UnitOnly(t *testing.T) {
 }
 
 func TestDetectEvents_PhaseTransition(t *testing.T) {
-	gs := baseGameState(999)
+	// Early → Mid triggers when a war factory appears (building milestone).
+	gs := baseGameState(500)
+	// Remove war factory so we start in Early Game.
+	gs.Buildings = []model.Building{
+		{ID: 1, Type: "fact", HP: 1000, MaxHP: 1000},
+		{ID: 2, Type: "powr", HP: 400, MaxHP: 400},
+		{ID: 3, Type: "proc", HP: 600, MaxHP: 600},
+	}
 	memory := make(map[string]any)
 	prev := takeSnapshot(gs, memory)
 
-	// Cross into mid game
-	gs.Tick = 1001
+	// Add war factory → crosses into mid game.
+	gs.Tick = 501
+	gs.Buildings = append(gs.Buildings, model.Building{ID: 4, Type: "weap", HP: 800, MaxHP: 800})
 
 	events := detectEvents(gs, memory, &prev)
 	found := false
@@ -242,11 +250,14 @@ func TestDetectEvents_PhaseTransition(t *testing.T) {
 }
 
 func TestDetectEvents_PhaseTransition_MidToLate(t *testing.T) {
-	gs := baseGameState(2999)
+	// Mid → Late triggers when a tech center appears (building milestone).
+	gs := baseGameState(1500)
 	memory := make(map[string]any)
 	prev := takeSnapshot(gs, memory)
 
-	gs.Tick = 3001
+	// Add Soviet tech center → crosses into late game.
+	gs.Tick = 1501
+	gs.Buildings = append(gs.Buildings, model.Building{ID: 5, Type: "stek", HP: 600, MaxHP: 600})
 
 	events := detectEvents(gs, memory, &prev)
 	found := false
@@ -261,6 +272,97 @@ func TestDetectEvents_PhaseTransition_MidToLate(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected phase_transition event, got %+v", events)
+	}
+}
+
+func TestDetectEvents_PhaseTransition_TickFallback(t *testing.T) {
+	// Even without milestone buildings, tick fallback triggers mid game at 2000.
+	gs := model.GameState{
+		Tick:   1999,
+		Player: model.Player{Cash: 500, Resources: 500},
+		Buildings: []model.Building{
+			{ID: 1, Type: "fact"},
+			{ID: 2, Type: "powr"},
+		},
+	}
+	memory := make(map[string]any)
+	prev := takeSnapshot(gs, memory)
+
+	gs.Tick = 2001
+
+	events := detectEvents(gs, memory, &prev)
+	found := false
+	for _, e := range events {
+		if e.Kind == EventPhaseTransition {
+			found = true
+			if e.Detail != "Phase transition: Early Game → Mid Game" {
+				t.Errorf("unexpected detail: %s", e.Detail)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected phase_transition from tick fallback, got %+v", events)
+	}
+}
+
+func TestDetectEvents_PhaseTransition_BarracksWithArmy(t *testing.T) {
+	// Barracks + 5 combat units should trigger Mid Game even without war factory.
+	gs := model.GameState{
+		Tick:   500,
+		Player: model.Player{Cash: 500, Resources: 500},
+		Buildings: []model.Building{
+			{ID: 1, Type: "fact"},
+			{ID: 2, Type: "powr"},
+			{ID: 3, Type: "tent"}, // Allied barracks
+		},
+		Units: []model.Unit{
+			{ID: 10, Type: "harv"},
+			{ID: 11, Type: "e1"}, {ID: 12, Type: "e1"},
+			{ID: 13, Type: "e1"}, {ID: 14, Type: "e1"},
+		},
+	}
+	memory := make(map[string]any)
+	prev := takeSnapshot(gs, memory)
+
+	// 5th combat unit appears → crosses into mid game.
+	gs.Tick = 501
+	gs.Units = append(gs.Units, model.Unit{ID: 15, Type: "e1"})
+
+	events := detectEvents(gs, memory, &prev)
+	found := false
+	for _, e := range events {
+		if e.Kind == EventPhaseTransition {
+			found = true
+			if e.Detail != "Phase transition: Early Game → Mid Game" {
+				t.Errorf("unexpected detail: %s", e.Detail)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected phase_transition for barracks+army, got %+v", events)
+	}
+}
+
+func TestDetectEvents_PhaseTransition_BarracksFewTroops(t *testing.T) {
+	// Barracks + only 3 combat units should stay Early Game.
+	gs := model.GameState{
+		Tick:   500,
+		Player: model.Player{Cash: 500, Resources: 500},
+		Buildings: []model.Building{
+			{ID: 1, Type: "fact"},
+			{ID: 2, Type: "powr"},
+			{ID: 3, Type: "barr"}, // Soviet barracks
+		},
+		Units: []model.Unit{
+			{ID: 10, Type: "harv"},
+			{ID: 11, Type: "e1"}, {ID: 12, Type: "e1"}, {ID: 13, Type: "e1"},
+		},
+	}
+	phase := gamePhase(gs)
+	if phase != "Early Game" {
+		t.Errorf("expected Early Game with barracks + 3 troops, got %q", phase)
 	}
 }
 

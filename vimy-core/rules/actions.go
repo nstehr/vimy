@@ -432,19 +432,37 @@ func defenseHint(env RuleEnv) (int, int) {
 	return pick.x, pick.y
 }
 
+// defenseRoles lists all ground defense types eligible for the diversified
+// defense producer. Order doesn't matter — selection is by lowest count.
+var defenseRoles = []string{"pillbox", "camo_pillbox", "turret", "flame_tower", "tesla_coil"}
+
 func ActionProduceDefense(env RuleEnv, conn *ipc.Connection) error {
-	for _, role := range []string{"pillbox", "turret", "flame_tower", "tesla_coil"} {
+	// Pick the buildable defense type we have the fewest of. This diversifies
+	// the defense mix instead of always building the first available type.
+	bestRole := ""
+	bestItem := ""
+	bestCount := math.MaxInt
+	for _, role := range defenseRoles {
 		item := env.BuildableType(role)
-		if item != "" {
-			slog.Debug("producing defense", "item", item)
-			return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-				Queue: QueueDefense,
-				Item:  item,
-				Count: 1,
-			})
+		if item == "" {
+			continue
+		}
+		count := env.RoleCount(role)
+		if count < bestCount {
+			bestCount = count
+			bestRole = role
+			bestItem = item
 		}
 	}
-	return nil
+	if bestItem == "" {
+		return nil
+	}
+	slog.Debug("producing defense", "role", bestRole, "item", bestItem, "existing", bestCount)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueDefense,
+		Item:  bestItem,
+		Count: 1,
+	})
 }
 
 func ActionProduceAADefense(env RuleEnv, conn *ipc.Connection) error {
@@ -453,6 +471,19 @@ func ActionProduceAADefense(env RuleEnv, conn *ipc.Connection) error {
 		return nil
 	}
 	slog.Debug("producing AA defense", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueDefense,
+		Item:  item,
+		Count: 1,
+	})
+}
+
+func ActionProduceGapGenerator(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("gap_generator")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing gap generator", "item", item)
 	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
 		Queue: QueueDefense,
 		Item:  item,
@@ -486,6 +517,46 @@ func ActionProduceHeavyVehicle(env RuleEnv, conn *ipc.Connection) error {
 		}
 	}
 	return nil
+}
+
+func ActionProduceScoutVehicle(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("ranger")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing scout vehicle", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueVehicle,
+		Item:  item,
+		Count: 1,
+	})
+}
+
+func ActionProduceSiegeVehicle(env RuleEnv, conn *ipc.Connection) error {
+	for _, role := range []string{"artillery", "v2_launcher"} {
+		if item := env.BuildableType(role); item != "" {
+			slog.Debug("producing siege vehicle", "item", item)
+			return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+				Queue: QueueVehicle,
+				Item:  item,
+				Count: 1,
+			})
+		}
+	}
+	return nil
+}
+
+func ActionProduceBasicAircraft(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("basic_aircraft")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing basic aircraft", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueAircraft,
+		Item:  item,
+		Count: 1,
+	})
 }
 
 func ActionProduceRocketSoldier(env RuleEnv, conn *ipc.Connection) error {
@@ -674,6 +745,32 @@ func generateWaypoints(mapW, mapH int, terrain *model.TerrainGrid) [][2]int {
 		return candidates // fallback: don't leave scouts with zero waypoints
 	}
 	return filtered
+}
+
+func ActionScoutWithRangers(env RuleEnv, conn *ipc.Connection) error {
+	waypoints := generateWaypoints(env.State.MapWidth, env.State.MapHeight, env.Terrain)
+	if len(waypoints) == 0 {
+		return nil
+	}
+
+	idx, _ := env.Memory["rangerScoutIdx"].(int)
+	rangers := env.IdleRangers()
+
+	for _, r := range rangers {
+		wp := waypoints[idx%len(waypoints)]
+		slog.Debug("ranger scouting", "id", r.ID, "waypoint", wp, "wpIdx", idx%len(waypoints))
+		if err := conn.Send(ipc.TypeMove, ipc.MoveCommand{
+			ActorID: uint32(r.ID),
+			X:       wp[0],
+			Y:       wp[1],
+		}); err != nil {
+			return err
+		}
+		idx++
+	}
+
+	env.Memory["rangerScoutIdx"] = idx % len(waypoints)
+	return nil
 }
 
 func ActionProduceEngineer(env RuleEnv, conn *ipc.Connection) error {
@@ -934,6 +1031,96 @@ func ActionFireParabombs(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
+func ActionProduceFlakTruck(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("flak_truck")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing flak truck", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueVehicle,
+		Item:  item,
+		Count: 1,
+	})
+}
+
+func ActionProduceGunboat(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("gunboat")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing gunboat", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueShip,
+		Item:  item,
+		Count: 1,
+	})
+}
+
+func ActionProduceAPC(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("apc")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing APC", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueVehicle,
+		Item:  item,
+		Count: 1,
+	})
+}
+
+func ActionLoadEngineerIntoAPC(env RuleEnv, conn *ipc.Connection) error {
+	engineers := env.IdleEngineers()
+	if len(engineers) == 0 {
+		return nil
+	}
+	apcs := env.IdleEmptyAPCs()
+	if len(apcs) == 0 {
+		return nil
+	}
+	slog.Debug("loading engineer into APC", "engineer", engineers[0].ID, "apc", apcs[0].ID)
+	return conn.Send(ipc.TypeEnterTransport, ipc.EnterTransportCommand{
+		ActorID:     uint32(engineers[0].ID),
+		TransportID: uint32(apcs[0].ID),
+	})
+}
+
+func ActionUnloadAPCNearTarget(env RuleEnv, conn *ipc.Connection) error {
+	target := env.NearestCapturable()
+	if target == nil {
+		return nil
+	}
+	apcs := env.IdleLoadedAPCs()
+	if len(apcs) == 0 {
+		return nil
+	}
+	// Find the APC closest to the capture target.
+	best := apcs[0]
+	bestDist := math.MaxFloat64
+	for _, a := range apcs {
+		dx := float64(a.X - target.X)
+		dy := float64(a.Y - target.Y)
+		d := dx*dx + dy*dy
+		if d < bestDist {
+			bestDist = d
+			best = a
+		}
+	}
+	dist := math.Sqrt(bestDist)
+	if dist < 5 {
+		slog.Debug("unloading APC near target", "apc", best.ID, "target", target.ID)
+		return conn.Send(ipc.TypeUnload, ipc.UnloadCommand{ActorID: uint32(best.ID)})
+	}
+	// APC not close enough — move it toward the target.
+	slog.Debug("moving APC toward target", "apc", best.ID, "target", target.ID, "dist", dist)
+	return conn.Send(ipc.TypeMove, ipc.MoveCommand{
+		ActorID: uint32(best.ID),
+		X:       target.X,
+		Y:       target.Y,
+	})
+}
+
 func ActionNavalAttackEnemy(env RuleEnv, conn *ipc.Connection) error {
 	enemy := env.NearestEnemy()
 	if enemy == nil {
@@ -1076,6 +1263,24 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 		default:
 			pool = env.UnassignedIdleGround()
 		}
+
+		squads := getSquads(env.Memory)
+		if sq, ok := squads[name]; ok && len(sq.UnitIDs) > 0 {
+			// Reinforcement: top up an existing under-strength squad.
+			if len(sq.UnitIDs) >= sq.TargetSize || len(pool) == 0 {
+				return nil
+			}
+			need := sq.TargetSize - len(sq.UnitIDs)
+			add := min(need, len(pool))
+			for i := range add {
+				sq.UnitIDs = append(sq.UnitIDs, pool[i].ID)
+			}
+			env.Memory["squads"] = squads
+			slog.Info("squad reinforced", "name", name, "added", add, "size", len(sq.UnitIDs), "target", sq.TargetSize)
+			return nil
+		}
+
+		// Initial formation: require full size.
 		if len(pool) < size {
 			return nil
 		}
@@ -1083,12 +1288,12 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 		for i := range size {
 			ids[i] = pool[i].ID
 		}
-		squads := getSquads(env.Memory)
 		squads[name] = &Squad{
-			Name:    name,
-			Domain:  domain,
-			UnitIDs: ids,
-			Role:    role,
+			Name:       name,
+			Domain:     domain,
+			UnitIDs:    ids,
+			Role:       role,
+			TargetSize: size,
 		}
 		env.Memory["squads"] = squads
 		slog.Info("squad formed", "name", name, "domain", domain, "role", role, "size", size)
@@ -1256,6 +1461,111 @@ func squadIdleActorIDs(env RuleEnv, name string) []uint32 {
 		}
 	}
 	return ids
+}
+
+// --- Micro action factories ---
+
+// RetreatDamagedUnits sends Move (not AttackMove) toward the service depot
+// for each damaged idle squad member. Move avoids stopping to fight en route.
+func RetreatDamagedUnits(hpThreshold float64) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		units := env.DamagedSquadUnits(hpThreshold)
+		if len(units) == 0 {
+			return nil
+		}
+		tx, ty := env.ServiceDepotOrCentroid()
+		for _, u := range units {
+			slog.Debug("retreating damaged unit", "id", u.ID, "hp_ratio", float64(u.HP)/float64(u.MaxHP), "dest_x", tx, "dest_y", ty)
+			if err := conn.Send(ipc.TypeMove, ipc.MoveCommand{
+				ActorID: uint32(u.ID),
+				X:       tx,
+				Y:       ty,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+// SquadFocusFire sends individual Attack commands for each idle squad member
+// targeting the weakest visible enemy. Concentrates damage for faster kills.
+func SquadFocusFire(name string) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		target := env.WeakestVisibleEnemy()
+		if target == nil {
+			return nil
+		}
+		ids := squadIdleActorIDs(env, name)
+		if len(ids) == 0 {
+			return nil
+		}
+		for _, id := range ids {
+			slog.Debug("squad focus fire", "squad", name, "unit", id, "target", target.ID)
+			if err := conn.Send(ipc.TypeAttack, ipc.AttackCommand{
+				ActorID:  id,
+				TargetID: uint32(target.ID),
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+// FleeHarvesters sends Move toward the nearest refinery for each harvester
+// in danger. Checks all harvesters (idle or not) — better to lose ore than
+// the harvester.
+func FleeHarvesters(dangerPct float64) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		harvesters := env.HarvestersInDanger(dangerPct)
+		if len(harvesters) == 0 {
+			return nil
+		}
+		// Collect refinery positions for nearest-refinery lookup.
+		var refineries []model.Building
+		for _, b := range env.State.Buildings {
+			if matchesType(b.Type, Refinery) {
+				refineries = append(refineries, b)
+			}
+		}
+		// Fallback to building centroid if no refineries.
+		fallbackX, fallbackY := 0, 0
+		if len(env.State.Buildings) > 0 {
+			sumX, sumY := 0, 0
+			for _, b := range env.State.Buildings {
+				sumX += b.X
+				sumY += b.Y
+			}
+			fallbackX = sumX / len(env.State.Buildings)
+			fallbackY = sumY / len(env.State.Buildings)
+		}
+
+		for _, u := range harvesters {
+			tx, ty := fallbackX, fallbackY
+			if len(refineries) > 0 {
+				bestDist := math.MaxFloat64
+				for _, r := range refineries {
+					dx := float64(u.X - r.X)
+					dy := float64(u.Y - r.Y)
+					d := dx*dx + dy*dy
+					if d < bestDist {
+						bestDist = d
+						tx, ty = r.X, r.Y
+					}
+				}
+			}
+			slog.Debug("fleeing harvester", "id", u.ID, "dest_x", tx, "dest_y", ty)
+			if err := conn.Send(ipc.TypeMove, ipc.MoveCommand{
+				ActorID: uint32(u.ID),
+				X:       tx,
+				Y:       ty,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 }
 
 func NavalAttackGroup(maxUnits int) ActionFunc {

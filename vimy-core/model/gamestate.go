@@ -24,13 +24,14 @@ type Player struct {
 }
 
 type Unit struct {
-	ID    int    `json:"id"`
-	Type  string `json:"type"`
-	X     int    `json:"x"`
-	Y     int    `json:"y"`
-	HP    int    `json:"hp"`
-	MaxHP int    `json:"maxHp"`
-	Idle  bool   `json:"idle"`
+	ID         int    `json:"id"`
+	Type       string `json:"type"`
+	X          int    `json:"x"`
+	Y          int    `json:"y"`
+	HP         int    `json:"hp"`
+	MaxHP      int    `json:"maxHp"`
+	Idle       bool   `json:"idle"`
+	CargoCount int    `json:"cargoCount"`
 }
 
 func (u Unit) TypeName() string { return u.Type }

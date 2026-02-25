@@ -243,7 +243,7 @@ func snapshotSuperweaponFires(memory map[string]any) []types.SuperweaponFire {
 func buildSituation(gs model.GameState, memory map[string]any, events []Event, swFires []types.SuperweaponFire) types.GameSituation {
 	sit := types.GameSituation{
 		Tick:              int64(gs.Tick),
-		Phase:             gamePhase(gs.Tick),
+		Phase:             gamePhase(gs),
 		Cash:              int64(gs.Player.Cash),
 		Resources:         int64(gs.Player.Resources),
 		Resource_capacity: int64(gs.Player.ResourceCapacity),

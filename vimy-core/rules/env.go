@@ -137,6 +137,104 @@ func (e RuleEnv) MapHasWater() bool {
 
 func (e RuleEnv) EnemiesVisible() bool { return len(e.State.Enemies) > 0 }
 
+// DamagedSquadUnits returns idle squad members below the given HP threshold.
+// Used by retreat rules to pull wounded units out of the fight.
+func (e RuleEnv) DamagedSquadUnits(hpThreshold float64) []model.Unit {
+	squadIDs := squadUnitIDSet(e.Memory)
+	var out []model.Unit
+	for _, u := range e.State.Units {
+		if !u.Idle || u.MaxHP == 0 {
+			continue
+		}
+		if !squadIDs[u.ID] {
+			continue
+		}
+		if float64(u.HP)/float64(u.MaxHP) < hpThreshold {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// ServiceDepotOrCentroid returns the position of the service depot, or the
+// building centroid if none exists. Falls back to (0, 0).
+func (e RuleEnv) ServiceDepotOrCentroid() (int, int) {
+	for _, b := range e.State.Buildings {
+		if matchesType(b.Type, ServiceDepot) {
+			return b.X, b.Y
+		}
+	}
+	if len(e.State.Buildings) > 0 {
+		sumX, sumY := 0, 0
+		for _, b := range e.State.Buildings {
+			sumX += b.X
+			sumY += b.Y
+		}
+		return sumX / len(e.State.Buildings), sumY / len(e.State.Buildings)
+	}
+	return 0, 0
+}
+
+// WeakestVisibleEnemy returns the enemy with the lowest HP/MaxHP ratio.
+// Skips enemies with MaxHP == 0. Breaks ties by proximity to first building.
+func (e RuleEnv) WeakestVisibleEnemy() *model.Enemy {
+	if len(e.State.Enemies) == 0 {
+		return nil
+	}
+	bx, by := 0, 0
+	if len(e.State.Buildings) > 0 {
+		bx = e.State.Buildings[0].X
+		by = e.State.Buildings[0].Y
+	}
+	var weakest *model.Enemy
+	bestRatio := 2.0 // above max possible ratio of 1.0
+	bestDist := math.MaxFloat64
+	for i := range e.State.Enemies {
+		en := &e.State.Enemies[i]
+		if en.MaxHP == 0 {
+			continue
+		}
+		ratio := float64(en.HP) / float64(en.MaxHP)
+		dx := float64(en.X - bx)
+		dy := float64(en.Y - by)
+		dist := dx*dx + dy*dy
+		if ratio < bestRatio || (ratio == bestRatio && dist < bestDist) {
+			bestRatio = ratio
+			bestDist = dist
+			weakest = en
+		}
+	}
+	return weakest
+}
+
+// HarvestersInDanger returns all harvesters (idle or not) within danger range
+// of any visible enemy. dangerPct is a fraction of the map diagonal.
+func (e RuleEnv) HarvestersInDanger(dangerPct float64) []model.Unit {
+	if len(e.State.Enemies) == 0 {
+		return nil
+	}
+	mw := float64(e.State.MapWidth)
+	mh := float64(e.State.MapHeight)
+	threshold := math.Sqrt(mw*mw+mh*mh) * dangerPct
+	threshSq := threshold * threshold
+
+	var out []model.Unit
+	for _, u := range e.State.Units {
+		if !matchesType(u.Type, Harvester) {
+			continue
+		}
+		for _, en := range e.State.Enemies {
+			dx := float64(u.X - en.X)
+			dy := float64(u.Y - en.Y)
+			if dx*dx+dy*dy < threshSq {
+				out = append(out, u)
+				break
+			}
+		}
+	}
+	return out
+}
+
 func isAircraft(u model.Unit) bool {
 	for _, r := range combatAircraftRoles {
 		role := roles[r]
@@ -169,7 +267,7 @@ func (e RuleEnv) IdleGroundUnits() []model.Unit {
 		if !u.Idle {
 			continue
 		}
-		if matchesType(u.Type, Harvester) || matchesType(u.Type, MCV) {
+		if matchesType(u.Type, Harvester) || matchesType(u.Type, MCV) || matchesType(u.Type, Ranger) || matchesType(u.Type, Engineer) || matchesType(u.Type, APC) {
 			continue
 		}
 		if isAircraft(u) || isNaval(u) {
@@ -209,6 +307,46 @@ func (e RuleEnv) IdleCombatAircraft() []model.Unit {
 			}
 		}
 	next:
+	}
+	return out
+}
+
+func (e RuleEnv) IdleAPCs() []model.Unit {
+	var out []model.Unit
+	for _, u := range e.State.Units {
+		if u.Idle && matchesType(u.Type, APC) {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+func (e RuleEnv) IdleLoadedAPCs() []model.Unit {
+	var out []model.Unit
+	for _, u := range e.State.Units {
+		if u.Idle && matchesType(u.Type, APC) && u.CargoCount > 0 {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+func (e RuleEnv) IdleEmptyAPCs() []model.Unit {
+	var out []model.Unit
+	for _, u := range e.State.Units {
+		if u.Idle && matchesType(u.Type, APC) && u.CargoCount == 0 {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+func (e RuleEnv) IdleRangers() []model.Unit {
+	var out []model.Unit
+	for _, u := range e.State.Units {
+		if u.Idle && matchesType(u.Type, Ranger) {
+			out = append(out, u)
+		}
 	}
 	return out
 }
@@ -309,6 +447,24 @@ func (e RuleEnv) SquadSize(name string) int {
 		return len(sq.UnitIDs)
 	}
 	return 0
+}
+
+func (e RuleEnv) SquadNeedsReinforcement(name string) bool {
+	squads := getSquads(e.Memory)
+	sq, ok := squads[name]
+	if !ok || len(sq.UnitIDs) == 0 {
+		return false
+	}
+	return len(sq.UnitIDs) < sq.TargetSize
+}
+
+func (e RuleEnv) SquadReadyRatio(name string) float64 {
+	squads := getSquads(e.Memory)
+	sq, ok := squads[name]
+	if !ok || len(sq.UnitIDs) == 0 {
+		return 0
+	}
+	return float64(e.SquadIdleCount(name)) / float64(len(sq.UnitIDs))
 }
 
 func (e RuleEnv) SquadIdleCount(name string) int {
@@ -654,8 +810,12 @@ func (e RuleEnv) SpecialistInfantryCount() int {
 
 // BestBuildableSpecialist picks the best available elite infantry
 // (priority: tanya > shock trooper > flamethrower > medic).
+// Medics are sub-capped at 2 so remaining specialist slots go to combat units.
 func (e RuleEnv) BestBuildableSpecialist() string {
 	for _, r := range specialistInfantryRoles {
+		if r == "medic" && e.RoleCount("medic") >= 2 {
+			continue
+		}
 		if item := e.BuildableType(r); item != "" {
 			return item
 		}

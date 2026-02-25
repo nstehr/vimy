@@ -171,8 +171,9 @@ func TestCompileDoctrineFullSpectrum(t *testing.T) {
 		"build-barracks", "build-war-factory", "build-airfield", "build-naval-yard",
 		"produce-infantry", "produce-vehicle", "produce-aircraft", "produce-ship",
 		"produce-specialist-infantry",
-		"form-air-attack", "squad-air-attack", "squad-air-attack-known-base",
-		"form-naval-attack", "squad-naval-attack",
+		"squad-reengage",
+		"form-air-attack", "squad-air-attack", "squad-air-reengage", "squad-air-attack-known-base",
+		"form-naval-attack", "squad-naval-attack", "squad-naval-reengage",
 		"build-base-defense", "build-aa-defense",
 		"build-missile-silo", "build-iron-curtain",
 		"fire-nuke", "fire-iron-curtain",
@@ -186,6 +187,133 @@ func TestCompileDoctrineFullSpectrum(t *testing.T) {
 		if !found[name] {
 			t.Errorf("expected rule %q in full spectrum doctrine", name)
 		}
+	}
+}
+
+func TestCompileDoctrineReengageRules(t *testing.T) {
+	// Full-spectrum doctrine: all three re-engage rules should be emitted.
+	d := Doctrine{
+		Name:                  "Reengage Test",
+		EconomyPriority:       0.5,
+		Aggression:            0.7,
+		GroundDefensePriority: 0.3,
+		InfantryWeight:        0.5,
+		VehicleWeight:         0.5,
+		AirWeight:             0.5,
+		NavalWeight:           0.5,
+		GroundAttackGroupSize: 5,
+		AirAttackGroupSize:    2,
+		NavalAttackGroupSize:  3,
+		ScoutPriority:         0.5,
+	}
+	rules := CompileDoctrine(d)
+
+	// All rules must compile.
+	for _, r := range rules {
+		_, err := expr.Compile(r.ConditionSrc, expr.Env(RuleEnv{}), expr.AsBool())
+		if err != nil {
+			t.Errorf("rule %q failed to compile: %v\ncondition: %s", r.Name, err, r.ConditionSrc)
+		}
+	}
+
+	// Index rules by name for lookup.
+	byName := map[string]*Rule{}
+	for _, r := range rules {
+		byName[r.Name] = r
+	}
+
+	// Ground re-engage
+	gr := byName["squad-reengage"]
+	if gr == nil {
+		t.Fatal("expected squad-reengage rule")
+	}
+	attack := byName["squad-attack"]
+	if attack == nil {
+		t.Fatal("expected squad-attack rule")
+	}
+	if gr.Priority != attack.Priority-ReengageDiscount {
+		t.Errorf("squad-reengage priority = %d, want %d (squad-attack %d - %d)",
+			gr.Priority, attack.Priority-ReengageDiscount, attack.Priority, ReengageDiscount)
+	}
+	if gr.Category != "combat" {
+		t.Errorf("squad-reengage category = %q, want \"combat\"", gr.Category)
+	}
+	if gr.Exclusive {
+		t.Error("squad-reengage should be non-exclusive")
+	}
+	// Condition should NOT contain SquadReadyRatio (no ratio gate).
+	if strings.Contains(gr.ConditionSrc, "SquadReadyRatio") {
+		t.Errorf("squad-reengage should not gate on SquadReadyRatio, got: %s", gr.ConditionSrc)
+	}
+
+	// Air re-engage
+	ar := byName["squad-air-reengage"]
+	if ar == nil {
+		t.Fatal("expected squad-air-reengage rule")
+	}
+	airAttack := byName["squad-air-attack"]
+	if airAttack == nil {
+		t.Fatal("expected squad-air-attack rule")
+	}
+	if ar.Priority != airAttack.Priority-ReengageDiscount {
+		t.Errorf("squad-air-reengage priority = %d, want %d", ar.Priority, airAttack.Priority-ReengageDiscount)
+	}
+	if ar.Category != "air_combat" {
+		t.Errorf("squad-air-reengage category = %q, want \"air_combat\"", ar.Category)
+	}
+	if strings.Contains(ar.ConditionSrc, "SquadReadyRatio") {
+		t.Errorf("squad-air-reengage should not gate on SquadReadyRatio, got: %s", ar.ConditionSrc)
+	}
+
+	// Naval re-engage
+	nr := byName["squad-naval-reengage"]
+	if nr == nil {
+		t.Fatal("expected squad-naval-reengage rule")
+	}
+	navalAttack := byName["squad-naval-attack"]
+	if navalAttack == nil {
+		t.Fatal("expected squad-naval-attack rule")
+	}
+	if nr.Priority != navalAttack.Priority-ReengageDiscount {
+		t.Errorf("squad-naval-reengage priority = %d, want %d", nr.Priority, navalAttack.Priority-ReengageDiscount)
+	}
+	if nr.Category != "naval_combat" {
+		t.Errorf("squad-naval-reengage category = %q, want \"naval_combat\"", nr.Category)
+	}
+	if strings.Contains(nr.ConditionSrc, "SquadReadyRatio") {
+		t.Errorf("squad-naval-reengage should not gate on SquadReadyRatio, got: %s", nr.ConditionSrc)
+	}
+	if !strings.Contains(nr.ConditionSrc, "MapHasWater()") {
+		t.Errorf("squad-naval-reengage should require MapHasWater(), got: %s", nr.ConditionSrc)
+	}
+
+	// Doctrine with no air/naval: re-engage rules for those domains should be absent.
+	groundOnly := Doctrine{
+		Name:                  "Ground Only",
+		Aggression:            0.7,
+		InfantryWeight:        0.5,
+		VehicleWeight:         0.5,
+		GroundAttackGroupSize: 5,
+		AirAttackGroupSize:    2,
+		NavalAttackGroupSize:  3,
+	}
+	groundRules := CompileDoctrine(groundOnly)
+	for _, r := range groundRules {
+		if r.Name == "squad-air-reengage" {
+			t.Error("unexpected squad-air-reengage when AirWeight=0")
+		}
+		if r.Name == "squad-naval-reengage" {
+			t.Error("unexpected squad-naval-reengage when NavalWeight=0")
+		}
+	}
+	foundGround := false
+	for _, r := range groundRules {
+		if r.Name == "squad-reengage" {
+			foundGround = true
+		}
+	}
+	if !foundGround {
+		t.Error("expected squad-reengage even when air/naval weights are 0")
 	}
 }
 

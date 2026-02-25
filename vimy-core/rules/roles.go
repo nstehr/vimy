@@ -95,6 +95,7 @@ const (
 	Longbow       = "heli" // Allied Longbow helicopter
 	MiG           = "mig"  // Soviet MiG attack aircraft
 	Yak           = "yak"  // Soviet Yak attack aircraft
+	Hind          = "hind" // Soviet Hind attack helicopter
 	Flamethrower  = "e4"   // Flamethrower infantry
 	ShockTrooper  = "shok" // Shock Trooper (Russia only)
 	Tanya         = "e7"   // Tanya (Allied commando)
@@ -126,6 +127,7 @@ const (
 	ServiceDepot     = "fix"  // Service Depot (unlocks Heavy Tank)
 	MissileSilo      = "mslo" // Soviet Missile Silo (Nuke)
 	IronCurtain      = "iron" // Soviet Iron Curtain
+	GapGenerator     = "gap"  // Allied Gap Generator (creates shroud)
 )
 
 // role abstracts over faction-specific type names. The compiler and env
@@ -149,7 +151,7 @@ var roles = map[string]role{
 	"service_depot":     {queue: QueueBuilding, types: []string{ServiceDepot}},
 	"missile_silo":      {queue: QueueDefense, types: []string{MissileSilo}},
 	"iron_curtain":      {queue: QueueDefense, types: []string{IronCurtain}},
-	"basic_aircraft":    {queue: QueueAircraft, types: []string{BlackHawk, Yak}},
+	"basic_aircraft":    {queue: QueueAircraft, types: []string{BlackHawk, Yak, Hind}},
 	"advanced_aircraft": {queue: QueueAircraft, types: []string{Longbow, MiG}},
 	"light_tank":        {queue: QueueVehicle, types: []string{LightTank}},
 	"medium_tank":       {queue: QueueVehicle, types: []string{MediumTank, HeavyTank}},
@@ -170,11 +172,13 @@ var roles = map[string]role{
 	"destroyer":         {queue: QueueShip, types: []string{Destroyer}},
 	"cruiser":           {queue: QueueShip, types: []string{Cruiser}},
 	"gunboat":           {queue: QueueShip, types: []string{Gunboat}},
-	"pillbox":           {queue: QueueDefense, types: []string{"pbox", "hbox"}},
+	"pillbox":           {queue: QueueDefense, types: []string{"pbox"}},
+	"camo_pillbox":      {queue: QueueDefense, types: []string{"hbox"}},
 	"turret":            {queue: QueueDefense, types: []string{"gun"}},
 	"tesla_coil":        {queue: QueueDefense, types: []string{"tsla"}},
 	"aa_defense":        {queue: QueueDefense, types: []string{"agun", "sam"}},
 	"flame_tower":       {queue: QueueDefense, types: []string{"ftur"}},
+	"gap_generator":     {queue: QueueDefense, types: []string{GapGenerator}},
 	"advanced_power":    {queue: QueueBuilding, types: []string{AdvancedPower}},
 	"ore_silo":          {queue: QueueBuilding, types: []string{OreSilo}},
 	"harvester":         {queue: QueueVehicle, types: []string{Harvester}},

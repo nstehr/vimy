@@ -17,6 +17,7 @@ const (
 // obvious from bare integer literals.
 const (
 	SquadFormBonus    = 5  // form-squad fires just above its squad-act rule
+	ReengageDiscount  = 2  // re-engage fires just below coordinated attack
 	KnownBaseDiscount = 10 // attack-known-base fires below direct-enemy attack
 	AirDomainOffset   = 5  // air attack base priority below ground
 	NavalDomainOffset = 15 // naval attack base priority below ground
@@ -115,12 +116,17 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Action:       ActionCancelStuckAircraft,
 	})
 
+	// Engineer capture sequence: produce engineer → produce APC → load → deliver → capture.
+	// The capture-on-foot rule is a fallback for when no APC can be built (no war factory
+	// or APC not in buildable list). Without this gate, engineers walk on foot immediately
+	// and never wait for the APC.
+
 	rules = append(rules, &Rule{
 		Name:         "capture-building",
 		Priority:     850,
-		Category:     "economy",
+		Category:     "capture",
 		Exclusive:    false,
-		ConditionSrc: `CapturableCount() > 0 && len(IdleEngineers()) > 0`,
+		ConditionSrc: `CapturableCount() > 0 && len(IdleEngineers()) > 0 && !CanBuildRole("apc")`,
 		Action:       ActionCaptureBuilding,
 	})
 
@@ -129,8 +135,35 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Priority:     550,
 		Category:     "production",
 		Exclusive:    false,
-		ConditionSrc: `CapturableCount() > 0 && !QueueBusy("Infantry") && CanBuildRole("engineer") && RoleCount("engineer") < CapturableCount() && Cash() >= 500`,
+		ConditionSrc: `CapturableCount() > 0 && !QueueBusy("Infantry") && CanBuildRole("engineer") && RoleCount("engineer") < CapturableCount() && RoleCount("engineer") < 2 && Cash() >= 500`,
 		Action:       ActionProduceEngineer,
+	})
+
+	rules = append(rules, &Rule{
+		Name:         "produce-apc",
+		Priority:     545,
+		Category:     "production",
+		Exclusive:    false,
+		ConditionSrc: `CapturableCount() > 0 && RoleCount("engineer") > 0 && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("apc") && RoleCount("apc") < 1 && Cash() >= 800`,
+		Action:       ActionProduceAPC,
+	})
+
+	rules = append(rules, &Rule{
+		Name:         "load-engineer-into-apc",
+		Priority:     845,
+		Category:     "capture",
+		Exclusive:    false,
+		ConditionSrc: `len(IdleEngineers()) > 0 && len(IdleEmptyAPCs()) > 0`,
+		Action:       ActionLoadEngineerIntoAPC,
+	})
+
+	rules = append(rules, &Rule{
+		Name:         "deliver-apc-to-target",
+		Priority:     847,
+		Category:     "capture",
+		Exclusive:    false,
+		ConditionSrc: `CapturableCount() > 0 && len(IdleLoadedAPCs()) > 0`,
+		Action:       ActionUnloadAPCNearTarget,
 	})
 
 	// --- Rebuild rules (always present, high priority) ---
@@ -157,12 +190,16 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Action:       ActionProduceAdvancedPower,
 	})
 
+	// Refineries spawn a free harvester, so 1:1 parity is maintained
+	// automatically. Only produce a replacement when all harvesters are
+	// dead — otherwise the free-spawn timing race causes duplicates
+	// (rebuild fires before the free harvester appears in game state).
 	rules = append(rules, &Rule{
 		Name:         "rebuild-harvester",
 		Priority:     830,
 		Category:     "rebuild",
 		Exclusive:    true,
-		ConditionSrc: `HasRole("refinery") && RoleCount("harvester") < RoleCount("refinery") && !QueueBusy("Vehicle") && CanBuildRole("harvester") && Cash() >= 600`,
+		ConditionSrc: `HasRole("refinery") && RoleCount("harvester") == 0 && !QueueBusy("Vehicle") && CanBuildRole("harvester") && Cash() >= 600`,
 		Action:       ActionProduceHarvester,
 	})
 
@@ -288,14 +325,30 @@ func CompileDoctrine(d Doctrine) []*Rule {
 
 	refineryMax := lerp(1, 5, d.EconomyPriority)
 	refineryCashThreshold := lerp(2000, 800, d.EconomyPriority)
+
+	// Initial refineries (1st and 2nd) — critical economy, high priority.
+	// Cap at refineryMax so low-economy doctrines don't over-build.
+	initialRefCap := min(2, refineryMax)
 	rules = append(rules, &Rule{
 		Name:         "build-refinery",
 		Priority:     750,
 		Category:     "economy",
 		Exclusive:    true,
-		ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("refinery") && RoleCount("refinery") < %d && (RoleCount("refinery") < 2 || HasRole("barracks") || HasRole("war_factory")) && Cash() >= %d`, refineryMax, refineryCashThreshold),
+		ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("refinery") && RoleCount("refinery") < %d && Cash() >= %d`, initialRefCap, refineryCashThreshold),
 		Action:       ActionProduceRefinery,
 	})
+
+	// Expansion refineries (3rd+) — economy optimization, below tech progression.
+	if d.EconomyPriority > DoctrineSignificant {
+		rules = append(rules, &Rule{
+			Name:         "build-extra-refinery",
+			Priority:     520,
+			Category:     "economy",
+			Exclusive:    true,
+			ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("refinery") && RoleCount("refinery") >= 2 && RoleCount("refinery") < %d && (HasRole("barracks") || HasRole("war_factory")) && Cash() >= %d`, refineryMax, refineryCashThreshold),
+			Action:       ActionProduceRefinery,
+		})
+	}
 
 	// --- Prerequisite buildings ---
 
@@ -412,7 +465,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     defensePriority,
 			Category:     "defense",
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`!QueueBusy("Defense") && PowerExcess() >= 0 && (CanBuildRole("pillbox") || CanBuildRole("turret") || CanBuildRole("flame_tower") || CanBuildRole("tesla_coil")) && (RoleCount("pillbox") + RoleCount("turret") + RoleCount("flame_tower") + RoleCount("tesla_coil")) < %d && Cash() >= %d`, defenseCap, defenseCash),
+			ConditionSrc: fmt.Sprintf(`!QueueBusy("Defense") && PowerExcess() >= 0 && (CanBuildRole("pillbox") || CanBuildRole("camo_pillbox") || CanBuildRole("turret") || CanBuildRole("flame_tower") || CanBuildRole("tesla_coil")) && (RoleCount("pillbox") + RoleCount("camo_pillbox") + RoleCount("turret") + RoleCount("flame_tower") + RoleCount("tesla_coil")) < %d && Cash() >= %d`, defenseCap, defenseCash),
 			Action:       ActionProduceDefense,
 		})
 	}
@@ -430,6 +483,20 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`!QueueBusy("Defense") && PowerExcess() >= 0 && CanBuildRole("aa_defense") && RoleCount("aa_defense") < %d && Cash() >= %d`, aaCap, aaCash),
 			Action:       ActionProduceAADefense,
+		})
+	}
+
+	// --- Gap generator (Allied strategic defense) ---
+
+	if d.GroundDefensePriority > DoctrineSignificant && d.TechPriority > DoctrineSignificant {
+		gapCap := lerp(1, 2, d.GroundDefensePriority)
+		rules = append(rules, &Rule{
+			Name:         "build-gap-generator",
+			Priority:     lerp(400, 550, d.GroundDefensePriority),
+			Category:     "defense",
+			Exclusive:    true,
+			ConditionSrc: fmt.Sprintf(`!QueueBusy("Defense") && PowerExcess() >= 0 && CanBuildRole("gap_generator") && HasRole("tech_center") && RoleCount("gap_generator") < %d && Cash() >= 800`, gapCap),
+			Action:       ActionProduceGapGenerator,
 		})
 	}
 
@@ -532,6 +599,17 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
+	if d.EconomyPriority > DoctrineDominant {
+		rules = append(rules, &Rule{
+			Name:         "produce-extra-harvester",
+			Priority:     420,
+			Category:     "production",
+			Exclusive:    false,
+			ConditionSrc: fmt.Sprintf(`HasRole("refinery") && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("harvester") && RoleCount("harvester") < RoleCount("refinery") + 1 && %s`, buildCashCondition(1400, savings)),
+			Action:       ActionProduceHarvester,
+		})
+	}
+
 	// --- Unit production ---
 
 	// Vehicle-cost reservation: when the doctrine wants both infantry and
@@ -606,6 +684,18 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
+	if d.NavalWeight > DoctrineEnabled {
+		gunboatCap := lerp(1, 3, d.NavalWeight)
+		rules = append(rules, &Rule{
+			Name:         "produce-gunboat",
+			Priority:     445,
+			Category:     "production",
+			Exclusive:    false,
+			ConditionSrc: fmt.Sprintf(`MapHasWater() && HasRole("naval_yard") && !QueueBusy("Ship") && CanBuildRole("gunboat") && RoleCount("gunboat") < %d && %s`, gunboatCap, buildCashCondition(500, savings)),
+			Action:       ActionProduceGunboat,
+		})
+	}
+
 	// --- Advanced unit production (requires tech center) ---
 
 	if d.InfantryWeight > DoctrineEnabled && d.TechPriority > DoctrineSignificant {
@@ -629,6 +719,53 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && HasRole("tech_center") && !QueueBusy("Vehicle") && (CanBuildRole("heavy_tank") || CanBuildRole("medium_tank")) && (RoleCount("heavy_tank") + RoleCount("medium_tank")) < %d && %s`, heavyCap, buildCashCondition(1200, savings)),
 			Action:       ActionProduceHeavyVehicle,
+		})
+	}
+
+	if d.VehicleWeight > DoctrineEnabled {
+		rules = append(rules, &Rule{
+			Name:         "produce-scout-vehicle",
+			Priority:     465,
+			Category:     "production",
+			Exclusive:    false,
+			ConditionSrc: fmt.Sprintf(`!HasEnemyIntel() && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("ranger") && RoleCount("ranger") < 1 && %s`, buildCashCondition(500, savings)),
+			Action:       ActionProduceScoutVehicle,
+		})
+	}
+
+	if d.VehicleWeight > DoctrineModerate {
+		siegeCap := lerp(1, 3, d.VehicleWeight)
+		rules = append(rules, &Rule{
+			Name:         "produce-siege-vehicle",
+			Priority:     460,
+			Category:     "production",
+			Exclusive:    false,
+			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && HasRole("radar") && !QueueBusy("Vehicle") && (CanBuildRole("artillery") || CanBuildRole("v2_launcher")) && (RoleCount("artillery") + RoleCount("v2_launcher")) < %d && %s`, siegeCap, buildCashCondition(900, savings)),
+			Action:       ActionProduceSiegeVehicle,
+		})
+	}
+
+	if d.AirDefensePriority > DoctrineModerate {
+		flakCap := lerp(1, 3, d.AirDefensePriority)
+		rules = append(rules, &Rule{
+			Name:         "produce-flak-truck",
+			Priority:     470,
+			Category:     "production",
+			Exclusive:    false,
+			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("flak_truck") && RoleCount("flak_truck") < %d && %s`, flakCap, buildCashCondition(600, savings)),
+			Action:       ActionProduceFlakTruck,
+		})
+	}
+
+	if d.AirWeight > DoctrineModerate {
+		basicAirCap := lerp(1, 3, d.AirWeight)
+		rules = append(rules, &Rule{
+			Name:         "produce-basic-aircraft",
+			Priority:     445,
+			Category:     "production",
+			Exclusive:    false,
+			ConditionSrc: fmt.Sprintf(`HasRole("airfield") && !QueueBusy("Aircraft") && CanBuildRole("basic_aircraft") && RoleCount("basic_aircraft") < %d && %s`, basicAirCap, buildCashCondition(1500, savings)),
+			Action:       ActionProduceBasicAircraft,
 		})
 	}
 
@@ -669,7 +806,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     defendPriority + SquadFormBonus,
 			Category:     "squad_form",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`!SquadExists("ground-defense") && len(UnassignedIdleGround()) >= %d`, defenseSize),
+			ConditionSrc: fmt.Sprintf(`(!SquadExists("ground-defense") && len(UnassignedIdleGround()) >= %d) || (SquadNeedsReinforcement("ground-defense") && len(UnassignedIdleGround()) >= 1)`, defenseSize),
 			Action:       FormSquad("ground-defense", "ground", defenseSize, "defend"),
 		})
 
@@ -707,13 +844,14 @@ func CompileDoctrine(d Doctrine) []*Rule {
 	// --- Ground attack ---
 
 	attackPriority := lerp(200, 400, d.Aggression)
+	activationThreshold := lerpf(0.6, 1.0, 1.0-d.Aggression)
 
 	rules = append(rules, &Rule{
 		Name:         "form-ground-attack",
 		Priority:     attackPriority + SquadFormBonus,
 		Category:     "squad_form",
 		Exclusive:    false,
-		ConditionSrc: fmt.Sprintf(`!SquadExists("ground-attack") && len(UnassignedIdleGround()) >= %d`, d.GroundAttackGroupSize),
+		ConditionSrc: fmt.Sprintf(`(!SquadExists("ground-attack") && len(UnassignedIdleGround()) >= %d) || (SquadNeedsReinforcement("ground-attack") && len(UnassignedIdleGround()) >= 1)`, d.GroundAttackGroupSize),
 		Action:       FormSquad("ground-attack", "ground", d.GroundAttackGroupSize, "attack"),
 	})
 
@@ -722,7 +860,20 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Priority:     attackPriority,
 		Category:     "combat",
 		Exclusive:    false,
-		ConditionSrc: `SquadExists("ground-attack") && SquadIdleCount("ground-attack") >= SquadSize("ground-attack") && NearestEnemy() != nil`,
+		ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && NearestEnemy() != nil`, activationThreshold),
+		Action:       SquadAttackMove("ground-attack"),
+	})
+
+	// Re-engage idle squad members already in the field — no ratio gate.
+	// The main squad-attack rule handles the initial coordinated launch;
+	// this handles the common case where some members finish their order
+	// while others are still fighting.
+	rules = append(rules, &Rule{
+		Name:         "squad-reengage",
+		Priority:     attackPriority - ReengageDiscount,
+		Category:     "combat",
+		Exclusive:    false,
+		ConditionSrc: `SquadExists("ground-attack") && SquadIdleCount("ground-attack") > 0 && NearestEnemy() != nil`,
 		Action:       SquadAttackMove("ground-attack"),
 	})
 
@@ -732,7 +883,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Priority:     attackPriority - KnownBaseDiscount,
 		Category:     "combat",
 		Exclusive:    false,
-		ConditionSrc: `SquadExists("ground-attack") && SquadIdleCount("ground-attack") >= SquadSize("ground-attack") && !EnemiesVisible() && HasEnemyIntel()`,
+		ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && !EnemiesVisible() && HasEnemyIntel()`, activationThreshold),
 		Action:       SquadAttackKnownBase("ground-attack", d.Aggression),
 	})
 
@@ -746,7 +897,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     airAttackPriority + SquadFormBonus,
 			Category:     "squad_form",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`!SquadExists("air-attack") && len(UnassignedIdleAir()) >= %d`, d.AirAttackGroupSize),
+			ConditionSrc: fmt.Sprintf(`(!SquadExists("air-attack") && len(UnassignedIdleAir()) >= %d) || (SquadNeedsReinforcement("air-attack") && len(UnassignedIdleAir()) >= 1)`, d.AirAttackGroupSize),
 			Action:       FormSquad("air-attack", "air", d.AirAttackGroupSize, "attack"),
 		})
 
@@ -755,7 +906,16 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     airAttackPriority,
 			Category:     "air_combat",
 			Exclusive:    false,
-			ConditionSrc: `SquadExists("air-attack") && SquadIdleCount("air-attack") >= SquadSize("air-attack") && NearestEnemy() != nil`,
+			ConditionSrc: fmt.Sprintf(`SquadExists("air-attack") && SquadReadyRatio("air-attack") >= %.2f && NearestEnemy() != nil`, activationThreshold),
+			Action:       SquadAttackMove("air-attack"),
+		})
+
+		rules = append(rules, &Rule{
+			Name:         "squad-air-reengage",
+			Priority:     airAttackPriority - ReengageDiscount,
+			Category:     "air_combat",
+			Exclusive:    false,
+			ConditionSrc: `SquadExists("air-attack") && SquadIdleCount("air-attack") > 0 && NearestEnemy() != nil`,
 			Action:       SquadAttackMove("air-attack"),
 		})
 
@@ -764,7 +924,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     airAttackPriority - KnownBaseDiscount,
 			Category:     "air_combat",
 			Exclusive:    false,
-			ConditionSrc: `SquadExists("air-attack") && SquadIdleCount("air-attack") >= SquadSize("air-attack") && !EnemiesVisible() && HasEnemyIntel()`,
+			ConditionSrc: fmt.Sprintf(`SquadExists("air-attack") && SquadReadyRatio("air-attack") >= %.2f && !EnemiesVisible() && HasEnemyIntel()`, activationThreshold),
 			Action:       SquadAttackKnownBase("air-attack", d.Aggression),
 		})
 	}
@@ -779,7 +939,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     navalAttackPriority + SquadFormBonus,
 			Category:     "squad_form",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`MapHasWater() && !SquadExists("naval-attack") && len(UnassignedIdleNaval()) >= %d`, d.NavalAttackGroupSize),
+			ConditionSrc: fmt.Sprintf(`MapHasWater() && ((!SquadExists("naval-attack") && len(UnassignedIdleNaval()) >= %d) || (SquadNeedsReinforcement("naval-attack") && len(UnassignedIdleNaval()) >= 1))`, d.NavalAttackGroupSize),
 			Action:       FormSquad("naval-attack", "naval", d.NavalAttackGroupSize, "attack"),
 		})
 
@@ -788,7 +948,16 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     navalAttackPriority,
 			Category:     "naval_combat",
 			Exclusive:    false,
-			ConditionSrc: `MapHasWater() && SquadExists("naval-attack") && SquadIdleCount("naval-attack") >= SquadSize("naval-attack") && NearestEnemy() != nil`,
+			ConditionSrc: fmt.Sprintf(`MapHasWater() && SquadExists("naval-attack") && SquadReadyRatio("naval-attack") >= %.2f && NearestEnemy() != nil`, activationThreshold),
+			Action:       SquadAttackMove("naval-attack"),
+		})
+
+		rules = append(rules, &Rule{
+			Name:         "squad-naval-reengage",
+			Priority:     navalAttackPriority - ReengageDiscount,
+			Category:     "naval_combat",
+			Exclusive:    false,
+			ConditionSrc: `MapHasWater() && SquadExists("naval-attack") && SquadIdleCount("naval-attack") > 0 && NearestEnemy() != nil`,
 			Action:       SquadAttackMove("naval-attack"),
 		})
 	}
@@ -855,17 +1024,74 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
+	// --- Micro behaviors ---
+	// Category "micro" is non-exclusive so all micro rules can co-fire on the same tick.
+
+	// Retreat damaged squad units — always present since all doctrines form squads.
+	retreatThreshold := lerpf(0.50, 0.15, d.Aggression)
+	retreatPriority := lerp(380, 450, 1.0-d.Aggression)
+	rules = append(rules, &Rule{
+		Name:         "retreat-damaged-units",
+		Priority:     retreatPriority,
+		Category:     "micro",
+		Exclusive:    false,
+		ConditionSrc: fmt.Sprintf(`len(DamagedSquadUnits(%.2f)) > 0`, retreatThreshold),
+		Action:       RetreatDamagedUnits(retreatThreshold),
+	})
+
+	// Focus fire on weakest visible enemy — aggressive doctrines only.
+	if d.Aggression > DoctrineModerate {
+		rules = append(rules, &Rule{
+			Name:         "squad-focus-fire",
+			Priority:     attackPriority + 1,
+			Category:     "micro",
+			Exclusive:    false,
+			ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && WeakestVisibleEnemy() != nil`, activationThreshold),
+			Action:       SquadFocusFire("ground-attack"),
+		})
+	}
+
+	// Flee harvesters from danger — economy-focused doctrines.
+	if d.EconomyPriority > DoctrineEnabled {
+		dangerPct := lerpf(0.05, 0.15, d.EconomyPriority)
+		fleePriority := lerp(150, 300, d.EconomyPriority)
+		rules = append(rules, &Rule{
+			Name:         "flee-harvesters",
+			Priority:     fleePriority,
+			Category:     "micro",
+			Exclusive:    false,
+			ConditionSrc: fmt.Sprintf(`EnemiesVisible() && len(HarvestersInDanger(%.2f)) > 0`, dangerPct),
+			Action:       FleeHarvesters(dangerPct),
+		})
+	}
+
 	// --- Recon ---
-	// Scouts are only sent when the enemy hasn't been located yet, and only
-	// after reaching attack strength — so scouting doesn't weaken the army.
+	// Rangers are dedicated scouts — sent immediately when idle. They use Move
+	// (fast, no stopping to fight) and fan out to different waypoints.
+	// Always patrol: maintains map vision and refreshes enemy intel. Without
+	// this, rangers go permanently idle once intel is gathered and enemies
+	// are visible — and they're excluded from combat rules.
 
 	scoutPriority := lerp(250, 400, d.ScoutPriority)
+	rules = append(rules, &Rule{
+		Name:         "scout-with-rangers",
+		Priority:     scoutPriority + SquadFormBonus,
+		Category:     "recon",
+		Exclusive:    false,
+		ConditionSrc: `len(IdleRangers()) > 0`,
+		Action:       ActionScoutWithRangers,
+	})
+
+	// Generic fallback: scout with any idle ground units once army is large enough.
+	// Gates on visibility, not intel — having historical intel doesn't mean we
+	// know where enemies are now. Scouts resume patrolling whenever enemies
+	// leave vision, preventing idle stalls at reached waypoints.
 	rules = append(rules, &Rule{
 		Name:         "scout-with-idle-units",
 		Priority:     scoutPriority,
 		Category:     "recon",
 		Exclusive:    false,
-		ConditionSrc: fmt.Sprintf(`!EnemiesVisible() && !HasEnemyIntel() && len(UnassignedIdleGround()) >= %d`, d.GroundAttackGroupSize),
+		ConditionSrc: fmt.Sprintf(`!EnemiesVisible() && len(UnassignedIdleGround()) >= %d`, d.GroundAttackGroupSize),
 		Action:       ActionScoutWithIdleUnits,
 	})
 

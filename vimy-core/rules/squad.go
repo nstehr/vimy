@@ -6,10 +6,11 @@ import "github.com/nstehr/vimy/vimy-core/model"
 // would re-select units every tick and couldn't maintain coherent attack groups
 // or reserve a defense force.
 type Squad struct {
-	Name    string // "attack-1", "defense", "scout"
-	Domain  string // "ground", "air", "naval"
-	UnitIDs []int  // persistent unit roster
-	Role    string // "attack", "defend", "scout" — informational for LLM summary
+	Name       string // "attack-1", "defense", "scout"
+	Domain     string // "ground", "air", "naval"
+	UnitIDs    []int  // persistent unit roster
+	Role       string // "attack", "defend", "scout" — informational for LLM summary
+	TargetSize int    // intended formation size; reinforcement tops up to this
 }
 
 func getSquads(memory map[string]any) map[string]*Squad {
@@ -41,6 +42,7 @@ func updateSquads(env RuleEnv) {
 
 		if len(sq.UnitIDs) == 0 {
 			delete(squads, name)
+			delete(env.Memory, "huntBase:"+name)
 		}
 	}
 	env.Memory["squads"] = squads

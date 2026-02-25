@@ -58,6 +58,9 @@ namespace OpenRA.Mods.Vimy
 	{
 		[JsonPropertyName("idle")]
 		public bool Idle { get; set; }
+
+		[JsonPropertyName("cargoCount")]
+		public int CargoCount { get; set; }
 	}
 
 	public class EnemyActorData : ActorData
@@ -222,7 +225,8 @@ namespace OpenRA.Mods.Vimy
 					Y = actor.Location.Y,
 					Hp = health?.HP ?? 0,
 					MaxHp = health?.MaxHP ?? 0,
-					Idle = IsEffectivelyIdle(actor)
+					Idle = IsEffectivelyIdle(actor),
+					CargoCount = actor.TraitOrDefault<Cargo>()?.PassengerCount ?? 0
 				});
 			}
 

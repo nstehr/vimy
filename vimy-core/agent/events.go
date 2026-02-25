@@ -135,14 +135,69 @@ const counterCooldownTicks = 200
 // counterLossThreshold is the minimum units lost in a domain to trigger the event.
 const counterLossThreshold = 3
 
-// gamePhase returns the phase string for a given tick.
-func gamePhase(tick int) string {
-	if tick > 3000 {
+// Mid-game building types: real military production capability.
+var midGameBuildings = map[string]bool{
+	"weap": true, // War Factory
+	"afld": true, // Airfield
+	"syrd": true, // Naval Yard
+}
+
+// barracksTypes identifies barracks buildings (Allied tent / Soviet barr).
+var barracksTypes = map[string]bool{
+	"tent": true, // Allied Barracks
+	"barr": true, // Soviet Barracks
+}
+
+// Late-game building types: advanced tech or superweapons.
+var lateGameBuildings = map[string]bool{
+	"atek": true, // Allied Tech Center
+	"stek": true, // Soviet Tech Center
+	"mslo": true, // Missile Silo
+	"iron": true, // Iron Curtain
+}
+
+// gamePhase determines the game phase from building milestones, with tick
+// as a generous fallback for stalled games. Tick-only thresholds caused the
+// LLM to think it was mid-game when only barracks and a few troops existed.
+func gamePhase(gs model.GameState) string {
+	hasLate := false
+	hasMid := false
+	hasBarracks := false
+	for _, b := range gs.Buildings {
+		bt := baseType(b.Type)
+		if lateGameBuildings[bt] {
+			hasLate = true
+			break
+		}
+		if midGameBuildings[bt] {
+			hasMid = true
+		}
+		if barracksTypes[bt] {
+			hasBarracks = true
+		}
+	}
+
+	if hasLate || gs.Tick > 5000 {
 		return "Late Game"
 	}
-	if tick > 1000 {
+	if hasMid || gs.Tick > 2000 {
 		return "Mid Game"
 	}
+
+	// Barracks + 5 combat units = valid mid-game (infantry rush).
+	// Just barracks + 2 troops stays "Early Game" to avoid premature transitions.
+	if hasBarracks {
+		combatCount := 0
+		for _, u := range gs.Units {
+			if isCombatUnit(u) {
+				combatCount++
+			}
+		}
+		if combatCount >= 5 {
+			return "Mid Game"
+		}
+	}
+
 	return "Early Game"
 }
 
@@ -172,7 +227,7 @@ func takeSnapshot(gs model.GameState, memory map[string]any) stateSnapshot {
 	snap := stateSnapshot{
 		buildingIDs:  make(map[int]string, len(gs.Buildings)),
 		cash:         gs.Player.Cash + gs.Player.Resources,
-		phase:        gamePhase(gs.Tick),
+		phase:        gamePhase(gs),
 		enemiesSeen:  len(gs.Enemies) > 0,
 		superReady:   make(map[string]bool),
 		harvesterCnt: 0,

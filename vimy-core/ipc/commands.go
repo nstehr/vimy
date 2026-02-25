@@ -14,6 +14,8 @@ const (
 	TypeHarvest          = "harvest"
 	TypeCapture          = "capture"
 	TypeSupportPower     = "support_power"
+	TypeEnterTransport   = "enter_transport"
+	TypeUnload           = "unload"
 )
 
 type ProduceCommand struct {
@@ -81,4 +83,13 @@ type SupportPowerCommand struct {
 	PowerKey string `json:"power_key"`
 	X        int    `json:"x"`
 	Y        int    `json:"y"`
+}
+
+type EnterTransportCommand struct {
+	ActorID     uint32 `json:"actor_id"`
+	TransportID uint32 `json:"transport_id"`
+}
+
+type UnloadCommand struct {
+	ActorID uint32 `json:"actor_id"`
 }

@@ -250,6 +250,143 @@ func TestSquadAttackMoveAction(t *testing.T) {
 	}
 }
 
+func TestSquadNeedsReinforcement(t *testing.T) {
+	memory := map[string]any{
+		"squads": map[string]*Squad{
+			"under": {
+				Name:       "under",
+				Domain:     "ground",
+				UnitIDs:    []int{1, 2},
+				Role:       "attack",
+				TargetSize: 5,
+			},
+			"full": {
+				Name:       "full",
+				Domain:     "ground",
+				UnitIDs:    []int{10, 11, 12},
+				Role:       "attack",
+				TargetSize: 3,
+			},
+		},
+	}
+	env := RuleEnv{Memory: memory}
+
+	if !env.SquadNeedsReinforcement("under") {
+		t.Error("expected under-strength squad to need reinforcement")
+	}
+	if env.SquadNeedsReinforcement("full") {
+		t.Error("expected full-strength squad to not need reinforcement")
+	}
+	if env.SquadNeedsReinforcement("missing") {
+		t.Error("expected missing squad to not need reinforcement")
+	}
+}
+
+func TestSquadReadyRatio(t *testing.T) {
+	memory := map[string]any{
+		"squads": map[string]*Squad{
+			"alpha": {
+				Name:       "alpha",
+				Domain:     "ground",
+				UnitIDs:    []int{1, 2, 3, 4},
+				Role:       "attack",
+				TargetSize: 5,
+			},
+		},
+	}
+	env := RuleEnv{
+		State: model.GameState{
+			Units: []model.Unit{
+				{ID: 1, Type: "1tnk", Idle: true},
+				{ID: 2, Type: "1tnk", Idle: true},
+				{ID: 3, Type: "1tnk", Idle: true},
+				{ID: 4, Type: "1tnk", Idle: false},
+			},
+		},
+		Memory: memory,
+	}
+
+	ratio := env.SquadReadyRatio("alpha")
+	if ratio != 0.75 {
+		t.Errorf("expected SquadReadyRatio = 0.75, got %f", ratio)
+	}
+	if env.SquadReadyRatio("missing") != 0 {
+		t.Error("expected SquadReadyRatio for missing squad to be 0")
+	}
+}
+
+func TestFormSquadReinforcement(t *testing.T) {
+	memory := map[string]any{
+		"squads": map[string]*Squad{
+			"test-squad": {
+				Name:       "test-squad",
+				Domain:     "ground",
+				UnitIDs:    []int{1, 2},
+				Role:       "attack",
+				TargetSize: 4,
+			},
+		},
+	}
+	env := RuleEnv{
+		State: model.GameState{
+			Units: []model.Unit{
+				{ID: 1, Type: "1tnk", Idle: true},
+				{ID: 2, Type: "1tnk", Idle: true},
+				{ID: 3, Type: "1tnk", Idle: true},
+				{ID: 4, Type: "1tnk", Idle: true},
+			},
+		},
+		Memory: memory,
+	}
+
+	action := FormSquad("test-squad", "ground", 4, "attack")
+	err := action(env, nil)
+	if err != nil {
+		t.Fatalf("FormSquad reinforcement returned error: %v", err)
+	}
+
+	squads := getSquads(memory)
+	sq := squads["test-squad"]
+	if sq == nil {
+		t.Fatal("expected test-squad to exist")
+	}
+	if len(sq.UnitIDs) != 4 {
+		t.Errorf("expected 4 units after reinforcement, got %d", len(sq.UnitIDs))
+	}
+	// Original units should still be present.
+	if sq.UnitIDs[0] != 1 || sq.UnitIDs[1] != 2 {
+		t.Error("expected original unit IDs to be preserved")
+	}
+}
+
+func TestHuntStateCleanupOnDissolve(t *testing.T) {
+	memory := map[string]any{
+		"squads": map[string]*Squad{
+			"doomed": {
+				Name:       "doomed",
+				Domain:     "ground",
+				UnitIDs:    []int{10, 11},
+				Role:       "attack",
+				TargetSize: 5,
+			},
+		},
+		"huntBase:doomed": &huntBaseState{BaseX: 100, BaseY: 200, Step: 3},
+	}
+	env := RuleEnv{
+		State: model.GameState{
+			// No surviving units — squad will dissolve.
+			Units: []model.Unit{},
+		},
+		Memory: memory,
+	}
+
+	updateSquads(env)
+
+	if _, ok := memory["huntBase:doomed"]; ok {
+		t.Error("expected huntBase:doomed to be cleaned up on dissolution")
+	}
+}
+
 func TestSwapClearsSquads(t *testing.T) {
 	engine, err := NewEngine(DefaultRules())
 	if err != nil {

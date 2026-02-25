@@ -48,6 +48,12 @@ namespace OpenRA.Mods.Vimy
 					case "capture":
 						ExecuteCapture(dataJson, world, bot);
 						break;
+					case "enter_transport":
+						ExecuteEnterTransport(dataJson, world, bot);
+						break;
+					case "unload":
+						ExecuteUnload(dataJson, world, bot);
+						break;
 					case "support_power":
 						ExecuteSupportPower(dataJson, world, bot);
 						break;
@@ -327,6 +333,50 @@ namespace OpenRA.Mods.Vimy
 
 			bot.QueueOrder(new Order("CaptureActor", actor, Target.FromActor(target), true));
 			Log.Write("debug", $"CommandExecutor: capture actor {actorId} -> target {targetId}");
+		}
+
+		static void ExecuteEnterTransport(string dataJson, World world, IBot bot)
+		{
+			using var doc = JsonDocument.Parse(dataJson);
+			var root = doc.RootElement;
+
+			var actorId = root.GetProperty("actor_id").GetUInt32();
+			var transportId = root.GetProperty("transport_id").GetUInt32();
+
+			var actor = world.GetActorById(actorId);
+			if (!IsValidOwnedActor(actor, bot))
+			{
+				Log.Write("debug", $"CommandExecutor: enter_transport — invalid actor {actorId}");
+				return;
+			}
+
+			var transport = world.GetActorById(transportId);
+			if (!IsValidOwnedActor(transport, bot))
+			{
+				Log.Write("debug", $"CommandExecutor: enter_transport — invalid transport {transportId}");
+				return;
+			}
+
+			bot.QueueOrder(new Order("EnterTransport", actor, Target.FromActor(transport), false));
+			Log.Write("debug", $"CommandExecutor: enter_transport actor {actorId} -> transport {transportId}");
+		}
+
+		static void ExecuteUnload(string dataJson, World world, IBot bot)
+		{
+			using var doc = JsonDocument.Parse(dataJson);
+			var root = doc.RootElement;
+
+			var actorId = root.GetProperty("actor_id").GetUInt32();
+
+			var actor = world.GetActorById(actorId);
+			if (!IsValidOwnedActor(actor, bot))
+			{
+				Log.Write("debug", $"CommandExecutor: unload — invalid actor {actorId}");
+				return;
+			}
+
+			bot.QueueOrder(new Order("Unload", actor, false));
+			Log.Write("debug", $"CommandExecutor: unload actor {actorId}");
 		}
 
 		static void ExecuteSupportPower(string dataJson, World world, IBot bot)
