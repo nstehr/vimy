@@ -92,6 +92,7 @@ type Doctrine struct {
 	Scout_priority              *float64 `json:"scout_priority"`
 	Specialized_infantry_weight *float64 `json:"specialized_infantry_weight"`
 	Superweapon_priority        *float64 `json:"superweapon_priority"`
+	Capture_priority            *float64 `json:"capture_priority"`
 }
 
 func (c *Doctrine) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -159,6 +160,9 @@ func (c *Doctrine) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		case "superweapon_priority":
 			c.Superweapon_priority = baml.Decode(valueHolder).Interface().(*float64)
 
+		case "capture_priority":
+			c.Capture_priority = baml.Decode(valueHolder).Interface().(*float64)
+
 		default:
 
 			panic(fmt.Sprintf("unexpected field: %s in class Doctrine", key))
@@ -204,6 +208,8 @@ func (c Doctrine) Encode() (*cffi.HostValue, error) {
 	fields["specialized_infantry_weight"] = c.Specialized_infantry_weight
 
 	fields["superweapon_priority"] = c.Superweapon_priority
+
+	fields["capture_priority"] = c.Capture_priority
 
 	return baml.EncodeClass("Doctrine", fields, nil)
 }

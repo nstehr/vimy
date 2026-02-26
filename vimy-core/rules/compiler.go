@@ -63,9 +63,13 @@ func CompileDoctrine(d Doctrine) []*Rule {
 	if d.TechPriority > DoctrineSignificant {
 		savings = append(savings, buildingSaving{`HasRole("tech_center")`, 1500})
 	}
-	if d.SuperweaponPriority > DoctrineSignificant {
+	// Superweapon savings only activate at DoctrineHigh (0.4) and only when a
+	// tech center already exists. Without a tech center, superweapons can't be
+	// built anyway, so reserving 2500 cash just blocks all unit production in
+	// the early/mid game for no benefit.
+	if d.SuperweaponPriority > DoctrineHigh {
 		savings = append(savings, buildingSaving{
-			`HasRole("missile_silo") || HasRole("iron_curtain")`, 2500,
+			`HasRole("missile_silo") || HasRole("iron_curtain") || !HasRole("tech_center")`, 2500,
 		})
 	}
 
@@ -120,51 +124,56 @@ func CompileDoctrine(d Doctrine) []*Rule {
 	// The capture-on-foot rule is a fallback for when no APC can be built (no war factory
 	// or APC not in buildable list). Without this gate, engineers walk on foot immediately
 	// and never wait for the APC.
+	// Gated by CapturePriority so pure-defense doctrines don't waste the Infantry queue.
 
-	rules = append(rules, &Rule{
-		Name:         "capture-building",
-		Priority:     850,
-		Category:     "capture",
-		Exclusive:    false,
-		ConditionSrc: `CapturableCount() > 0 && len(IdleEngineers()) > 0 && !CanBuildRole("apc")`,
-		Action:       ActionCaptureBuilding,
-	})
+	if d.CapturePriority > DoctrineEnabled {
+		engineerCap := lerp(1, 3, d.CapturePriority)
 
-	rules = append(rules, &Rule{
-		Name:         "produce-engineer",
-		Priority:     550,
-		Category:     "production",
-		Exclusive:    false,
-		ConditionSrc: `CapturableCount() > 0 && !QueueBusy("Infantry") && CanBuildRole("engineer") && RoleCount("engineer") < CapturableCount() && RoleCount("engineer") < 2 && Cash() >= 500`,
-		Action:       ActionProduceEngineer,
-	})
+		rules = append(rules, &Rule{
+			Name:         "capture-building",
+			Priority:     850,
+			Category:     "capture",
+			Exclusive:    false,
+			ConditionSrc: `CapturableCount() > 0 && len(IdleEngineers()) > 0 && !CanBuildRole("apc")`,
+			Action:       ActionCaptureBuilding,
+		})
 
-	rules = append(rules, &Rule{
-		Name:         "produce-apc",
-		Priority:     545,
-		Category:     "production",
-		Exclusive:    false,
-		ConditionSrc: `CapturableCount() > 0 && RoleCount("engineer") > 0 && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("apc") && RoleCount("apc") < 1 && Cash() >= 800`,
-		Action:       ActionProduceAPC,
-	})
+		rules = append(rules, &Rule{
+			Name:         "produce-engineer",
+			Priority:     550,
+			Category:     "production",
+			Exclusive:    false,
+			ConditionSrc: fmt.Sprintf(`CapturableCount() > 0 && !QueueBusy("Infantry") && CanBuildRole("engineer") && RoleCount("engineer") < CapturableCount() && RoleCount("engineer") < %d && Cash() >= 500`, engineerCap),
+			Action:       ActionProduceEngineer,
+		})
 
-	rules = append(rules, &Rule{
-		Name:         "load-engineer-into-apc",
-		Priority:     845,
-		Category:     "capture",
-		Exclusive:    false,
-		ConditionSrc: `len(IdleEngineers()) > 0 && len(IdleEmptyAPCs()) > 0`,
-		Action:       ActionLoadEngineerIntoAPC,
-	})
+		rules = append(rules, &Rule{
+			Name:         "produce-apc",
+			Priority:     545,
+			Category:     "production",
+			Exclusive:    false,
+			ConditionSrc: `CapturableCount() > 0 && RoleCount("engineer") > 0 && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("apc") && RoleCount("apc") < 1 && Cash() >= 800`,
+			Action:       ActionProduceAPC,
+		})
 
-	rules = append(rules, &Rule{
-		Name:         "deliver-apc-to-target",
-		Priority:     847,
-		Category:     "capture",
-		Exclusive:    false,
-		ConditionSrc: `CapturableCount() > 0 && len(IdleLoadedAPCs()) > 0`,
-		Action:       ActionUnloadAPCNearTarget,
-	})
+		rules = append(rules, &Rule{
+			Name:         "load-engineer-into-apc",
+			Priority:     845,
+			Category:     "capture",
+			Exclusive:    false,
+			ConditionSrc: `len(IdleEngineers()) > 0 && len(IdleEmptyAPCs()) > 0`,
+			Action:       ActionLoadEngineerIntoAPC,
+		})
+
+		rules = append(rules, &Rule{
+			Name:         "deliver-apc-to-target",
+			Priority:     847,
+			Category:     "capture",
+			Exclusive:    false,
+			ConditionSrc: `CapturableCount() > 0 && len(IdleLoadedAPCs()) > 0`,
+			Action:       ActionUnloadAPCNearTarget,
+		})
+	}
 
 	// --- Rebuild rules (always present, high priority) ---
 	// These fire when a previously-built building is destroyed, using the
@@ -291,6 +300,29 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Exclusive:    true,
 		ConditionSrc: `LostRole("iron_curtain") && !QueueBusy("Defense") && CanBuildRole("iron_curtain") && Cash() >= 2500`,
 		Action:       ActionProduceIronCurtain,
+	})
+
+	// Scramble defense: any idle ground unit responds to a base attack,
+	// regardless of squad assignment. The dedicated squad-defend-base and
+	// defend-base rules handle their own pools; this catches idle attack-
+	// squad members, unassigned units, and any other idle stragglers that
+	// would otherwise sit at the base while it's being destroyed.
+	rules = append(rules, &Rule{
+		Name:         "scramble-base-defense",
+		Priority:     350,
+		Category:     "combat",
+		Exclusive:    false,
+		ConditionSrc: `BaseUnderAttack() && len(IdleGroundUnits()) > 0`,
+		Action:       ActionDefendBase,
+	})
+
+	rules = append(rules, &Rule{
+		Name:         "scramble-naval-defense",
+		Priority:     350,
+		Category:     "naval_combat",
+		Exclusive:    false,
+		ConditionSrc: `MapHasWater() && BaseUnderAttack() && len(IdleNavalUnits()) > 0`,
+		Action:       ActionNavalDefendBase,
 	})
 
 	rules = append(rules, &Rule{
@@ -574,6 +606,18 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
+	if d.NavalWeight > DoctrineExtreme {
+		extraNavalCap := lerp(1, 2, d.NavalWeight)
+		rules = append(rules, &Rule{
+			Name:         "build-extra-naval-yard",
+			Priority:     470,
+			Category:     "economy",
+			Exclusive:    true,
+			ConditionSrc: fmt.Sprintf(`MapHasWater() && !QueueBusy("Building") && CanBuildRole("naval_yard") && RoleCount("naval_yard") < %d && PowerExcess() >= 0 && Cash() >= 500`, extraNavalCap),
+			Action:       ActionProduceNavalYard,
+		})
+	}
+
 	// --- Economy scaling ---
 
 	if d.EconomyPriority > DoctrineSignificant || d.TechPriority > DoctrineDominant {
@@ -673,22 +717,22 @@ func CompileDoctrine(d Doctrine) []*Rule {
 	}
 
 	if d.NavalWeight > DoctrineEnabled {
-		navalCap := lerp(2, 6, d.NavalWeight)
+		navalCap := lerp(3, 8, d.NavalWeight)
 		rules = append(rules, &Rule{
 			Name:         "produce-ship",
 			Priority:     440,
 			Category:     "production",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`MapHasWater() && HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("submarine") || CanBuildRole("destroyer")) && (RoleCount("submarine") + RoleCount("destroyer")) < %d && %s`, navalCap, buildCashCondition(1000, savings)),
+			ConditionSrc: fmt.Sprintf(`MapHasWater() && HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("submarine") || CanBuildRole("destroyer")) && (RoleCount("submarine") + RoleCount("destroyer")) < %d && %s`, navalCap, buildCashCondition(800, savings)),
 			Action:       ActionProduceShip,
 		})
 	}
 
 	if d.NavalWeight > DoctrineEnabled {
-		gunboatCap := lerp(1, 3, d.NavalWeight)
+		gunboatCap := lerp(1, 4, d.NavalWeight)
 		rules = append(rules, &Rule{
 			Name:         "produce-gunboat",
-			Priority:     445,
+			Priority:     435,
 			Category:     "production",
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`MapHasWater() && HasRole("naval_yard") && !QueueBusy("Ship") && CanBuildRole("gunboat") && RoleCount("gunboat") < %d && %s`, gunboatCap, buildCashCondition(500, savings)),
@@ -785,7 +829,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		advNavalCap := lerp(1, 3, d.TechPriority*d.NavalWeight)
 		rules = append(rules, &Rule{
 			Name:         "produce-advanced-ship",
-			Priority:     435,
+			Priority:     430,
 			Category:     "production",
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`MapHasWater() && HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("cruiser") || CanBuildRole("destroyer")) && (RoleCount("cruiser") + RoleCount("destroyer")) < %d && %s`, advNavalCap, buildCashCondition(2000, savings)),

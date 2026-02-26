@@ -23,18 +23,24 @@ func (e RuleEnv) UnitCount(t string) int      { return countType(e.State.Units, 
 func (e RuleEnv) BuildingCount(t string) int  { return countType(e.State.Buildings, t) }
 
 func (e RuleEnv) QueueBusy(q string) bool {
+	found := false
 	for _, pq := range e.State.ProductionQueues {
 		if strings.EqualFold(pq.Type, q) {
-			return pq.CurrentItem != "" && pq.CurrentProgress < 100
+			found = true
+			if pq.CurrentItem == "" || pq.CurrentProgress >= 100 {
+				return false // at least one queue is free
+			}
 		}
 	}
-	return false
+	return found // true only if all matched queues are busy (or none found)
 }
 
 func (e RuleEnv) QueueReady(q string) bool {
 	for _, pq := range e.State.ProductionQueues {
 		if strings.EqualFold(pq.Type, q) {
-			return pq.CurrentItem != "" && pq.CurrentProgress >= 100
+			if pq.CurrentItem != "" && pq.CurrentProgress >= 100 {
+				return true
+			}
 		}
 	}
 	return false
@@ -353,7 +359,26 @@ func (e RuleEnv) IdleRangers() []model.Unit {
 
 func (e RuleEnv) CapturableCount() int { return len(e.State.Capturables) }
 
+// capturableValue assigns a strategic value to capturable building types.
+// Higher value = more desirable target. Unknown types get a baseline score.
+var capturableValue = map[string]float64{
+	"oilb": 10, // Oil derrick: continuous cash income
+	"fcom": 8,  // Forward command: expands build area
+	"miss": 5,  // Communications center: large radar reveal
+	"bio":  4,  // Bio lab: provides prerequisite
+	"hosp": 3,  // Hospital: heals infantry
+}
+
+const capturableValueDefault = 2 // unknown capturable types
+
 func (e RuleEnv) NearestCapturable() *model.Enemy {
+	return e.BestCapturable()
+}
+
+// BestCapturable picks the highest-value capturable, using distance as a
+// tiebreaker. Value is divided by sqrt(distance) so nearby low-value targets
+// can still beat distant high-value ones when the trip cost is too high.
+func (e RuleEnv) BestCapturable() *model.Enemy {
 	if len(e.State.Capturables) == 0 {
 		return nil
 	}
@@ -362,18 +387,27 @@ func (e RuleEnv) NearestCapturable() *model.Enemy {
 		bx = e.State.Buildings[0].X
 		by = e.State.Buildings[0].Y
 	}
-	var nearest *model.Enemy
-	bestDist := math.MaxFloat64
+	var best *model.Enemy
+	bestScore := -1.0
 	for i := range e.State.Capturables {
-		dx := float64(e.State.Capturables[i].X - bx)
-		dy := float64(e.State.Capturables[i].Y - by)
-		d := dx*dx + dy*dy
-		if d < bestDist {
-			bestDist = d
-			nearest = &e.State.Capturables[i]
+		c := &e.State.Capturables[i]
+		dx := float64(c.X - bx)
+		dy := float64(c.Y - by)
+		dist := math.Sqrt(dx*dx + dy*dy)
+		if dist < 1 {
+			dist = 1
+		}
+		val := capturableValue[strings.ToLower(c.Type)]
+		if val == 0 {
+			val = capturableValueDefault
+		}
+		score := val / math.Sqrt(dist)
+		if score > bestScore {
+			bestScore = score
+			best = c
 		}
 	}
-	return nearest
+	return best
 }
 
 func (e RuleEnv) IdleEngineers() []model.Unit {

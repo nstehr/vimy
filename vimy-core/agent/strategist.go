@@ -203,6 +203,7 @@ func fromBAML(d types.Doctrine) rules.Doctrine {
 		ScoutPriority:             d.Scout_priority,
 		SpecializedInfantryWeight: d.Specialized_infantry_weight,
 		SuperweaponPriority:       d.Superweapon_priority,
+		CapturePriority:           d.Capture_priority,
 	}
 }
 

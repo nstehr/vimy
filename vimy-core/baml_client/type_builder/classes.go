@@ -139,6 +139,10 @@ func (t *DoctrineClassView) PropertySuperweapon_priority() (ClassPropertyView, e
 	return t.inner.Property("superweapon_priority")
 }
 
+func (t *DoctrineClassView) PropertyCapture_priority() (ClassPropertyView, error) {
+	return t.inner.Property("capture_priority")
+}
+
 func (t *TypeBuilder) Doctrine() (*DoctrineClassView, error) {
 	bld, err := t.inner.Class("Doctrine")
 	if err != nil {

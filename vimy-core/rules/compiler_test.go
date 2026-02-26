@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/expr-lang/expr"
+	"github.com/nstehr/vimy/vimy-core/model"
 )
 
 func TestCompileDoctrineBalanced(t *testing.T) {
@@ -25,14 +26,14 @@ func TestCompileDoctrineBalanced(t *testing.T) {
 
 	// Check core rules are present
 	coreNames := map[string]bool{
-		"deploy-mcv":              false,
-		"place-ready-building":    false,
-		"place-ready-defense":     false,
-		"cancel-stuck-aircraft":   false,
-		"repair-buildings":        false,
-		"return-idle-harvesters":  false,
-		"capture-building":        false,
-		"produce-engineer":        false,
+		"deploy-mcv":               false,
+		"place-ready-building":     false,
+		"place-ready-defense":      false,
+		"cancel-stuck-aircraft":    false,
+		"scramble-base-defense":    false,
+		"scramble-naval-defense":   false,
+		"repair-buildings":         false,
+		"return-idle-harvesters":   false,
 	}
 	for _, r := range rules {
 		if _, ok := coreNames[r.Name]; ok {
@@ -133,7 +134,9 @@ func TestCompileDoctrineEconomyOnly(t *testing.T) {
 			"produce-infantry", "produce-vehicle", "produce-aircraft", "produce-ship",
 			"build-missile-silo", "build-iron-curtain",
 			"fire-nuke", "fire-iron-curtain",
-			"fire-spy-plane", "fire-spy-plane-update", "fire-paratroopers", "fire-parabombs":
+			"fire-spy-plane", "fire-spy-plane-update", "fire-paratroopers", "fire-parabombs",
+			"capture-building", "produce-engineer", "produce-apc",
+			"load-engineer-into-apc", "deliver-apc-to-target":
 			t.Errorf("unexpected military rule %q when all unit weights=0", r.Name)
 		}
 	}
@@ -174,6 +177,7 @@ func TestCompileDoctrineFullSpectrum(t *testing.T) {
 		"squad-reengage",
 		"form-air-attack", "squad-air-attack", "squad-air-reengage", "squad-air-attack-known-base",
 		"form-naval-attack", "squad-naval-attack", "squad-naval-reengage",
+		"scramble-naval-defense",
 		"build-base-defense", "build-aa-defense",
 		"build-missile-silo", "build-iron-curtain",
 		"fire-nuke", "fire-iron-curtain",
@@ -480,6 +484,59 @@ func TestCompileDoctrineHighTech(t *testing.T) {
 	}
 }
 
+func TestCompileDoctrineHighNaval(t *testing.T) {
+	d := Doctrine{
+		Name:                  "Naval Dominance",
+		EconomyPriority:       0.5,
+		Aggression:            0.5,
+		TechPriority:          0.5,
+		GroundDefensePriority: 0.3,
+		InfantryWeight:        0.3,
+		VehicleWeight:         0.3,
+		AirWeight:             0.0,
+		NavalWeight:           0.8,
+		GroundAttackGroupSize: 5,
+		AirAttackGroupSize:    2,
+		NavalAttackGroupSize:  4,
+		ScoutPriority:         0.5,
+	}
+	rules := CompileDoctrine(d)
+
+	for _, r := range rules {
+		_, err := expr.Compile(r.ConditionSrc, expr.Env(RuleEnv{}), expr.AsBool())
+		if err != nil {
+			t.Errorf("rule %q failed to compile: %v\ncondition: %s", r.Name, err, r.ConditionSrc)
+		}
+	}
+
+	found := map[string]bool{}
+	for _, r := range rules {
+		found[r.Name] = true
+	}
+
+	if !found["build-naval-yard"] {
+		t.Error("expected build-naval-yard with NavalWeight=0.8")
+	}
+	if !found["build-extra-naval-yard"] {
+		t.Error("expected build-extra-naval-yard with NavalWeight=0.8 (> DoctrineExtreme)")
+	}
+	if !found["scramble-naval-defense"] {
+		t.Error("expected scramble-naval-defense as core rule")
+	}
+	if !found["produce-ship"] {
+		t.Error("expected produce-ship with NavalWeight=0.8")
+	}
+	if !found["produce-advanced-ship"] {
+		t.Error("expected produce-advanced-ship with NavalWeight=0.8 and TechPriority=0.5")
+	}
+	if !found["form-naval-attack"] {
+		t.Error("expected form-naval-attack with NavalWeight=0.8")
+	}
+	if !found["squad-naval-attack"] {
+		t.Error("expected squad-naval-attack with NavalWeight=0.8")
+	}
+}
+
 func TestCompileDoctrineWithSuperweapons(t *testing.T) {
 	d := Doctrine{
 		Name:                  "Nuke Rush",
@@ -726,3 +783,316 @@ func TestCompileDoctrineBuildingSavings(t *testing.T) {
 	}
 }
 
+func TestQueueBusyMultipleQueues(t *testing.T) {
+	tests := []struct {
+		name   string
+		queues []model.ProductionQueue
+		want   bool
+	}{
+		{
+			name:   "no matching queues",
+			queues: []model.ProductionQueue{{Type: "Vehicle"}},
+			want:   false,
+		},
+		{
+			name: "single queue busy",
+			queues: []model.ProductionQueue{
+				{Type: "Ship", CurrentItem: "ss", CurrentProgress: 50},
+			},
+			want: true,
+		},
+		{
+			name: "single queue idle",
+			queues: []model.ProductionQueue{
+				{Type: "Ship", CurrentItem: "", CurrentProgress: 0},
+			},
+			want: false,
+		},
+		{
+			name: "single queue complete",
+			queues: []model.ProductionQueue{
+				{Type: "Ship", CurrentItem: "ss", CurrentProgress: 100},
+			},
+			want: false,
+		},
+		{
+			name: "two queues both busy",
+			queues: []model.ProductionQueue{
+				{Type: "Ship", CurrentItem: "ss", CurrentProgress: 50},
+				{Type: "Ship", CurrentItem: "dd", CurrentProgress: 30},
+			},
+			want: true,
+		},
+		{
+			name: "two queues first busy second idle",
+			queues: []model.ProductionQueue{
+				{Type: "Ship", CurrentItem: "ss", CurrentProgress: 50},
+				{Type: "Ship", CurrentItem: "", CurrentProgress: 0},
+			},
+			want: false,
+		},
+		{
+			name: "two queues first idle second busy",
+			queues: []model.ProductionQueue{
+				{Type: "Ship", CurrentItem: "", CurrentProgress: 0},
+				{Type: "Ship", CurrentItem: "dd", CurrentProgress: 30},
+			},
+			want: false,
+		},
+		{
+			name: "two queues first busy second complete",
+			queues: []model.ProductionQueue{
+				{Type: "Ship", CurrentItem: "ss", CurrentProgress: 50},
+				{Type: "Ship", CurrentItem: "dd", CurrentProgress: 100},
+			},
+			want: false,
+		},
+		{
+			name: "mixed queue types only ship checked",
+			queues: []model.ProductionQueue{
+				{Type: "Vehicle", CurrentItem: "tank", CurrentProgress: 50},
+				{Type: "Ship", CurrentItem: "", CurrentProgress: 0},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := RuleEnv{State: model.GameState{ProductionQueues: tt.queues}}
+			got := env.QueueBusy("Ship")
+			if got != tt.want {
+				t.Errorf("QueueBusy(\"Ship\") = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestQueueReadyMultipleQueues(t *testing.T) {
+	tests := []struct {
+		name   string
+		queues []model.ProductionQueue
+		want   bool
+	}{
+		{
+			name:   "no matching queues",
+			queues: []model.ProductionQueue{{Type: "Vehicle"}},
+			want:   false,
+		},
+		{
+			name: "single queue not ready",
+			queues: []model.ProductionQueue{
+				{Type: "Ship", CurrentItem: "ss", CurrentProgress: 50},
+			},
+			want: false,
+		},
+		{
+			name: "single queue ready",
+			queues: []model.ProductionQueue{
+				{Type: "Ship", CurrentItem: "ss", CurrentProgress: 100},
+			},
+			want: true,
+		},
+		{
+			name: "two queues first not ready second ready",
+			queues: []model.ProductionQueue{
+				{Type: "Ship", CurrentItem: "ss", CurrentProgress: 50},
+				{Type: "Ship", CurrentItem: "dd", CurrentProgress: 100},
+			},
+			want: true,
+		},
+		{
+			name: "two queues first ready second not ready",
+			queues: []model.ProductionQueue{
+				{Type: "Ship", CurrentItem: "ss", CurrentProgress: 100},
+				{Type: "Ship", CurrentItem: "dd", CurrentProgress: 30},
+			},
+			want: true,
+		},
+		{
+			name: "two queues neither ready",
+			queues: []model.ProductionQueue{
+				{Type: "Ship", CurrentItem: "ss", CurrentProgress: 50},
+				{Type: "Ship", CurrentItem: "dd", CurrentProgress: 30},
+			},
+			want: false,
+		},
+		{
+			name: "two queues both idle",
+			queues: []model.ProductionQueue{
+				{Type: "Ship", CurrentItem: "", CurrentProgress: 0},
+				{Type: "Ship", CurrentItem: "", CurrentProgress: 0},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			env := RuleEnv{State: model.GameState{ProductionQueues: tt.queues}}
+			got := env.QueueReady("Ship")
+			if got != tt.want {
+				t.Errorf("QueueReady(\"Ship\") = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCompileDoctrineCaptureRules(t *testing.T) {
+	captureRuleNames := []string{
+		"capture-building",
+		"produce-engineer",
+		"produce-apc",
+		"load-engineer-into-apc",
+		"deliver-apc-to-target",
+	}
+
+	// CapturePriority=0 → no capture rules
+	t.Run("absent when CapturePriority=0", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.CapturePriority = 0
+		rules := CompileDoctrine(d)
+
+		found := map[string]bool{}
+		for _, r := range rules {
+			found[r.Name] = true
+		}
+		for _, name := range captureRuleNames {
+			if found[name] {
+				t.Errorf("unexpected capture rule %q when CapturePriority=0", name)
+			}
+		}
+	})
+
+	// CapturePriority=0.5 → all capture rules present
+	t.Run("present when CapturePriority=0.5", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.CapturePriority = 0.5
+		rules := CompileDoctrine(d)
+
+		for _, r := range rules {
+			_, err := expr.Compile(r.ConditionSrc, expr.Env(RuleEnv{}), expr.AsBool())
+			if err != nil {
+				t.Errorf("rule %q failed to compile: %v\ncondition: %s", r.Name, err, r.ConditionSrc)
+			}
+		}
+
+		found := map[string]bool{}
+		for _, r := range rules {
+			found[r.Name] = true
+		}
+		for _, name := range captureRuleNames {
+			if !found[name] {
+				t.Errorf("expected capture rule %q when CapturePriority=0.5", name)
+			}
+		}
+	})
+
+	// Engineer cap scales with CapturePriority
+	t.Run("engineer cap scales with priority", func(t *testing.T) {
+		// Low priority (0.2) → engineer cap = lerp(1,3,0.2) = 1
+		low := DefaultDoctrine()
+		low.CapturePriority = 0.2
+		lowRules := CompileDoctrine(low)
+		for _, r := range lowRules {
+			if r.Name == "produce-engineer" {
+				if !strings.Contains(r.ConditionSrc, `RoleCount("engineer") < 1`) {
+					t.Errorf("low CapturePriority: expected engineer cap 1, got condition: %s", r.ConditionSrc)
+				}
+			}
+		}
+
+		// High priority (1.0) → engineer cap = lerp(1,3,1.0) = 3
+		high := DefaultDoctrine()
+		high.CapturePriority = 1.0
+		highRules := CompileDoctrine(high)
+		for _, r := range highRules {
+			if r.Name == "produce-engineer" {
+				if !strings.Contains(r.ConditionSrc, `RoleCount("engineer") < 3`) {
+					t.Errorf("high CapturePriority: expected engineer cap 3, got condition: %s", r.ConditionSrc)
+				}
+			}
+		}
+
+		// Mid priority (0.5) → engineer cap = lerp(1,3,0.5) = 2
+		mid := DefaultDoctrine()
+		mid.CapturePriority = 0.5
+		midRules := CompileDoctrine(mid)
+		for _, r := range midRules {
+			if r.Name == "produce-engineer" {
+				if !strings.Contains(r.ConditionSrc, `RoleCount("engineer") < 2`) {
+					t.Errorf("mid CapturePriority: expected engineer cap 2, got condition: %s", r.ConditionSrc)
+				}
+			}
+		}
+	})
+}
+
+func TestBestCapturable(t *testing.T) {
+	base := model.Building{X: 0, Y: 0}
+
+	t.Run("prefers oil derrick over hospital at same distance", func(t *testing.T) {
+		env := RuleEnv{State: model.GameState{
+			Buildings: []model.Building{base},
+			Capturables: []model.Enemy{
+				{ID: 1, Type: "hosp", X: 10, Y: 0},
+				{ID: 2, Type: "oilb", X: 10, Y: 0},
+			},
+		}}
+		got := env.BestCapturable()
+		if got == nil || got.ID != 2 {
+			t.Errorf("expected oilb (ID=2), got %+v", got)
+		}
+	})
+
+	t.Run("nearby hospital beats distant oil derrick", func(t *testing.T) {
+		env := RuleEnv{State: model.GameState{
+			Buildings: []model.Building{base},
+			Capturables: []model.Enemy{
+				{ID: 1, Type: "hosp", X: 3, Y: 0},
+				{ID: 2, Type: "oilb", X: 100, Y: 0},
+			},
+		}}
+		got := env.BestCapturable()
+		if got == nil || got.ID != 1 {
+			t.Errorf("expected nearby hosp (ID=1), got %+v", got)
+		}
+	})
+
+	t.Run("oil derrick wins when moderately closer", func(t *testing.T) {
+		// oilb at dist=20, hosp at dist=10
+		// oilb score: 10/sqrt(20)=2.24, hosp score: 3/sqrt(10)=0.95
+		env := RuleEnv{State: model.GameState{
+			Buildings: []model.Building{base},
+			Capturables: []model.Enemy{
+				{ID: 1, Type: "hosp", X: 10, Y: 0},
+				{ID: 2, Type: "oilb", X: 20, Y: 0},
+			},
+		}}
+		got := env.BestCapturable()
+		if got == nil || got.ID != 2 {
+			t.Errorf("expected oilb (ID=2), got %+v", got)
+		}
+	})
+
+	t.Run("unknown type gets default value", func(t *testing.T) {
+		env := RuleEnv{State: model.GameState{
+			Buildings: []model.Building{base},
+			Capturables: []model.Enemy{
+				{ID: 1, Type: "v19", X: 10, Y: 0},
+			},
+		}}
+		got := env.BestCapturable()
+		if got == nil || got.ID != 1 {
+			t.Errorf("expected unknown capturable (ID=1), got %+v", got)
+		}
+	})
+
+	t.Run("empty returns nil", func(t *testing.T) {
+		env := RuleEnv{State: model.GameState{
+			Buildings:   []model.Building{base},
+			Capturables: nil,
+		}}
+		if got := env.BestCapturable(); got != nil {
+			t.Errorf("expected nil, got %+v", got)
+		}
+	})
+}

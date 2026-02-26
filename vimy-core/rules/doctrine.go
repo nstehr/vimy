@@ -22,6 +22,7 @@ type Doctrine struct {
 	ScoutPriority              float64 `json:"scout_priority"`
 	SpecializedInfantryWeight  float64 `json:"specialized_infantry_weight"`
 	SuperweaponPriority        float64 `json:"superweapon_priority"`
+	CapturePriority            float64 `json:"capture_priority"`
 }
 
 // DefaultDoctrine is used when no LLM strategist is configured.
@@ -59,6 +60,7 @@ func (d *Doctrine) Validate() {
 	d.ScoutPriority = clamp(d.ScoutPriority, 0, 1)
 	d.SpecializedInfantryWeight = clamp(d.SpecializedInfantryWeight, 0, 1)
 	d.SuperweaponPriority = clamp(d.SuperweaponPriority, 0, 1)
+	d.CapturePriority = clamp(d.CapturePriority, 0, 1)
 	d.GroundAttackGroupSize = clampInt(d.GroundAttackGroupSize, 3, 15)
 	d.AirAttackGroupSize = clampInt(d.AirAttackGroupSize, 1, 8)
 	d.NavalAttackGroupSize = clampInt(d.NavalAttackGroupSize, 2, 10)

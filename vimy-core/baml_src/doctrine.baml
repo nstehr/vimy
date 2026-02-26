@@ -84,6 +84,7 @@ class Doctrine {
   scout_priority float @description("0.0-1.0: reconnaissance investment")
   specialized_infantry_weight float @description("0.0-1.0: investment in elite infantry (flamethrowers, shock troopers, Tanya, medics) — requires prerequisite buildings already built via other priorities")
   superweapon_priority float @description("0.0-1.0: investment in superweapon buildings (Missile Silo, Iron Curtain) and eagerness to use them — requires tech center already built via tech_priority. Set above 0.3 to build superweapon structures. Airfield powers (spy plane, paratroopers) are governed by air_weight instead")
+  capture_priority float @description("0.0-1.0: eagerness to capture neutral tech buildings with engineers — controls engineer and APC production. Set above 0.1 to produce engineers, above 0.3 to also produce APCs for delivery. Set to 0 for pure defense doctrines that shouldn't waste the Infantry queue on engineers")
 }
 
 function GenerateDoctrine(directive: string, situation: GameSituation, faction: string) -> Doctrine {
@@ -162,6 +163,7 @@ function GenerateDoctrine(directive: string, situation: GameSituation, faction: 
     - Scout priority: higher = more reconnaissance, important when enemy position unknown
     - Specialized infantry (flamethrowers, commandos, medics) require prerequisite structures — set above 0 only when those are likely available
     - Superweapon priority controls building the Missile Silo (nuke) and Iron Curtain — both require a tech center. Set above 0.3 to invest. Airfield support powers (spy plane, paratroopers, parabombs) come free with the airfield and are controlled by air_weight instead
+    - Capture priority controls engineer production for seizing neutral tech buildings (oil derricks, hospitals). Set above 0 only if neutral buildings are likely present on the map. High capture priority pairs well with aggression for "rush and steal" plays
 
     {{ ctx.output_format }}
   "#

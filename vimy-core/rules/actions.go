@@ -255,7 +255,7 @@ func ActionPlaceDefense(env RuleEnv, conn *ipc.Connection) error {
 
 // defenseHint generates a scored placement hint for defense buildings.
 // It evaluates 16 candidate positions around the base perimeter annulus
-// (70%-110% of radius), scores each by four weighted factors, then picks
+// (100%-150% of radius), scores each by four weighted factors, then picks
 // randomly from the top 3 to balance strategic placement with unpredictability.
 func defenseHint(env RuleEnv) (int, int) {
 	buildings := env.State.Buildings
@@ -328,7 +328,7 @@ func defenseHint(env RuleEnv) (int, int) {
 		}
 	}
 
-	// Generate 16 candidates in the perimeter annulus (70%-110% of radius).
+	// Generate 16 candidates in the perimeter annulus (100%-150% of radius).
 	type candidate struct {
 		x, y  int
 		score float64
@@ -336,7 +336,7 @@ func defenseHint(env RuleEnv) (int, int) {
 	var candidates []candidate
 	for i := range 16 {
 		angle := float64(i) * 2 * math.Pi / 16
-		r := radius * (0.7 + rand.Float64()*0.4)
+		r := radius * (1.0 + rand.Float64()*0.5)
 		x := cx + int(r*math.Cos(angle))
 		y := cy + int(r*math.Sin(angle))
 
@@ -362,7 +362,7 @@ func defenseHint(env RuleEnv) (int, int) {
 			threatScore = 0.5 // neutral when no intel
 		}
 
-		// Score: high-value protection (weight 0.30).
+		// Score: high-value protection (weight 0.15).
 		var protectionScore float64
 		if len(hvBuildings) > 0 {
 			minDist := math.MaxFloat64
@@ -400,14 +400,14 @@ func defenseHint(env RuleEnv) (int, int) {
 			spreadScore = 1.0
 		}
 
-		// Score: perimeter bonus (weight 0.10).
+		// Score: perimeter bonus (weight 0.25).
 		distFromCenter := math.Sqrt(float64((x-cx)*(x-cx) + (y-cy)*(y-cy)))
 		perimeterScore := distFromCenter / radius
 		if perimeterScore > 1 {
 			perimeterScore = 1
 		}
 
-		score := 0.35*threatScore + 0.30*protectionScore + 0.25*spreadScore + 0.10*perimeterScore
+		score := 0.35*threatScore + 0.15*protectionScore + 0.25*spreadScore + 0.25*perimeterScore
 		candidates = append(candidates, candidate{x, y, score})
 	}
 
@@ -640,6 +640,27 @@ func ActionDefendBase(env RuleEnv, conn *ipc.Connection) error {
 		ids[i] = uint32(u.ID)
 	}
 	slog.Debug("defending base", "count", len(ids), "target", enemy.ID)
+	return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
+		ActorIDs: ids,
+		X:        enemy.X,
+		Y:        enemy.Y,
+	})
+}
+
+func ActionNavalDefendBase(env RuleEnv, conn *ipc.Connection) error {
+	enemy := env.NearestEnemy()
+	if enemy == nil {
+		return nil
+	}
+	idle := env.IdleNavalUnits()
+	if len(idle) == 0 {
+		return nil
+	}
+	ids := make([]uint32, len(idle))
+	for i, u := range idle {
+		ids[i] = uint32(u.ID)
+	}
+	slog.Debug("naval defending base", "count", len(ids), "target", enemy.ID)
 	return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
 		ActorIDs: ids,
 		X:        enemy.X,
