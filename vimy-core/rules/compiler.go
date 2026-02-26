@@ -59,15 +59,19 @@ func CompileDoctrine(d Doctrine) []*Rule {
 
 	// Building savings prevent unit spam from starving expensive queued buildings.
 	// Added to all production rules' cash conditions below.
+	//
+	// Each savings clause is gated on having the prerequisite building so that
+	// the reserve doesn't block unit production before the expensive building
+	// can actually be queued. Without these gates, moderate tech/superweapon
+	// priorities (0.3-0.5) create enormous cash thresholds (2300+ for a tank)
+	// that prevent any army from being built in early/mid game.
 	var savings []buildingSaving
 	if d.TechPriority > DoctrineSignificant {
-		savings = append(savings, buildingSaving{`HasRole("tech_center")`, 1500})
+		// Tech center requires radar. Don't reserve 1500 until radar exists.
+		savings = append(savings, buildingSaving{`HasRole("tech_center") || !HasRole("radar")`, 1500})
 	}
-	// Superweapon savings only activate at DoctrineHigh (0.4) and only when a
-	// tech center already exists. Without a tech center, superweapons can't be
-	// built anyway, so reserving 2500 cash just blocks all unit production in
-	// the early/mid game for no benefit.
 	if d.SuperweaponPriority > DoctrineHigh {
+		// Superweapons require tech center. Don't reserve 2500 until it exists.
 		savings = append(savings, buildingSaving{
 			`HasRole("missile_silo") || HasRole("iron_curtain") || !HasRole("tech_center")`, 2500,
 		})
