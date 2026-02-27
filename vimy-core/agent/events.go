@@ -132,8 +132,14 @@ var threatDisplayName = map[string]string{
 // counterCooldownTicks is the minimum gap between strategy_countered events.
 const counterCooldownTicks = 200
 
-// counterLossThreshold is the minimum units lost in a domain to trigger the event.
-const counterLossThreshold = 3
+// counterLossThresholds is the minimum units lost per domain to trigger the event.
+// Infantry dies much faster than vehicles/aircraft, so a lower threshold
+// ensures the event fires sooner for infantry swarms getting shredded.
+var counterLossThresholds = map[string]int{
+	"infantry": 2,
+	"vehicle":  3,
+	"aircraft": 2,
+}
 
 // Mid-game building types: real military production capability.
 var midGameBuildings = map[string]bool{
@@ -385,7 +391,11 @@ func detectEvents(gs model.GameState, memory map[string]any, prev *stateSnapshot
 		var countered []string
 		for _, c := range checks {
 			lost := countMissing(c.prevIDs, c.curIDs)
-			if lost < counterLossThreshold {
+			threshold := counterLossThresholds[c.name]
+			if threshold == 0 {
+				threshold = 3
+			}
+			if lost < threshold {
 				continue
 			}
 			threats := visibleThreats(gs.Enemies, c.threats)

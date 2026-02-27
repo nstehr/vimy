@@ -683,7 +683,8 @@ func TestDetectEvents_StrategyCountered_AircraftVsSAM(t *testing.T) {
 	}
 }
 
-func TestDetectEvents_StrategyCountered_BelowThreshold(t *testing.T) {
+func TestDetectEvents_StrategyCountered_InfantryAtThreshold(t *testing.T) {
+	// Infantry threshold is 2, so losing 2 infantry SHOULD fire.
 	gs := infantryHeavyState(100)
 	gs.Enemies = []model.Enemy{
 		{ID: 90, Owner: "BadGuy", Type: "ftur"},
@@ -691,7 +692,7 @@ func TestDetectEvents_StrategyCountered_BelowThreshold(t *testing.T) {
 	memory := make(map[string]any)
 	prev := takeSnapshot(gs, memory)
 
-	// Kill only 2 infantry — below threshold
+	// Kill 2 infantry — at infantry threshold of 2, should fire
 	gs.Tick = 101
 	gs.Units = []model.Unit{
 		{ID: 10, Type: "harv"},
@@ -700,9 +701,47 @@ func TestDetectEvents_StrategyCountered_BelowThreshold(t *testing.T) {
 	}
 
 	events := detectEvents(gs, memory, &prev)
+	found := false
 	for _, e := range events {
 		if e.Kind == EventStrategyCountered {
-			t.Errorf("did not expect strategy_countered below threshold, got %+v", events)
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected strategy_countered for 2 infantry losses (threshold=2), got %+v", events)
+	}
+}
+
+func TestDetectEvents_StrategyCountered_VehicleBelowThreshold(t *testing.T) {
+	// Vehicle threshold is still 3, so losing 2 vehicles should NOT fire.
+	gs := model.GameState{
+		Tick:   100,
+		Player: model.Player{Cash: 500, Resources: 500},
+		Buildings: []model.Building{{ID: 1, Type: "fact"}},
+		Units: []model.Unit{
+			{ID: 10, Type: "harv"},
+			{ID: 30, Type: "3tnk"}, {ID: 31, Type: "3tnk"}, {ID: 32, Type: "3tnk"},
+			{ID: 33, Type: "2tnk"}, {ID: 34, Type: "2tnk"},
+		},
+		Enemies: []model.Enemy{
+			{ID: 90, Owner: "BadGuy", Type: "tsla"},
+		},
+	}
+	memory := make(map[string]any)
+	prev := takeSnapshot(gs, memory)
+
+	// Kill 2 vehicles — below vehicle threshold of 3
+	gs.Tick = 101
+	gs.Units = []model.Unit{
+		{ID: 10, Type: "harv"},
+		{ID: 30, Type: "3tnk"}, {ID: 31, Type: "3tnk"}, {ID: 32, Type: "3tnk"},
+	}
+
+	events := detectEvents(gs, memory, &prev)
+	for _, e := range events {
+		if e.Kind == EventStrategyCountered {
+			t.Errorf("did not expect strategy_countered for 2 vehicle losses (threshold=3), got %+v", events)
 		}
 	}
 }
@@ -826,9 +865,9 @@ func TestDetectEvents_StrategyCountered_EnemyFlamethrowerInfantry(t *testing.T) 
 // (1 per tick) accumulate to reach the threshold.
 
 func TestStrategyCountered_AccumulatesAcrossTicks(t *testing.T) {
-	// Simulate 3 state updates where 1 infantry dies each time.
-	// Without accumulation, each tick only sees 1 loss (below threshold of 3).
-	// With accumulation, the losses add up and trigger on the 3rd update.
+	// Simulate 2 state updates where 1 infantry dies each time.
+	// Without accumulation, each tick only sees 1 loss (below threshold of 2).
+	// With accumulation, the losses add up and trigger on the 2nd update.
 
 	memory := make(map[string]any)
 
@@ -870,7 +909,7 @@ func TestStrategyCountered_AccumulatesAcrossTicks(t *testing.T) {
 	snap1.lossBaselineTick = prev.lossBaselineTick
 	prev = snap1
 
-	// Tick 180: another infantry dies → accumulated loss = 2
+	// Tick 180: another infantry dies → accumulated loss = 2, should fire! (infantry threshold=2)
 	gs2 := gs1
 	gs2.Tick = 180
 	gs2.Units = []model.Unit{
@@ -880,25 +919,8 @@ func TestStrategyCountered_AccumulatesAcrossTicks(t *testing.T) {
 		// ID 24, 25 dead
 	}
 	events = detectEvents(gs2, memory, &prev)
-	if hasEventKind(events, EventStrategyCountered) {
-		t.Fatal("should not fire after only 2 accumulated losses")
-	}
-	snap2 := takeSnapshot(gs2, memory)
-	snap2.infantryIDs = mergeIDSets(prev.infantryIDs, snap2.infantryIDs)
-	snap2.lossBaselineTick = prev.lossBaselineTick
-	prev = snap2
-
-	// Tick 220: third infantry dies → accumulated loss = 3, should fire!
-	gs3 := gs2
-	gs3.Tick = 220
-	gs3.Units = []model.Unit{
-		{ID: 10, Type: "harv"},
-		{ID: 20, Type: "e1"}, {ID: 21, Type: "e1"}, {ID: 22, Type: "e1"},
-		// ID 23, 24, 25 dead
-	}
-	events = detectEvents(gs3, memory, &prev)
 	if !hasEventKind(events, EventStrategyCountered) {
-		t.Errorf("expected strategy_countered after 3 accumulated losses, got %+v", events)
+		t.Errorf("expected strategy_countered after 2 accumulated infantry losses (threshold=2), got %+v", events)
 	}
 }
 

@@ -23,6 +23,8 @@ import (
 var typeMap = map[string]reflect.Type{
 	"TYPES.ActiveProduction":          reflect.TypeOf(types.ActiveProduction{}),
 	"STREAM_TYPES.ActiveProduction":   reflect.TypeOf(stream_types.ActiveProduction{}),
+	"TYPES.CombatStats":               reflect.TypeOf(types.CombatStats{}),
+	"STREAM_TYPES.CombatStats":        reflect.TypeOf(stream_types.CombatStats{}),
 	"TYPES.Doctrine":                  reflect.TypeOf(types.Doctrine{}),
 	"STREAM_TYPES.Doctrine":           reflect.TypeOf(stream_types.Doctrine{}),
 	"TYPES.EnemyBase":                 reflect.TypeOf(types.EnemyBase{}),

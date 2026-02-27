@@ -146,6 +146,8 @@ namespace OpenRA.Mods.Vimy
 						case "harvest":
 						case "capture":
 						case "support_power":
+						case "enter_transport":
+						case "unload":
 							CommandExecutor.Execute(envelope.Value.Type, envelope.Value.Data, world, bot);
 							break;
 						default:

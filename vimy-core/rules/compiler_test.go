@@ -1026,6 +1026,191 @@ func TestCompileDoctrineCaptureRules(t *testing.T) {
 	})
 }
 
+func TestCompileDoctrineEngineerPriority(t *testing.T) {
+	// Infantry swarm with capture: produce-engineer should have lower priority
+	// than produce-infantry so engineers don't steal the shared Infantry queue.
+	d := Doctrine{
+		Name:                  "Infantry Swarm",
+		EconomyPriority:       0.5,
+		Aggression:            0.7,
+		InfantryWeight:        0.9,
+		VehicleWeight:         0.3,
+		GroundAttackGroupSize: 5,
+		AirAttackGroupSize:    2,
+		NavalAttackGroupSize:  3,
+		CapturePriority:       0.3,
+	}
+	rules := CompileDoctrine(d)
+
+	byName := map[string]*Rule{}
+	for _, r := range rules {
+		byName[r.Name] = r
+	}
+
+	eng := byName["produce-engineer"]
+	inf := byName["produce-infantry"]
+	if eng == nil {
+		t.Fatal("expected produce-engineer rule with CapturePriority=0.3")
+	}
+	if inf == nil {
+		t.Fatal("expected produce-infantry rule with InfantryWeight=0.9")
+	}
+	if eng.Priority >= inf.Priority {
+		t.Errorf("produce-engineer priority (%d) should be below produce-infantry priority (%d)", eng.Priority, inf.Priority)
+	}
+
+	// Also verify produce-apc is below produce-vehicle
+	apc := byName["produce-apc"]
+	veh := byName["produce-vehicle"]
+	if apc == nil {
+		t.Fatal("expected produce-apc rule with CapturePriority=0.3")
+	}
+	if veh == nil {
+		t.Fatal("expected produce-vehicle rule with VehicleWeight=0.3")
+	}
+	if apc.Priority >= veh.Priority {
+		t.Errorf("produce-apc priority (%d) should be below produce-vehicle priority (%d)", apc.Priority, veh.Priority)
+	}
+}
+
+func TestBestAirTarget(t *testing.T) {
+	base := model.Building{X: 0, Y: 0}
+
+	t.Run("prefers defense over unit at same distance", func(t *testing.T) {
+		env := RuleEnv{State: model.GameState{
+			Buildings: []model.Building{base},
+			Enemies: []model.Enemy{
+				{ID: 1, Type: "3tnk", X: 10, Y: 0, HP: 100, MaxHP: 100},
+				{ID: 2, Type: "tsla", X: 10, Y: 0, HP: 200, MaxHP: 200},
+			},
+		}}
+		got := env.BestAirTarget()
+		if got == nil || got.ID != 2 {
+			t.Errorf("expected tsla (ID=2), got %+v", got)
+		}
+	})
+
+	t.Run("damaged target gets bonus over full-HP same type", func(t *testing.T) {
+		env := RuleEnv{State: model.GameState{
+			Buildings: []model.Building{base},
+			Enemies: []model.Enemy{
+				{ID: 1, Type: "tsla", X: 10, Y: 0, HP: 200, MaxHP: 200},
+				{ID: 2, Type: "tsla", X: 10, Y: 0, HP: 50, MaxHP: 200},
+			},
+		}}
+		got := env.BestAirTarget()
+		if got == nil || got.ID != 2 {
+			t.Errorf("expected damaged tsla (ID=2), got %+v", got)
+		}
+	})
+
+	t.Run("nearby lower-value beats distant higher-value at extreme range", func(t *testing.T) {
+		// gun at dist=5: score = 8 * 1.0 / sqrt(5) ≈ 3.58
+		// tsla at dist=10000: score = 10 * 1.0 / sqrt(10000) = 0.10
+		env := RuleEnv{State: model.GameState{
+			Buildings: []model.Building{base},
+			Enemies: []model.Enemy{
+				{ID: 1, Type: "gun", X: 5, Y: 0, HP: 100, MaxHP: 100},
+				{ID: 2, Type: "tsla", X: 10000, Y: 0, HP: 200, MaxHP: 200},
+			},
+		}}
+		got := env.BestAirTarget()
+		if got == nil || got.ID != 1 {
+			t.Errorf("expected nearby gun (ID=1), got %+v", got)
+		}
+	})
+
+	t.Run("faction variant stripping", func(t *testing.T) {
+		// afld.ukraine should be scored as afld (value=5), not default (1)
+		env := RuleEnv{State: model.GameState{
+			Buildings: []model.Building{base},
+			Enemies: []model.Enemy{
+				{ID: 1, Type: "e1", X: 10, Y: 0, HP: 50, MaxHP: 50},
+				{ID: 2, Type: "afld.ukraine", X: 10, Y: 0, HP: 100, MaxHP: 100},
+			},
+		}}
+		got := env.BestAirTarget()
+		if got == nil || got.ID != 2 {
+			t.Errorf("expected afld.ukraine (ID=2), got %+v", got)
+		}
+	})
+
+	t.Run("returns nil when empty", func(t *testing.T) {
+		env := RuleEnv{State: model.GameState{
+			Buildings: []model.Building{base},
+			Enemies:   nil,
+		}}
+		if got := env.BestAirTarget(); got != nil {
+			t.Errorf("expected nil, got %+v", got)
+		}
+	})
+
+	t.Run("skips MaxHP=0 enemies", func(t *testing.T) {
+		env := RuleEnv{State: model.GameState{
+			Buildings: []model.Building{base},
+			Enemies: []model.Enemy{
+				{ID: 1, Type: "tsla", X: 10, Y: 0, HP: 0, MaxHP: 0},
+			},
+		}}
+		if got := env.BestAirTarget(); got != nil {
+			t.Errorf("expected nil for MaxHP=0 enemy, got %+v", got)
+		}
+	})
+}
+
+func TestCompileDoctrineAirStrikeRules(t *testing.T) {
+	d := Doctrine{
+		Name:                  "Air Strike Test",
+		EconomyPriority:       0.3,
+		Aggression:            0.5,
+		InfantryWeight:        0.3,
+		VehicleWeight:         0.3,
+		AirWeight:             0.5,
+		GroundAttackGroupSize: 5,
+		AirAttackGroupSize:    3,
+		NavalAttackGroupSize:  3,
+		ScoutPriority:         0.3,
+	}
+	rules := CompileDoctrine(d)
+
+	// All rules must compile.
+	for _, r := range rules {
+		_, err := expr.Compile(r.ConditionSrc, expr.Env(RuleEnv{}), expr.AsBool())
+		if err != nil {
+			t.Errorf("rule %q failed to compile: %v\ncondition: %s", r.Name, err, r.ConditionSrc)
+		}
+	}
+
+	byName := map[string]*Rule{}
+	for _, r := range rules {
+		byName[r.Name] = r
+	}
+
+	// squad-air-attack should use BestAirTarget, not NearestEnemy
+	airAttack := byName["squad-air-attack"]
+	if airAttack == nil {
+		t.Fatal("expected squad-air-attack rule")
+	}
+	if !strings.Contains(airAttack.ConditionSrc, "BestAirTarget()") {
+		t.Errorf("squad-air-attack condition should contain BestAirTarget(), got: %s", airAttack.ConditionSrc)
+	}
+	if strings.Contains(airAttack.ConditionSrc, "NearestEnemy()") {
+		t.Errorf("squad-air-attack condition should NOT contain NearestEnemy(), got: %s", airAttack.ConditionSrc)
+	}
+
+	// squad-air-reengage should use BestAirTarget, not NearestEnemy
+	airReengage := byName["squad-air-reengage"]
+	if airReengage == nil {
+		t.Fatal("expected squad-air-reengage rule")
+	}
+	if !strings.Contains(airReengage.ConditionSrc, "BestAirTarget()") {
+		t.Errorf("squad-air-reengage condition should contain BestAirTarget(), got: %s", airReengage.ConditionSrc)
+	}
+	if strings.Contains(airReengage.ConditionSrc, "NearestEnemy()") {
+		t.Errorf("squad-air-reengage condition should NOT contain NearestEnemy(), got: %s", airReengage.ConditionSrc)
+	}
+}
+
 func TestBestCapturable(t *testing.T) {
 	base := model.Building{X: 0, Y: 0}
 

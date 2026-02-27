@@ -410,6 +410,75 @@ func (e RuleEnv) BestCapturable() *model.Enemy {
 	return best
 }
 
+// airTargetValue assigns a strategic value to enemy types for air strikes.
+// Higher value = more desirable target. Defense structures score highest
+// because aircraft bypass ground defenses and can soften positions before
+// a ground push.
+var airTargetValue = map[string]float64{
+	// Defense structures (highest — air bypasses these)
+	"tsla": 10, "gun": 8, "pbox": 7, "hbox": 7, "ftur": 6,
+	// Superweapons
+	"mslo": 9, "iron": 9,
+	// Production
+	"fact": 6, "afac": 6, "weap": 5, "afld": 5, "hpad": 5,
+	"barr": 4, "tent": 4, "proc": 4,
+	// AA defenses (risky but worth removing)
+	"agun": 4, "sam": 4,
+	// Power / support
+	"apwr": 3, "powr": 2, "dome": 3, "atek": 3, "stek": 3,
+	"spen": 4, "syrd": 4,
+}
+
+const airTargetValueDefault = 1.0 // mobile units / unknown types
+
+// BestAirTarget picks the highest-value enemy for air strikes, using distance
+// as a decay factor. Scoring: val * hpBonus / sqrt(dist).
+// val = type value from airTargetValue (dominant factor)
+// hpBonus = 2.0 - hpRatio — gentle tiebreaker favoring damaged targets
+// 1/sqrt(dist) = inverse distance to own base
+func (e RuleEnv) BestAirTarget() *model.Enemy {
+	if len(e.State.Enemies) == 0 {
+		return nil
+	}
+	bx, by := 0, 0
+	if len(e.State.Buildings) > 0 {
+		bx = e.State.Buildings[0].X
+		by = e.State.Buildings[0].Y
+	}
+	var best *model.Enemy
+	bestScore := -1.0
+	for i := range e.State.Enemies {
+		en := &e.State.Enemies[i]
+		if en.MaxHP == 0 {
+			continue
+		}
+		// Strip faction suffix (e.g. "afld.ukraine" → "afld").
+		base := strings.ToLower(en.Type)
+		if idx := strings.IndexByte(base, '.'); idx >= 0 {
+			base = base[:idx]
+		}
+		val := airTargetValue[base]
+		if val == 0 {
+			val = airTargetValueDefault
+		}
+		hpRatio := float64(en.HP) / float64(en.MaxHP)
+		hpBonus := 2.0 - hpRatio // 1.0 (full HP) to 2.0 (near-death)
+
+		dx := float64(en.X - bx)
+		dy := float64(en.Y - by)
+		dist := math.Sqrt(dx*dx + dy*dy)
+		if dist < 1 {
+			dist = 1
+		}
+		score := val * hpBonus / math.Sqrt(dist)
+		if score > bestScore {
+			bestScore = score
+			best = en
+		}
+	}
+	return best
+}
+
 func (e RuleEnv) IdleEngineers() []model.Unit {
 	var out []model.Unit
 	for _, u := range e.State.Units {

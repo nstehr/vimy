@@ -45,6 +45,12 @@ class GameEvent {
   detail string @description("Human-readable description of what happened")
 }
 
+class CombatStats {
+  infantry_lost int @description("Total infantry killed this game")
+  vehicles_lost int @description("Total vehicles lost this game")
+  aircraft_lost int @description("Total aircraft lost this game")
+}
+
 class GameSituation {
   tick int
   phase string @description("'Early Game', 'Mid Game', or 'Late Game'")
@@ -64,6 +70,7 @@ class GameSituation {
   map_width int
   map_height int
   recent_events GameEvent[]
+  combat_stats CombatStats | null
 }
 
 class Doctrine {
@@ -141,6 +148,18 @@ function GenerateDoctrine(directive: string, situation: GameSituation, faction: 
     - [tick {{ e.tick }}] {{ e.kind }}: {{ e.detail }}
     {% endfor %}
     {% endif %}
+
+    {% if situation.combat_stats %}
+    Combat Stats (lifetime): Lost {{ situation.combat_stats.infantry_lost }} infantry, {{ situation.combat_stats.vehicles_lost }} vehicles, {{ situation.combat_stats.aircraft_lost }} aircraft
+    {% endif %}
+
+    CRITICAL ADAPTATION RULES:
+    - Your directive is STRATEGIC INTENT, not a rigid constraint. Adapt to battlefield reality.
+    - If recent_events show "strategy_countered", you MUST change your doctrine — do not repeat the same failing strategy.
+    - If combat_stats show sustained high losses in one domain (e.g., 20+ infantry lost), that domain is being hard-countered.
+    - When infantry dies to static defenses (tesla coils, flame towers), shift weight to vehicles (0.5+) or air (0.3+) to break through, OR increase ground_attack_group_size to 10+ to overwhelm with numbers.
+    - When vehicles are countered by tesla coils, shift to air strikes or build up tech for mammoth tanks.
+    - High losses with no progress = strategy failing, adapt immediately. Low losses = strategy working, maintain course.
 
     Based on the directive and current situation, produce a strategic doctrine.
     All weight values must be between 0.0 and 1.0.

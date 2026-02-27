@@ -1534,6 +1534,32 @@ func SquadFocusFire(name string) ActionFunc {
 	}
 }
 
+// SquadAirStrike sends individual Attack commands for each idle air squad member
+// targeting the best air target (defense structures, production, etc.).
+// Concentrates all aircraft on the highest-value enemy for maximum impact.
+func SquadAirStrike(name string) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		target := env.BestAirTarget()
+		if target == nil {
+			return nil
+		}
+		ids := squadIdleActorIDs(env, name)
+		if len(ids) == 0 {
+			return nil
+		}
+		for _, id := range ids {
+			slog.Debug("squad air strike", "squad", name, "unit", id, "target", target.ID)
+			if err := conn.Send(ipc.TypeAttack, ipc.AttackCommand{
+				ActorID:  id,
+				TargetID: uint32(target.ID),
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
 // FleeHarvesters sends Move toward the nearest refinery for each harvester
 // in danger. Checks all harvesters (idle or not) — better to lose ore than
 // the harvester.

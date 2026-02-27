@@ -74,6 +74,60 @@ func (c ActiveProduction) BamlTypeName() string {
 	return "ActiveProduction"
 }
 
+type CombatStats struct {
+	Infantry_lost *int64 `json:"infantry_lost"`
+	Vehicles_lost *int64 `json:"vehicles_lost"`
+	Aircraft_lost *int64 `json:"aircraft_lost"`
+}
+
+func (c *CombatStats) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "CombatStats" {
+		panic(fmt.Sprintf("expected CombatStats, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "infantry_lost":
+			c.Infantry_lost = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "vehicles_lost":
+			c.Vehicles_lost = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "aircraft_lost":
+			c.Aircraft_lost = baml.Decode(valueHolder).Interface().(*int64)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class CombatStats", key))
+
+		}
+	}
+
+}
+
+func (c CombatStats) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["infantry_lost"] = c.Infantry_lost
+
+	fields["vehicles_lost"] = c.Vehicles_lost
+
+	fields["aircraft_lost"] = c.Aircraft_lost
+
+	return baml.EncodeClass("CombatStats", fields, nil)
+}
+
+func (c CombatStats) BamlTypeName() string {
+	return "CombatStats"
+}
+
 type Doctrine struct {
 	Name                        *string  `json:"name"`
 	Rationale                   *string  `json:"rationale"`
@@ -351,6 +405,7 @@ type GameSituation struct {
 	Map_width         *int64               `json:"map_width"`
 	Map_height        *int64               `json:"map_height"`
 	Recent_events     []GameEvent          `json:"recent_events"`
+	Combat_stats      *CombatStats         `json:"combat_stats"`
 }
 
 func (c *GameSituation) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -421,6 +476,9 @@ func (c *GameSituation) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap
 		case "recent_events":
 			c.Recent_events = baml.Decode(valueHolder).Interface().([]GameEvent)
 
+		case "combat_stats":
+			c.Combat_stats = baml.Decode(valueHolder).Interface().(*CombatStats)
+
 		default:
 
 			panic(fmt.Sprintf("unexpected field: %s in class GameSituation", key))
@@ -468,6 +526,8 @@ func (c GameSituation) Encode() (*cffi.HostValue, error) {
 	fields["map_height"] = c.Map_height
 
 	fields["recent_events"] = c.Recent_events
+
+	fields["combat_stats"] = c.Combat_stats
 
 	return baml.EncodeClass("GameSituation", fields, nil)
 }

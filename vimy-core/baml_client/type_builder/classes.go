@@ -55,6 +55,46 @@ func (t *ActiveProductionClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }
 
+type CombatStatsClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *CombatStatsClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *CombatStatsClassView) PropertyInfantry_lost() (ClassPropertyView, error) {
+	return t.inner.Property("infantry_lost")
+}
+
+func (t *CombatStatsClassView) PropertyVehicles_lost() (ClassPropertyView, error) {
+	return t.inner.Property("vehicles_lost")
+}
+
+func (t *CombatStatsClassView) PropertyAircraft_lost() (ClassPropertyView, error) {
+	return t.inner.Property("aircraft_lost")
+}
+
+func (t *TypeBuilder) CombatStats() (*CombatStatsClassView, error) {
+	bld, err := t.inner.Class("CombatStats")
+	if err != nil {
+		return nil, err
+	}
+	return &CombatStatsClassView{inner: bld}, nil
+}
+
+func (t *CombatStatsClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
 type DoctrineClassView struct {
 	inner baml.ClassBuilder
 }
@@ -325,6 +365,10 @@ func (t *GameSituationClassView) PropertyMap_height() (ClassPropertyView, error)
 
 func (t *GameSituationClassView) PropertyRecent_events() (ClassPropertyView, error) {
 	return t.inner.Property("recent_events")
+}
+
+func (t *GameSituationClassView) PropertyCombat_stats() (ClassPropertyView, error) {
+	return t.inner.Property("combat_stats")
 }
 
 func (t *TypeBuilder) GameSituation() (*GameSituationClassView, error) {

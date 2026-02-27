@@ -66,8 +66,10 @@ func CompileDoctrine(d Doctrine) []*Rule {
 	// priorities (0.3-0.5) create enormous cash thresholds (2300+ for a tank)
 	// that prevent any army from being built in early/mid game.
 	var savings []buildingSaving
-	if d.TechPriority > DoctrineSignificant {
+	if d.TechPriority > DoctrineHigh {
 		// Tech center requires radar. Don't reserve 1500 until radar exists.
+		// Threshold matches build-tech-center rule (DoctrineHigh) so we never
+		// reserve cash for a tech center the doctrine won't actually build.
 		savings = append(savings, buildingSaving{`HasRole("tech_center") || !HasRole("radar")`, 1500})
 	}
 	if d.SuperweaponPriority > DoctrineHigh {
@@ -144,7 +146,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 
 		rules = append(rules, &Rule{
 			Name:         "produce-engineer",
-			Priority:     550,
+			Priority:     450,
 			Category:     "production",
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`CapturableCount() > 0 && !QueueBusy("Infantry") && CanBuildRole("engineer") && RoleCount("engineer") < CapturableCount() && RoleCount("engineer") < %d && Cash() >= 500`, engineerCap),
@@ -153,7 +155,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 
 		rules = append(rules, &Rule{
 			Name:         "produce-apc",
-			Priority:     545,
+			Priority:     470,
 			Category:     "production",
 			Exclusive:    false,
 			ConditionSrc: `CapturableCount() > 0 && RoleCount("engineer") > 0 && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("apc") && RoleCount("apc") < 1 && Cash() >= 800`,
@@ -954,8 +956,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     airAttackPriority,
 			Category:     "air_combat",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`SquadExists("air-attack") && SquadReadyRatio("air-attack") >= %.2f && NearestEnemy() != nil`, activationThreshold),
-			Action:       SquadAttackMove("air-attack"),
+			ConditionSrc: fmt.Sprintf(`SquadExists("air-attack") && SquadReadyRatio("air-attack") >= %.2f && BestAirTarget() != nil`, activationThreshold),
+			Action:       SquadAirStrike("air-attack"),
 		})
 
 		rules = append(rules, &Rule{
@@ -963,8 +965,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     airAttackPriority - ReengageDiscount,
 			Category:     "air_combat",
 			Exclusive:    false,
-			ConditionSrc: `SquadExists("air-attack") && SquadIdleCount("air-attack") > 0 && NearestEnemy() != nil`,
-			Action:       SquadAttackMove("air-attack"),
+			ConditionSrc: `SquadExists("air-attack") && SquadIdleCount("air-attack") > 0 && BestAirTarget() != nil`,
+			Action:       SquadAirStrike("air-attack"),
 		})
 
 		rules = append(rules, &Rule{

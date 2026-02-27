@@ -26,6 +26,12 @@ type Strategist struct {
 	prevSnap  *stateSnapshot // previous state snapshot for event diff
 	cooldown  int            // minimum ticks between event-driven evaluations
 	pending   []Event        // events accumulated since last evaluation
+
+	// Cumulative loss tracking — independent of event windowing.
+	// prevFreshIDs holds per-domain unit IDs from the PREVIOUS tick (never merged).
+	// totalLosses accumulates deaths across the entire game.
+	prevFreshIDs map[string]map[int]bool
+	totalLosses  map[string]int
 }
 
 // NewStrategist creates a strategist. If directive is empty, defaults to "balanced".
@@ -59,11 +65,39 @@ func (s *Strategist) UpdateState(gs model.GameState) {
 	first := s.latest == nil
 	s.latest = &gs
 
+	// --- Cumulative loss tracking (independent of event windowing) ---
+	curFresh := map[string]map[int]bool{
+		"infantry": make(map[int]bool),
+		"vehicle":  make(map[int]bool),
+		"aircraft": make(map[int]bool),
+	}
+	for _, u := range gs.Units {
+		d := unitDomain(u)
+		if d != "" {
+			curFresh[d][u.ID] = true
+		}
+	}
+	if s.prevFreshIDs != nil {
+		if s.totalLosses == nil {
+			s.totalLosses = make(map[string]int)
+		}
+		for domain, prevIDs := range s.prevFreshIDs {
+			for id := range prevIDs {
+				if !curFresh[domain][id] {
+					s.totalLosses[domain]++
+				}
+			}
+		}
+	}
+	s.prevFreshIDs = curFresh
+
 	// Detect events against the previous snapshot.
 	// prevSnap's domain ID sets are accumulated (high-water mark) so that
 	// losses add up across multiple state updates instead of resetting each tick.
+	s.engine.LockMemory()
 	events := detectEvents(gs, s.engine.Memory, s.prevSnap)
 	snap := takeSnapshot(gs, s.engine.Memory)
+	s.engine.UnlockMemory()
 
 	if s.prevSnap != nil {
 		snap.lastCounterTick = s.prevSnap.lastCounterTick
@@ -131,6 +165,10 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	faction := s.faction
 	events := s.pending
 	s.pending = nil
+	losses := make(map[string]int, len(s.totalLosses))
+	for k, v := range s.totalLosses {
+		losses[k] = v
+	}
 	s.mu.Unlock()
 
 	if gs == nil {
@@ -142,8 +180,10 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	}
 	slog.Debug("strategist evaluating", "tick", gs.Tick, "directive", s.directive, "events", len(events))
 
+	s.engine.LockMemory()
 	swFires := snapshotSuperweaponFires(s.engine.Memory)
-	situation := buildSituation(*gs, s.engine.Memory, events, swFires)
+	situation := buildSituation(*gs, s.engine.Memory, events, swFires, losses)
+	s.engine.UnlockMemory()
 
 	bamlDoctrine, err := baml_client.GenerateDoctrine(ctx, s.directive, situation, faction)
 	if err != nil {
@@ -239,9 +279,9 @@ func snapshotSuperweaponFires(memory map[string]any) []types.SuperweaponFire {
 }
 
 // buildSituation constructs a structured GameSituation from the current
-// game state, memory, events, and superweapon fire data. Pure function
-// (aside from reading memory) — no side effects.
-func buildSituation(gs model.GameState, memory map[string]any, events []Event, swFires []types.SuperweaponFire) types.GameSituation {
+// game state, memory, events, superweapon fire data, and cumulative losses.
+// Pure function (aside from reading memory) — no side effects.
+func buildSituation(gs model.GameState, memory map[string]any, events []Event, swFires []types.SuperweaponFire, totalLosses map[string]int) types.GameSituation {
 	sit := types.GameSituation{
 		Tick:              int64(gs.Tick),
 		Phase:             gamePhase(gs),
@@ -338,6 +378,15 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 			Tick:   int64(e.Tick),
 			Detail: e.Detail,
 		})
+	}
+
+	// Cumulative combat stats
+	if len(totalLosses) > 0 {
+		sit.Combat_stats = &types.CombatStats{
+			Infantry_lost: int64(totalLosses["infantry"]),
+			Vehicles_lost: int64(totalLosses["vehicle"]),
+			Aircraft_lost: int64(totalLosses["aircraft"]),
+		}
 	}
 
 	return sit

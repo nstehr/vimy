@@ -20,6 +20,7 @@ type Engine struct {
 	mu      sync.RWMutex
 	rules   []*Rule
 	Memory  map[string]any
+	memMu   sync.Mutex // guards all reads/writes to Memory
 	Terrain *model.TerrainGrid
 }
 
@@ -40,6 +41,9 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	e.mu.RLock()
 	rules := e.rules
 	e.mu.RUnlock()
+
+	e.memMu.Lock()
+	defer e.memMu.Unlock()
 
 	env := RuleEnv{State: gs, Faction: faction, Memory: e.Memory, Terrain: e.Terrain}
 	updateIntel(env)
@@ -99,11 +103,19 @@ func (e *Engine) Swap(newRules []*Rule) error {
 	}
 	e.mu.Lock()
 	e.rules = compiled
-	delete(e.Memory, "squads")
 	e.mu.Unlock()
+
+	e.memMu.Lock()
+	delete(e.Memory, "squads")
+	e.memMu.Unlock()
 	slog.Info("rule set swapped", "count", len(compiled), "rules", names)
 	return nil
 }
+
+// LockMemory acquires the memory mutex. Callers must pair with UnlockMemory.
+// Used by the strategist to safely read Memory from a background goroutine.
+func (e *Engine) LockMemory()   { e.memMu.Lock() }
+func (e *Engine) UnlockMemory() { e.memMu.Unlock() }
 
 // SetTerrain stores the coarse terrain grid received during the hello handshake.
 func (e *Engine) SetTerrain(grid *model.TerrainGrid) {
