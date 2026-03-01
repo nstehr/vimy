@@ -276,9 +276,9 @@ func TestDetectEvents_PhaseTransition_MidToLate(t *testing.T) {
 }
 
 func TestDetectEvents_PhaseTransition_TickFallback(t *testing.T) {
-	// Even without milestone buildings, tick fallback triggers mid game at 2000.
+	// Even without milestone buildings, tick fallback triggers mid game at 9000.
 	gs := model.GameState{
-		Tick:   1999,
+		Tick:   8999,
 		Player: model.Player{Cash: 500, Resources: 500},
 		Buildings: []model.Building{
 			{ID: 1, Type: "fact"},
@@ -288,7 +288,7 @@ func TestDetectEvents_PhaseTransition_TickFallback(t *testing.T) {
 	memory := make(map[string]any)
 	prev := takeSnapshot(gs, memory)
 
-	gs.Tick = 2001
+	gs.Tick = 9001
 
 	events := detectEvents(gs, memory, &prev)
 	found := false

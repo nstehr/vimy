@@ -210,7 +210,18 @@ func (s *Strategist) evaluate(ctx context.Context) {
 		"navalAttackGroup", doctrine.NavalAttackGroupSize,
 		"specialistInfantry", doctrine.SpecializedInfantryWeight,
 		"superweapon", doctrine.SuperweaponPriority,
+		"prefInfantry", doctrine.PreferredInfantry,
+		"prefVehicle", doctrine.PreferredVehicle,
+		"prefAircraft", doctrine.PreferredAircraft,
+		"prefNaval", doctrine.PreferredNaval,
 	)
+
+	s.engine.SetPreferences(rules.UnitPreferences{
+		Infantry: doctrine.PreferredInfantry,
+		Vehicle:  doctrine.PreferredVehicle,
+		Aircraft: doctrine.PreferredAircraft,
+		Naval:    doctrine.PreferredNaval,
+	})
 
 	compiled := rules.CompileDoctrine(doctrine)
 	if err := s.engine.Swap(compiled); err != nil {
@@ -244,6 +255,10 @@ func fromBAML(d types.Doctrine) rules.Doctrine {
 		SpecializedInfantryWeight: d.Specialized_infantry_weight,
 		SuperweaponPriority:       d.Superweapon_priority,
 		CapturePriority:           d.Capture_priority,
+		PreferredInfantry:         d.Preferred_infantry,
+		PreferredVehicle:          d.Preferred_vehicle,
+		PreferredAircraft:         d.Preferred_aircraft,
+		PreferredNaval:            d.Preferred_naval,
 	}
 }
 

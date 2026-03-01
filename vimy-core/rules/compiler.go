@@ -910,7 +910,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Priority:     attackPriority,
 		Category:     "combat",
 		Exclusive:    false,
-		ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && NearestEnemy() != nil`, activationThreshold),
+		ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && (BestGroundTarget() != nil || NearestEnemy() != nil)`, activationThreshold),
 		Action:       SquadAttackMove("ground-attack"),
 	})
 
@@ -923,7 +923,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Priority:     attackPriority - ReengageDiscount,
 		Category:     "combat",
 		Exclusive:    false,
-		ConditionSrc: `SquadExists("ground-attack") && SquadIdleCount("ground-attack") > 0 && NearestEnemy() != nil`,
+		ConditionSrc: `SquadExists("ground-attack") && SquadIdleCount("ground-attack") > 0 && (BestGroundTarget() != nil || NearestEnemy() != nil)`,
 		Action:       SquadAttackMove("ground-attack"),
 	})
 
@@ -1077,7 +1077,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 	// --- Micro behaviors ---
 	// Category "micro" is non-exclusive so all micro rules can co-fire on the same tick.
 
-	// Retreat damaged squad units — always present since all doctrines form squads.
+	// Retreat damaged combat units — always present since all doctrines have combat units.
 	retreatThreshold := lerpf(0.50, 0.15, d.Aggression)
 	retreatPriority := lerp(380, 450, 1.0-d.Aggression)
 	rules = append(rules, &Rule{
@@ -1085,9 +1085,52 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Priority:     retreatPriority,
 		Category:     "micro",
 		Exclusive:    false,
-		ConditionSrc: fmt.Sprintf(`len(DamagedSquadUnits(%.2f)) > 0`, retreatThreshold),
+		ConditionSrc: fmt.Sprintf(`len(DamagedCombatUnits(%.2f)) > 0`, retreatThreshold),
 		Action:       RetreatDamagedUnits(retreatThreshold),
 	})
+
+	// Clear healed units from retreating set — runs every tick so healed
+	// units return to the combat pool promptly.
+	rules = append(rules, &Rule{
+		Name:         "clear-healed-units",
+		Priority:     500,
+		Category:     "micro",
+		Exclusive:    false,
+		ConditionSrc: "HasRetreatingUnits()",
+		Action:       ClearHealedUnits(retreatThreshold),
+	})
+
+	// Chase leash — recall overextended squad members that wandered off after kills.
+	// Leash distance scales with aggression — aggressive doctrines let units roam further.
+	leashPct := lerpf(0.25, 0.50, d.Aggression)
+	for _, squadName := range []string{"ground-attack", "naval-attack"} {
+		rules = append(rules, &Rule{
+			Name:         fmt.Sprintf("recall-overextended-%s", squadName),
+			Priority:     retreatPriority - 10,
+			Category:     "micro",
+			Exclusive:    false,
+			ConditionSrc: fmt.Sprintf(`SquadExists("%s") && len(OverextendedSquadMembers("%s", %.2f)) > 0`, squadName, squadName, leashPct),
+			Action:       RecallOverextended(squadName, leashPct),
+		})
+	}
+
+	// Engagement quality — disengage when outnumbered locally.
+	// Only active when aggression < 1.0 (pure aggression doctrines never retreat).
+	if d.Aggression < 1.0 {
+		// threatThreshold: 1.5 at aggression=0 (cautious), 3.0 at aggression=0.9 (aggressive)
+		threatThreshold := lerpf(1.5, 3.0, d.Aggression)
+		checkRadius := 0.10 // 10% of map diagonal
+		for _, squadName := range []string{"ground-attack", "naval-attack"} {
+			rules = append(rules, &Rule{
+				Name:         fmt.Sprintf("squad-disengage-%s", squadName),
+				Priority:     retreatPriority - 5,
+				Category:     "micro",
+				Exclusive:    false,
+				ConditionSrc: fmt.Sprintf(`SquadExists("%s") && SquadThreatRatio("%s", %.2f) > %.2f`, squadName, squadName, checkRadius, threatThreshold),
+				Action:       SquadDisengage(squadName),
+			})
+		}
+	}
 
 	// Focus fire on weakest visible enemy — aggressive doctrines only.
 	if d.Aggression > DoctrineModerate {
@@ -1096,7 +1139,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     attackPriority + 1,
 			Category:     "micro",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && WeakestVisibleEnemy() != nil`, activationThreshold),
+			ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && BestGroundTarget() != nil`, activationThreshold),
 			Action:       SquadFocusFire("ground-attack"),
 		})
 	}

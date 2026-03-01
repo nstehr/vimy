@@ -22,6 +22,7 @@ type Engine struct {
 	Memory  map[string]any
 	memMu   sync.Mutex // guards all reads/writes to Memory
 	Terrain *model.TerrainGrid
+	prefs   UnitPreferences
 }
 
 // NewEngine compiles all rule conditions into expr bytecode and sorts by priority.
@@ -45,7 +46,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	e.memMu.Lock()
 	defer e.memMu.Unlock()
 
-	env := RuleEnv{State: gs, Faction: faction, Memory: e.Memory, Terrain: e.Terrain}
+	env := RuleEnv{State: gs, Faction: faction, Memory: e.Memory, Terrain: e.Terrain, Preferences: e.prefs}
 	updateIntel(env)
 	updateBuiltRoles(env)
 	updateSquads(env)
@@ -70,7 +71,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 		}
 
 		anyFired = true
-		slog.Info("rule fired", "rule", r.Name, "priority", r.Priority, "category", r.Category)
+		slog.Debug("rule fired", "rule", r.Name, "priority", r.Priority, "category", r.Category)
 
 		if err := r.Action(env, conn); err != nil {
 			slog.Error("rule action error", "rule", r.Name, "error", err)
@@ -123,6 +124,13 @@ func (e *Engine) SetTerrain(grid *model.TerrainGrid) {
 	e.Terrain = grid
 	e.mu.Unlock()
 	slog.Info("terrain grid set", "cols", grid.Cols, "rows", grid.Rows, "cellW", grid.CellW, "cellH", grid.CellH)
+}
+
+// SetPreferences stores per-unit-type preferences from the LLM doctrine.
+func (e *Engine) SetPreferences(p UnitPreferences) {
+	e.mu.Lock()
+	e.prefs = p
+	e.mu.Unlock()
 }
 
 // logIdleDiagnostics helps debug "why isn't the AI doing anything?" —

@@ -317,7 +317,7 @@ func defenseHint(env RuleEnv) (int, int) {
 	}
 
 	// Existing defense positions for spread calculation.
-	defenseTypes := []string{"pbox", "hbox", "gun", "ftur", "tsla", "agun", "sam"}
+	defenseTypes := []string{Pillbox, CamoPillbox, Turret, FlameTower, TeslaCoil, AAGun, SAMSite}
 	var defenses []model.Building
 	for _, b := range buildings {
 		for _, t := range defenseTypes {
@@ -1353,7 +1353,10 @@ func huntOffset(step, radius int) (int, int) {
 
 func SquadAttackMove(name string) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
-		enemy := env.NearestEnemy()
+		enemy := env.BestGroundTarget()
+		if enemy == nil {
+			enemy = env.NearestEnemy()
+		}
 		if enemy == nil {
 			return nil
 		}
@@ -1361,11 +1364,10 @@ func SquadAttackMove(name string) ActionFunc {
 		if len(ids) == 0 {
 			return nil
 		}
+
 		slog.Debug("squad attack-move", "squad", name, "count", len(ids), "target", enemy.ID)
 		return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
-			ActorIDs: ids,
-			X:        enemy.X,
-			Y:        enemy.Y,
+			ActorIDs: ids, X: enemy.X, Y: enemy.Y,
 		})
 	}
 }
@@ -1437,16 +1439,17 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 		env.Memory[memKey] = state
 
 		return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
-			ActorIDs: ids,
-			X:        tx,
-			Y:        ty,
+			ActorIDs: ids, X: tx, Y: ty,
 		})
 	}
 }
 
 func SquadDefend(name string) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
-		enemy := env.NearestEnemy()
+		enemy := env.BestGroundTarget()
+		if enemy == nil {
+			enemy = env.NearestEnemy()
+		}
 		if enemy == nil {
 			return nil
 		}
@@ -1475,9 +1478,10 @@ func squadIdleActorIDs(env RuleEnv, name string) []uint32 {
 			idleSet[u.ID] = true
 		}
 	}
+	retreating := getRetreatingUnits(env.Memory)
 	var ids []uint32
 	for _, id := range sq.UnitIDs {
-		if idleSet[id] {
+		if idleSet[id] && !retreating[id] {
 			ids = append(ids, uint32(id))
 		}
 	}
@@ -1486,21 +1490,106 @@ func squadIdleActorIDs(env RuleEnv, name string) []uint32 {
 
 // --- Micro action factories ---
 
-// RetreatDamagedUnits sends Move (not AttackMove) toward the service depot
-// for each damaged idle squad member. Move avoids stopping to fight en route.
+// RetreatDamagedUnits sends Move (not AttackMove) for each damaged combat unit.
+// Routes vehicles to the service depot (auto-repair); infantry and others to
+// the base centroid (safety behind defenses). Marks retreating units in memory
+// so focus-fire and squad-attack rules skip them.
 func RetreatDamagedUnits(hpThreshold float64) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
-		units := env.DamagedSquadUnits(hpThreshold)
+		units := env.DamagedCombatUnits(hpThreshold)
 		if len(units) == 0 {
 			return nil
 		}
-		tx, ty := env.ServiceDepotOrCentroid()
+		retreating := getRetreatingUnits(env.Memory)
+		if retreating == nil {
+			retreating = make(map[int]bool)
+		}
+
+		depotX, depotY, hasDepot := env.ServiceDepotPos()
+		centX, centY := env.BuildingCentroid()
+
 		for _, u := range units {
-			slog.Debug("retreating damaged unit", "id", u.ID, "hp_ratio", float64(u.HP)/float64(u.MaxHP), "dest_x", tx, "dest_y", ty)
+			if isInfantry(u) {
+				continue // infantry can't heal — no benefit to retreating
+			}
+			tx, ty := centX, centY
+			if hasDepot && !isAircraft(u) && !isNaval(u) {
+				tx, ty = depotX, depotY
+			}
+			slog.Debug("retreating damaged unit", "id", u.ID, "type", u.Type,
+				"hp_ratio", float64(u.HP)/float64(u.MaxHP), "dest_x", tx, "dest_y", ty)
 			if err := conn.Send(ipc.TypeMove, ipc.MoveCommand{
-				ActorID: uint32(u.ID),
-				X:       tx,
-				Y:       ty,
+				ActorID: uint32(u.ID), X: tx, Y: ty,
+			}); err != nil {
+				return err
+			}
+			retreating[u.ID] = true
+		}
+		env.Memory["retreatingUnits"] = retreating
+		return nil
+	}
+}
+
+// ClearHealedUnits removes healed or dead units from the retreating set,
+// returning them to the combat pool.
+func ClearHealedUnits(hpThreshold float64) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		retreating := getRetreatingUnits(env.Memory)
+		if len(retreating) == 0 {
+			return nil
+		}
+		aliveIDs := make(map[int]bool)
+		for _, u := range env.State.Units {
+			aliveIDs[u.ID] = true
+			if retreating[u.ID] && u.MaxHP > 0 && float64(u.HP)/float64(u.MaxHP) >= hpThreshold {
+				delete(retreating, u.ID)
+				slog.Debug("unit healed, returning to duty", "id", u.ID, "type", u.Type)
+			}
+		}
+		for id := range retreating {
+			if !aliveIDs[id] {
+				delete(retreating, id)
+			}
+		}
+		env.Memory["retreatingUnits"] = retreating
+		return nil
+	}
+}
+
+// RecallOverextended moves idle squad members that have wandered too far
+// from base back toward the building centroid.
+func RecallOverextended(name string, leashPct float64) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		units := env.OverextendedSquadMembers(name, leashPct)
+		if len(units) == 0 {
+			return nil
+		}
+		centX, centY := env.BuildingCentroid()
+		for _, u := range units {
+			slog.Debug("recalling overextended unit", "squad", name, "id", u.ID, "dest_x", centX, "dest_y", centY)
+			if err := conn.Send(ipc.TypeMove, ipc.MoveCommand{
+				ActorID: uint32(u.ID), X: centX, Y: centY,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+// SquadDisengage moves idle squad members back toward base centroid when
+// the local threat ratio is too high (outmatched).
+func SquadDisengage(name string) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		ids := squadIdleActorIDs(env, name)
+		if len(ids) == 0 {
+			return nil
+		}
+		centX, centY := env.BuildingCentroid()
+		for _, id := range ids {
+			slog.Debug("squad disengaging", "squad", name, "unit", id, "dest_x", centX, "dest_y", centY)
+			if err := conn.Send(ipc.TypeMove, ipc.MoveCommand{
+				ActorID: id, X: centX, Y: centY,
 			}); err != nil {
 				return err
 			}
@@ -1510,10 +1599,11 @@ func RetreatDamagedUnits(hpThreshold float64) ActionFunc {
 }
 
 // SquadFocusFire sends individual Attack commands for each idle squad member
-// targeting the weakest visible enemy. Concentrates damage for faster kills.
+// targeting the best ground target. Concentrates damage on the highest-value
+// enemy for faster kills.
 func SquadFocusFire(name string) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
-		target := env.WeakestVisibleEnemy()
+		target := env.BestGroundTarget()
 		if target == nil {
 			return nil
 		}

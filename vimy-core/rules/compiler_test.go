@@ -1211,6 +1211,119 @@ func TestCompileDoctrineAirStrikeRules(t *testing.T) {
 	}
 }
 
+func findRule(rules []*Rule, name string) *Rule {
+	for _, r := range rules {
+		if r.Name == name {
+			return r
+		}
+	}
+	return nil
+}
+
+func TestCompileDoctrine_MicroRulesPresent(t *testing.T) {
+	d := DefaultDoctrine()
+	d.Aggression = 0.3
+	rules := CompileDoctrine(d)
+
+	expected := []string{
+		"retreat-damaged-units",
+		"clear-healed-units",
+		"recall-overextended-ground-attack",
+		"recall-overextended-naval-attack",
+		"squad-disengage-ground-attack",
+		"squad-disengage-naval-attack",
+	}
+	for _, name := range expected {
+		if findRule(rules, name) == nil {
+			t.Errorf("expected rule %q to be present with aggression=0.3", name)
+		}
+	}
+}
+
+func TestCompileDoctrine_RetreatUsesDamagedCombatUnits(t *testing.T) {
+	d := DefaultDoctrine()
+	rules := CompileDoctrine(d)
+
+	r := findRule(rules, "retreat-damaged-units")
+	if r == nil {
+		t.Fatal("retreat-damaged-units rule not found")
+	}
+	if !strings.Contains(r.ConditionSrc, "DamagedCombatUnits") {
+		t.Errorf("retreat rule should use DamagedCombatUnits, got: %s", r.ConditionSrc)
+	}
+	if strings.Contains(r.ConditionSrc, "DamagedSquadUnits") {
+		t.Errorf("retreat rule should NOT use DamagedSquadUnits, got: %s", r.ConditionSrc)
+	}
+}
+
+func TestCompileDoctrine_ClearHealedAlwaysOn(t *testing.T) {
+	d := DefaultDoctrine()
+	rules := CompileDoctrine(d)
+
+	r := findRule(rules, "clear-healed-units")
+	if r == nil {
+		t.Fatal("clear-healed-units rule not found")
+	}
+	if r.ConditionSrc != "HasRetreatingUnits()" {
+		t.Errorf("clear-healed-units should have condition 'HasRetreatingUnits()', got: %s", r.ConditionSrc)
+	}
+	if r.Priority != 500 {
+		t.Errorf("clear-healed-units priority should be 500, got: %d", r.Priority)
+	}
+	if r.Exclusive {
+		t.Error("clear-healed-units should not be exclusive")
+	}
+}
+
+func TestCompileDoctrine_DisengageAbsentAtFullAggression(t *testing.T) {
+	d := DefaultDoctrine()
+	d.Aggression = 1.0
+	rules := CompileDoctrine(d)
+
+	if findRule(rules, "squad-disengage-ground-attack") != nil {
+		t.Error("squad-disengage-ground-attack should NOT be present at aggression=1.0")
+	}
+	if findRule(rules, "squad-disengage-naval-attack") != nil {
+		t.Error("squad-disengage-naval-attack should NOT be present at aggression=1.0")
+	}
+}
+
+func TestCompileDoctrine_RecallAlwaysPresent(t *testing.T) {
+	d := DefaultDoctrine()
+	d.Aggression = 1.0
+	rules := CompileDoctrine(d)
+
+	if findRule(rules, "recall-overextended-ground-attack") == nil {
+		t.Error("recall-overextended-ground-attack should be present at any aggression")
+	}
+}
+
+func TestCompileDoctrine_MicroPriorities(t *testing.T) {
+	d := DefaultDoctrine()
+	d.Aggression = 0.5
+	rules := CompileDoctrine(d)
+
+	retreat := findRule(rules, "retreat-damaged-units")
+	recall := findRule(rules, "recall-overextended-ground-attack")
+	disengage := findRule(rules, "squad-disengage-ground-attack")
+	clearHealed := findRule(rules, "clear-healed-units")
+
+	if retreat == nil || recall == nil || disengage == nil || clearHealed == nil {
+		t.Fatal("expected all micro rules present")
+	}
+
+	// clear-healed > retreat > disengage > recall
+	if clearHealed.Priority <= retreat.Priority {
+		t.Errorf("clear-healed priority (%d) should be > retreat priority (%d)", clearHealed.Priority, retreat.Priority)
+	}
+	if retreat.Priority <= disengage.Priority {
+		t.Errorf("retreat priority (%d) should be > disengage priority (%d)", retreat.Priority, disengage.Priority)
+	}
+	if disengage.Priority <= recall.Priority {
+		t.Errorf("disengage priority (%d) should be > recall priority (%d)", disengage.Priority, recall.Priority)
+	}
+}
+
 func TestBestCapturable(t *testing.T) {
 	base := model.Building{X: 0, Y: 0}
 

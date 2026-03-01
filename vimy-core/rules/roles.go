@@ -130,6 +130,17 @@ const (
 	GapGenerator     = "gap"  // Allied Gap Generator (creates shroud)
 )
 
+// Defense type constants — OpenRA internal names.
+const (
+	Pillbox     = "pbox" // Allied Pillbox
+	CamoPillbox = "hbox" // Allied Camo Pillbox
+	Turret      = "gun"  // Allied Gun Turret
+	TeslaCoil   = "tsla" // Soviet Tesla Coil
+	AAGun       = "agun" // Allied AA Gun
+	SAMSite     = "sam"  // Soviet SAM Site
+	FlameTower  = "ftur" // Soviet Flame Tower
+)
+
 // role abstracts over faction-specific type names. The compiler and env
 // methods use roles so rules say "barracks" instead of checking for both
 // "barr" (Soviet) and "tent" (Allied).
@@ -172,12 +183,12 @@ var roles = map[string]role{
 	"destroyer":         {queue: QueueShip, types: []string{Destroyer}},
 	"cruiser":           {queue: QueueShip, types: []string{Cruiser}},
 	"gunboat":           {queue: QueueShip, types: []string{Gunboat}},
-	"pillbox":           {queue: QueueDefense, types: []string{"pbox"}},
-	"camo_pillbox":      {queue: QueueDefense, types: []string{"hbox"}},
-	"turret":            {queue: QueueDefense, types: []string{"gun"}},
-	"tesla_coil":        {queue: QueueDefense, types: []string{"tsla"}},
-	"aa_defense":        {queue: QueueDefense, types: []string{"agun", "sam"}},
-	"flame_tower":       {queue: QueueDefense, types: []string{"ftur"}},
+	"pillbox":           {queue: QueueDefense, types: []string{Pillbox}},
+	"camo_pillbox":      {queue: QueueDefense, types: []string{CamoPillbox}},
+	"turret":            {queue: QueueDefense, types: []string{Turret}},
+	"tesla_coil":        {queue: QueueDefense, types: []string{TeslaCoil}},
+	"aa_defense":        {queue: QueueDefense, types: []string{AAGun, SAMSite}},
+	"flame_tower":       {queue: QueueDefense, types: []string{FlameTower}},
 	"gap_generator":     {queue: QueueDefense, types: []string{GapGenerator}},
 	"advanced_power":    {queue: QueueBuilding, types: []string{AdvancedPower}},
 	"ore_silo":          {queue: QueueBuilding, types: []string{OreSilo}},

@@ -1,6 +1,6 @@
 Player:
 	ModularBot@AgentAI:
-		Name: Vimy AI
+		Name: bot-vimy-ai.name
 		Type: agent
 	GrantConditionOnBotOwner@agent:
 		Condition: enable-agent-ai

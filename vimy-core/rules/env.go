@@ -8,13 +8,23 @@ import (
 	"github.com/nstehr/vimy/vimy-core/model"
 )
 
+// UnitPreferences holds per-category ordered role lists set by the LLM.
+// BestBuildable* functions check these before falling back to hardcoded priority.
+type UnitPreferences struct {
+	Infantry []string
+	Vehicle  []string
+	Aircraft []string
+	Naval    []string
+}
+
 // RuleEnv is the expression evaluation context. All exported methods are
 // callable from expr rule conditions (e.g. `Cash() >= 500`).
 type RuleEnv struct {
-	State   model.GameState
-	Faction string
-	Memory  map[string]any
-	Terrain *model.TerrainGrid
+	State       model.GameState
+	Faction     string
+	Memory      map[string]any
+	Terrain     *model.TerrainGrid
+	Preferences UnitPreferences
 }
 
 func (e RuleEnv) HasUnit(t string) bool      { return containsType(e.State.Units, t) }
@@ -162,6 +172,79 @@ func (e RuleEnv) DamagedSquadUnits(hpThreshold float64) []model.Unit {
 	return out
 }
 
+// DamagedCombatUnits returns all combat units below the HP threshold,
+// regardless of idle/squad status. Excludes harvesters, MCVs, rangers,
+// engineers, APCs (non-combat/utility). Skips units already retreating.
+func (e RuleEnv) DamagedCombatUnits(hpThreshold float64) []model.Unit {
+	retreating := getRetreatingUnits(e.Memory)
+	var out []model.Unit
+	for _, u := range e.State.Units {
+		if u.MaxHP == 0 {
+			continue
+		}
+		if matchesType(u.Type, Harvester) || matchesType(u.Type, MCV) ||
+			matchesType(u.Type, Ranger) || matchesType(u.Type, Engineer) ||
+			matchesType(u.Type, APC) || isInfantry(u) {
+			continue
+		}
+		if retreating[u.ID] {
+			continue
+		}
+		if float64(u.HP)/float64(u.MaxHP) < hpThreshold {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// getRetreatingUnits returns the set of unit IDs currently retreating.
+func getRetreatingUnits(memory map[string]any) map[int]bool {
+	if v, ok := memory["retreatingUnits"].(map[int]bool); ok {
+		return v
+	}
+	return nil
+}
+
+// HasRetreatingUnits returns true if any units are currently retreating.
+func (e RuleEnv) HasRetreatingUnits() bool {
+	return len(getRetreatingUnits(e.Memory)) > 0
+}
+
+// ServiceDepotPos returns the service depot position (bool = exists).
+func (e RuleEnv) ServiceDepotPos() (int, int, bool) {
+	for _, b := range e.State.Buildings {
+		if matchesType(b.Type, ServiceDepot) {
+			return b.X, b.Y, true
+		}
+	}
+	return 0, 0, false
+}
+
+// BuildingCentroid returns the average position of all buildings.
+func (e RuleEnv) BuildingCentroid() (int, int) {
+	if len(e.State.Buildings) == 0 {
+		return 0, 0
+	}
+	sumX, sumY := 0, 0
+	for _, b := range e.State.Buildings {
+		sumX += b.X
+		sumY += b.Y
+	}
+	return sumX / len(e.State.Buildings), sumY / len(e.State.Buildings)
+}
+
+// isInfantry returns true for infantry-class units.
+func isInfantry(u model.Unit) bool {
+	infantryTypes := []string{RifleInfantry, RocketSoldier, Engineer, Flamethrower,
+		ShockTrooper, Tanya, Medic}
+	for _, t := range infantryTypes {
+		if matchesType(u.Type, t) {
+			return true
+		}
+	}
+	return false
+}
+
 // ServiceDepotOrCentroid returns the position of the service depot, or the
 // building centroid if none exists. Falls back to (0, 0).
 func (e RuleEnv) ServiceDepotOrCentroid() (int, int) {
@@ -179,6 +262,90 @@ func (e RuleEnv) ServiceDepotOrCentroid() (int, int) {
 		return sumX / len(e.State.Buildings), sumY / len(e.State.Buildings)
 	}
 	return 0, 0
+}
+
+// OverextendedSquadMembers returns idle squad members whose distance from
+// base centroid exceeds leashPct fraction of the map diagonal.
+func (e RuleEnv) OverextendedSquadMembers(name string, leashPct float64) []model.Unit {
+	squads := getSquads(e.Memory)
+	sq, ok := squads[name]
+	if !ok || len(sq.UnitIDs) == 0 {
+		return nil
+	}
+	centX, centY := e.BuildingCentroid()
+	mw := float64(e.State.MapWidth)
+	mh := float64(e.State.MapHeight)
+	leashDist := math.Sqrt(mw*mw+mh*mh) * leashPct
+	leashSq := leashDist * leashDist
+
+	idleSet := make(map[int]bool)
+	unitMap := make(map[int]model.Unit)
+	for _, u := range e.State.Units {
+		unitMap[u.ID] = u
+		if u.Idle {
+			idleSet[u.ID] = true
+		}
+	}
+
+	var out []model.Unit
+	for _, id := range sq.UnitIDs {
+		if !idleSet[id] {
+			continue
+		}
+		u := unitMap[id]
+		dx := float64(u.X - centX)
+		dy := float64(u.Y - centY)
+		if dx*dx+dy*dy > leashSq {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// SquadThreatRatio computes (total enemy HP near squad centroid) / (total squad HP).
+// A ratio > 1.0 means enemies have more HP than us locally. radiusPct is a
+// fraction of the map diagonal.
+func (e RuleEnv) SquadThreatRatio(name string, radiusPct float64) float64 {
+	squads := getSquads(e.Memory)
+	sq, ok := squads[name]
+	if !ok || len(sq.UnitIDs) == 0 {
+		return 0
+	}
+	unitMap := make(map[int]model.Unit)
+	for _, u := range e.State.Units {
+		unitMap[u.ID] = u
+	}
+	sumX, sumY, squadHP, n := 0, 0, 0, 0
+	for _, id := range sq.UnitIDs {
+		if u, ok := unitMap[id]; ok {
+			sumX += u.X
+			sumY += u.Y
+			squadHP += u.HP
+			n++
+		}
+	}
+	if n == 0 || squadHP == 0 {
+		return 0
+	}
+	cx, cy := sumX/n, sumY/n
+
+	mw := float64(e.State.MapWidth)
+	mh := float64(e.State.MapHeight)
+	radius := math.Sqrt(mw*mw+mh*mh) * radiusPct
+	radiusSq := radius * radius
+
+	enemyHP := 0
+	for _, en := range e.State.Enemies {
+		dx := float64(en.X - cx)
+		dy := float64(en.Y - cy)
+		if dx*dx+dy*dy <= radiusSq {
+			enemyHP += en.HP
+		}
+	}
+	if enemyHP == 0 {
+		return 0
+	}
+	return float64(enemyHP) / float64(squadHP)
 }
 
 // WeakestVisibleEnemy returns the enemy with the lowest HP/MaxHP ratio.
@@ -416,17 +583,17 @@ func (e RuleEnv) BestCapturable() *model.Enemy {
 // a ground push.
 var airTargetValue = map[string]float64{
 	// Defense structures (highest — air bypasses these)
-	"tsla": 10, "gun": 8, "pbox": 7, "hbox": 7, "ftur": 6,
+	TeslaCoil: 10, Turret: 8, Pillbox: 7, CamoPillbox: 7, FlameTower: 6,
 	// Superweapons
-	"mslo": 9, "iron": 9,
+	MissileSilo: 9, IronCurtain: 9,
 	// Production
-	"fact": 6, "afac": 6, "weap": 5, "afld": 5, "hpad": 5,
-	"barr": 4, "tent": 4, "proc": 4,
+	ConstructionYard: 6, "afac": 6, WarFactory: 5, Airfield: 5, Helipad: 5,
+	SovietBarracks: 4, AlliedBarracks: 4, Refinery: 4,
 	// AA defenses (risky but worth removing)
-	"agun": 4, "sam": 4,
+	AAGun: 4, SAMSite: 4,
 	// Power / support
-	"apwr": 3, "powr": 2, "dome": 3, "atek": 3, "stek": 3,
-	"spen": 4, "syrd": 4,
+	AdvancedPower: 3, PowerPlant: 2, RadarDome: 3, AlliedTechCenter: 3, SovietTechCenter: 3,
+	SubPen: 4, NavalYard: 4,
 }
 
 const airTargetValueDefault = 1.0 // mobile units / unknown types
@@ -471,6 +638,76 @@ func (e RuleEnv) BestAirTarget() *model.Enemy {
 			dist = 1
 		}
 		score := val * hpBonus / math.Sqrt(dist)
+		if score > bestScore {
+			bestScore = score
+			best = en
+		}
+	}
+	return best
+}
+
+// groundTargetValue assigns a strategic value to enemy types for ground attacks.
+// Active base defenses score highest because they're actively killing our ground
+// units. AA defenses and naval buildings score low — not threatening to ground forces.
+var groundTargetValue = map[string]float64{
+	// Active base defenses (highest — these are killing our units)
+	TeslaCoil: 10, Turret: 8, Pillbox: 7, CamoPillbox: 7, FlameTower: 6,
+	// Superweapons
+	MissileSilo: 9, IronCurtain: 9,
+	// AA defenses (low threat to ground)
+	AAGun: 2, SAMSite: 2,
+	// Production (destroy their ability to replace losses)
+	WarFactory: 6, Airfield: 5, Helipad: 5, SovietBarracks: 4, AlliedBarracks: 4,
+	// Economy
+	Refinery: 5, ConstructionYard: 4,
+	// Naval (low priority for ground forces)
+	SubPen: 2, NavalYard: 2,
+	// Power / support
+	AdvancedPower: 3, PowerPlant: 2, RadarDome: 3, AlliedTechCenter: 3, SovietTechCenter: 3,
+}
+
+const groundTargetValueDefault = 1.0 // mobile units / unknown types
+
+// BestGroundTarget picks the highest-value enemy for ground attacks, using distance
+// as a decay factor. Scoring: val * hpBonus / dist.
+// val = type value from groundTargetValue (dominant factor)
+// hpBonus = 2.0 - hpRatio — gentle tiebreaker favoring damaged targets
+// 1/dist = stronger distance decay than air (ground units travel slowly)
+func (e RuleEnv) BestGroundTarget() *model.Enemy {
+	if len(e.State.Enemies) == 0 {
+		return nil
+	}
+	bx, by := 0, 0
+	if len(e.State.Buildings) > 0 {
+		bx = e.State.Buildings[0].X
+		by = e.State.Buildings[0].Y
+	}
+	var best *model.Enemy
+	bestScore := -1.0
+	for i := range e.State.Enemies {
+		en := &e.State.Enemies[i]
+		if en.MaxHP == 0 {
+			continue
+		}
+		// Strip faction suffix (e.g. "afld.ukraine" → "afld").
+		base := strings.ToLower(en.Type)
+		if idx := strings.IndexByte(base, '.'); idx >= 0 {
+			base = base[:idx]
+		}
+		val := groundTargetValue[base]
+		if val == 0 {
+			val = groundTargetValueDefault
+		}
+		hpRatio := float64(en.HP) / float64(en.MaxHP)
+		hpBonus := 2.0 - hpRatio // 1.0 (full HP) to 2.0 (near-death)
+
+		dx := float64(en.X - bx)
+		dy := float64(en.Y - by)
+		dist := math.Sqrt(dx*dx + dy*dy)
+		if dist < 1 {
+			dist = 1
+		}
+		score := val * hpBonus / dist
 		if score > bestScore {
 			bestScore = score
 			best = en
@@ -686,17 +923,17 @@ type EnemyBaseIntel struct {
 // unit sightings might just be an attack force passing through.
 var knownBuildingTypes = map[string]bool{
 	// Production
-	"fact": true, "barr": true, "tent": true, "weap": true, "kenn": true,
-	"afld": true, "hpad": true, "syrd": true, "spen": true,
+	ConstructionYard: true, SovietBarracks: true, AlliedBarracks: true, WarFactory: true, "kenn": true,
+	Airfield: true, Helipad: true, NavalYard: true, SubPen: true,
 	// Economy
-	"powr": true, "apwr": true, "proc": true, "silo": true,
+	PowerPlant: true, AdvancedPower: true, Refinery: true, OreSilo: true,
 	// Tech / Support
-	"dome": true, "atek": true, "stek": true, "fix": true,
+	RadarDome: true, AlliedTechCenter: true, SovietTechCenter: true, ServiceDepot: true,
 	// Superweapons
-	"iron": true, "pdox": true, "mslo": true, "gap": true,
+	IronCurtain: true, "pdox": true, MissileSilo: true, GapGenerator: true,
 	// Defenses
-	"pbox": true, "hbox": true, "gun": true, "ftur": true,
-	"tsla": true, "agun": true, "sam": true,
+	Pillbox: true, CamoPillbox: true, Turret: true, FlameTower: true,
+	TeslaCoil: true, AAGun: true, SAMSite: true,
 }
 
 // isKnownBuildingType handles faction variants (e.g. "afld.ukraine" → "afld").
@@ -867,8 +1104,13 @@ func (e RuleEnv) CombatVehicleCount() int {
 }
 
 // BestBuildableVehicle returns the highest-priority buildable combat vehicle.
-// Priority order comes from combatVehicleRoles (mammoth > heavy > light > ...).
+// Checks LLM preferences first, then falls back to combatVehicleRoles.
 func (e RuleEnv) BestBuildableVehicle() string {
+	for _, r := range e.Preferences.Vehicle {
+		if item := e.BuildableType(r); item != "" {
+			return item
+		}
+	}
 	for _, r := range combatVehicleRoles {
 		if item := e.BuildableType(r); item != "" {
 			return item
@@ -911,10 +1153,18 @@ func (e RuleEnv) SpecialistInfantryCount() int {
 	return n
 }
 
-// BestBuildableSpecialist picks the best available elite infantry
-// (priority: tanya > shock trooper > flamethrower > medic).
+// BestBuildableSpecialist picks the best available elite infantry.
+// Checks LLM preferences first, then falls back to specialistInfantryRoles.
 // Medics are sub-capped at 2 so remaining specialist slots go to combat units.
 func (e RuleEnv) BestBuildableSpecialist() string {
+	for _, r := range e.Preferences.Infantry {
+		if r == "medic" && e.RoleCount("medic") >= 2 {
+			continue
+		}
+		if item := e.BuildableType(r); item != "" {
+			return item
+		}
+	}
 	for _, r := range specialistInfantryRoles {
 		if r == "medic" && e.RoleCount("medic") >= 2 {
 			continue
@@ -926,10 +1176,31 @@ func (e RuleEnv) BestBuildableSpecialist() string {
 	return ""
 }
 
-// BestBuildableAircraft picks the best available combat aircraft
-// (prefers advanced: longbow/MiG over basic: blackhawk/yak).
+// BestBuildableAircraft picks the best available combat aircraft.
+// Checks LLM preferences first, then falls back to combatAircraftRoles.
 func (e RuleEnv) BestBuildableAircraft() string {
+	for _, r := range e.Preferences.Aircraft {
+		if item := e.BuildableType(r); item != "" {
+			return item
+		}
+	}
 	for _, r := range combatAircraftRoles {
+		if item := e.BuildableType(r); item != "" {
+			return item
+		}
+	}
+	return ""
+}
+
+// BestBuildableNaval picks the best available naval combat unit.
+// Checks LLM preferences first, then falls back to combatNavalRoles.
+func (e RuleEnv) BestBuildableNaval() string {
+	for _, r := range e.Preferences.Naval {
+		if item := e.BuildableType(r); item != "" {
+			return item
+		}
+	}
+	for _, r := range combatNavalRoles {
 		if item := e.BuildableType(r); item != "" {
 			return item
 		}

@@ -387,6 +387,40 @@ func TestHuntStateCleanupOnDissolve(t *testing.T) {
 	}
 }
 
+func TestSquadIdleActorIDs_SkipsRetreating(t *testing.T) {
+	memory := map[string]any{
+		"squads": map[string]*Squad{
+			"attack": {
+				Name:    "attack",
+				Domain:  "ground",
+				UnitIDs: []int{1, 2, 3},
+				Role:    "attack",
+			},
+		},
+		"retreatingUnits": map[int]bool{2: true},
+	}
+	env := RuleEnv{
+		State: model.GameState{
+			Units: []model.Unit{
+				{ID: 1, Type: "1tnk", Idle: true},
+				{ID: 2, Type: "1tnk", Idle: true}, // retreating, should be skipped
+				{ID: 3, Type: "1tnk", Idle: true},
+			},
+		},
+		Memory: memory,
+	}
+
+	ids := squadIdleActorIDs(env, "attack")
+	if len(ids) != 2 {
+		t.Errorf("expected 2 idle non-retreating actor IDs, got %d", len(ids))
+	}
+	for _, id := range ids {
+		if id == 2 {
+			t.Error("retreating unit 2 should not be in squadIdleActorIDs")
+		}
+	}
+}
+
 func TestSwapClearsSquads(t *testing.T) {
 	engine, err := NewEngine(DefaultRules())
 	if err != nil {

@@ -61,13 +61,13 @@ type stateSnapshot struct {
 // criticalBuildingTypes are buildings whose loss fundamentally changes
 // what the AI can do and should trigger immediate re-evaluation.
 var criticalBuildingTypes = map[string]bool{
-	"fact": true, // Construction Yard
-	"weap": true, // War Factory
-	"atek": true, // Allied Tech Center
-	"stek": true, // Soviet Tech Center
-	"proc": true, // Refinery
-	"mslo": true, // Missile Silo
-	"iron": true, // Iron Curtain
+	rules.ConstructionYard: true,
+	rules.WarFactory:       true,
+	rules.AlliedTechCenter: true,
+	rules.SovietTechCenter: true,
+	rules.Refinery:         true,
+	rules.MissileSilo:      true,
+	rules.IronCurtain:      true,
 }
 
 // baseType strips faction variants (e.g. "fact.england" → "fact") and lowercases.
@@ -86,47 +86,47 @@ func isCriticalBuilding(t string) bool {
 
 // Unit domain classification — which of our units belong to each combat domain.
 var infantryTypes = map[string]bool{
-	"e1": true, "e3": true, "e4": true, "e6": true, "e7": true,
-	"shok": true, "medi": true,
+	rules.RifleInfantry: true, rules.RocketSoldier: true, rules.Flamethrower: true,
+	rules.Engineer: true, rules.Tanya: true, rules.ShockTrooper: true, rules.Medic: true,
 }
 
 var vehicleTypes = map[string]bool{
-	"1tnk": true, "2tnk": true, "3tnk": true, "4tnk": true,
-	"v2rl": true, "apc": true, "ftrk": true, "dtrk": true,
-	"jeep": true, "arty": true,
+	rules.LightTank: true, rules.MediumTank: true, rules.HeavyTank: true, rules.MammothTank: true,
+	rules.V2Launcher: true, rules.APC: true, rules.FlakTruck: true, rules.DemoTruck: true,
+	rules.Ranger: true, rules.Artillery: true,
 }
 
 var aircraftTypes = map[string]bool{
-	"heli": true, "mh60": true, "mig": true, "yak": true,
+	rules.Longbow: true, rules.BlackHawk: true, rules.MiG: true, rules.Yak: true,
 }
 
 // Enemy threat classification — what counters each domain.
 var antiInfantryThreats = map[string]bool{
-	"ftur": true, // Flame Tower
-	"tsla": true, // Tesla Coil
-	"pbox": true, // Pillbox
-	"hbox": true, // Heavy Pillbox
-	"e4":   true, // Flamethrower infantry
-	"shok": true, // Shock Trooper
+	rules.FlameTower:   true,
+	rules.TeslaCoil:    true,
+	rules.Pillbox:      true,
+	rules.CamoPillbox:  true,
+	rules.Flamethrower: true,
+	rules.ShockTrooper: true,
 }
 
 var antiVehicleThreats = map[string]bool{
-	"tsla": true, // Tesla Coil
-	"gun":  true, // Gun Turret
+	rules.TeslaCoil: true,
+	rules.Turret:    true,
 }
 
 var antiAirThreats = map[string]bool{
-	"sam":  true, // SAM Site
-	"agun": true, // AA Gun
-	"ftrk": true, // Flak Truck
+	rules.SAMSite:   true,
+	rules.AAGun:     true,
+	rules.FlakTruck: true,
 }
 
 // threatDisplayName maps internal type codes to human-readable names for the LLM.
 var threatDisplayName = map[string]string{
-	"ftur": "Flame Tower", "tsla": "Tesla Coil",
-	"pbox": "Pillbox", "hbox": "Heavy Pillbox", "gun": "Turret",
-	"sam": "SAM Site", "agun": "AA Gun",
-	"e4": "Flamethrower", "shok": "Shock Trooper", "ftrk": "Flak Truck",
+	rules.FlameTower: "Flame Tower", rules.TeslaCoil: "Tesla Coil",
+	rules.Pillbox: "Pillbox", rules.CamoPillbox: "Heavy Pillbox", rules.Turret: "Turret",
+	rules.SAMSite: "SAM Site", rules.AAGun: "AA Gun",
+	rules.Flamethrower: "Flamethrower", rules.ShockTrooper: "Shock Trooper", rules.FlakTruck: "Flak Truck",
 }
 
 // counterCooldownTicks is the minimum gap between strategy_countered events.
@@ -143,23 +143,23 @@ var counterLossThresholds = map[string]int{
 
 // Mid-game building types: real military production capability.
 var midGameBuildings = map[string]bool{
-	"weap": true, // War Factory
-	"afld": true, // Airfield
-	"syrd": true, // Naval Yard
+	rules.WarFactory: true,
+	rules.Airfield:   true,
+	rules.NavalYard:  true,
 }
 
 // barracksTypes identifies barracks buildings (Allied tent / Soviet barr).
 var barracksTypes = map[string]bool{
-	"tent": true, // Allied Barracks
-	"barr": true, // Soviet Barracks
+	rules.AlliedBarracks: true,
+	rules.SovietBarracks: true,
 }
 
 // Late-game building types: advanced tech or superweapons.
 var lateGameBuildings = map[string]bool{
-	"atek": true, // Allied Tech Center
-	"stek": true, // Soviet Tech Center
-	"mslo": true, // Missile Silo
-	"iron": true, // Iron Curtain
+	rules.AlliedTechCenter: true,
+	rules.SovietTechCenter: true,
+	rules.MissileSilo:      true,
+	rules.IronCurtain:      true,
 }
 
 // gamePhase determines the game phase from building milestones, with tick
@@ -183,10 +183,10 @@ func gamePhase(gs model.GameState) string {
 		}
 	}
 
-	if hasLate || gs.Tick > 5000 {
+	if hasLate || gs.Tick > 22500 {
 		return "Late Game"
 	}
-	if hasMid || gs.Tick > 2000 {
+	if hasMid || gs.Tick > 9000 {
 		return "Mid Game"
 	}
 
@@ -210,7 +210,7 @@ func gamePhase(gs model.GameState) string {
 // isCombatUnit returns true if the unit is a combat unit (not harvester or MCV).
 func isCombatUnit(u model.Unit) bool {
 	t := baseType(u.Type)
-	return t != "harv" && t != "mcv"
+	return t != rules.Harvester && t != rules.MCV
 }
 
 // unitDomain returns "infantry", "vehicle", "aircraft", or "" for the unit.
@@ -251,7 +251,7 @@ func takeSnapshot(gs model.GameState, memory map[string]any) stateSnapshot {
 			snap.combatCount++
 		}
 		t := baseType(u.Type)
-		if t == "harv" {
+		if t == rules.Harvester {
 			snap.harvesterCnt++
 		}
 		switch unitDomain(u) {

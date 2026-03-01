@@ -22,7 +22,11 @@ type Doctrine struct {
 	ScoutPriority              float64 `json:"scout_priority"`
 	SpecializedInfantryWeight  float64 `json:"specialized_infantry_weight"`
 	SuperweaponPriority        float64 `json:"superweapon_priority"`
-	CapturePriority            float64 `json:"capture_priority"`
+	CapturePriority            float64  `json:"capture_priority"`
+	PreferredInfantry          []string `json:"preferred_infantry,omitempty"`
+	PreferredVehicle           []string `json:"preferred_vehicle,omitempty"`
+	PreferredAircraft          []string `json:"preferred_aircraft,omitempty"`
+	PreferredNaval             []string `json:"preferred_naval,omitempty"`
 }
 
 // DefaultDoctrine is used when no LLM strategist is configured.

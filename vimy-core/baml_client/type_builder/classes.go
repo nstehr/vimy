@@ -183,6 +183,22 @@ func (t *DoctrineClassView) PropertyCapture_priority() (ClassPropertyView, error
 	return t.inner.Property("capture_priority")
 }
 
+func (t *DoctrineClassView) PropertyPreferred_infantry() (ClassPropertyView, error) {
+	return t.inner.Property("preferred_infantry")
+}
+
+func (t *DoctrineClassView) PropertyPreferred_vehicle() (ClassPropertyView, error) {
+	return t.inner.Property("preferred_vehicle")
+}
+
+func (t *DoctrineClassView) PropertyPreferred_aircraft() (ClassPropertyView, error) {
+	return t.inner.Property("preferred_aircraft")
+}
+
+func (t *DoctrineClassView) PropertyPreferred_naval() (ClassPropertyView, error) {
+	return t.inner.Property("preferred_naval")
+}
+
 func (t *TypeBuilder) Doctrine() (*DoctrineClassView, error) {
 	bld, err := t.inner.Class("Doctrine")
 	if err != nil {
