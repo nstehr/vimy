@@ -231,6 +231,163 @@ func TestCompileDoctrineMicroRules(t *testing.T) {
 	}
 }
 
+func TestClearHealedUnits_Timeout(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	// Unit retreated at tick 100. Current tick is 400 (elapsed 300 > 200 timeout).
+	env := RuleEnv{
+		State: model.GameState{
+			Tick: 400,
+			Units: []model.Unit{
+				{ID: 1, Type: "3tnk", HP: 30, MaxHP: 100}, // still damaged, but should timeout
+				{ID: 2, Type: "1tnk", HP: 30, MaxHP: 100}, // retreated at tick 250, elapsed 150 < 200
+			},
+		},
+		Memory: map[string]any{
+			"retreatingUnits": map[int]int{1: 100, 2: 250},
+		},
+	}
+
+	action := ClearHealedUnits(0.80)
+	if err := action(env, conn); err != nil {
+		t.Fatalf("ClearHealedUnits returned error: %v", err)
+	}
+
+	retreating := getRetreatingUnits(env.Memory)
+	if _, ok := retreating[1]; ok {
+		t.Error("unit 1 should have been released by timeout (300 > 200)")
+	}
+	if _, ok := retreating[2]; !ok {
+		t.Error("unit 2 should still be retreating (150 < 200 timeout)")
+	}
+}
+
+func TestClearHealedUnits_Healed(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	env := RuleEnv{
+		State: model.GameState{
+			Tick: 200,
+			Units: []model.Unit{
+				{ID: 1, Type: "3tnk", HP: 90, MaxHP: 100}, // healed above threshold
+			},
+		},
+		Memory: map[string]any{
+			"retreatingUnits": map[int]int{1: 100},
+		},
+	}
+
+	action := ClearHealedUnits(0.80)
+	if err := action(env, conn); err != nil {
+		t.Fatalf("ClearHealedUnits returned error: %v", err)
+	}
+
+	retreating := getRetreatingUnits(env.Memory)
+	if _, ok := retreating[1]; ok {
+		t.Error("unit 1 should have been released (healed above threshold)")
+	}
+}
+
+func TestClearHealedUnits_DeadRemoved(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	env := RuleEnv{
+		State: model.GameState{
+			Tick:  200,
+			Units: []model.Unit{}, // unit 1 is dead — not in units list
+		},
+		Memory: map[string]any{
+			"retreatingUnits": map[int]int{1: 100},
+		},
+	}
+
+	action := ClearHealedUnits(0.80)
+	if err := action(env, conn); err != nil {
+		t.Fatalf("ClearHealedUnits returned error: %v", err)
+	}
+
+	retreating := getRetreatingUnits(env.Memory)
+	if _, ok := retreating[1]; ok {
+		t.Error("dead unit 1 should have been removed from retreating set")
+	}
+}
+
+func TestActionFireParatroopers_SkipsWaterBase(t *testing.T) {
+	// Enemy base is on water. Nearest visible enemy is on land.
+	// Paratroopers should fall back to the visible enemy.
+	grid := &model.TerrainGrid{
+		Cols: 4, Rows: 4, CellW: 100, CellH: 100,
+		Grid: []model.TerrainType{
+			model.Land, model.Land, model.Water, model.Water,
+			model.Land, model.Land, model.Water, model.Water,
+			model.Land, model.Land, model.Land, model.Land,
+			model.Land, model.Land, model.Land, model.Land,
+		},
+	}
+
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	env := RuleEnv{
+		State: model.GameState{
+			Buildings: []model.Building{
+				{ID: 1, Type: "fact", X: 50, Y: 50},
+			},
+			Enemies: []model.Enemy{
+				{ID: 10, Owner: "Enemy", Type: "3tnk", X: 150, Y: 150, HP: 100, MaxHP: 100}, // on land
+			},
+		},
+		Memory: map[string]any{
+			"enemyBases": map[string]EnemyBaseIntel{
+				"Enemy": {Owner: "Enemy", X: 250, Y: 50, Tick: 100, FromBuildings: true}, // on water
+			},
+		},
+		Terrain: grid,
+	}
+
+	err := ActionFireParatroopers(env, conn)
+	if err != nil {
+		t.Fatalf("ActionFireParatroopers returned error: %v", err)
+	}
+	// Should have fallen back to visible enemy on land (no crash, no water drop).
+}
+
+func TestActionFireParatroopers_NoValidTarget(t *testing.T) {
+	// Both enemy base and visible enemy are on water. Should return nil (skip).
+	grid := &model.TerrainGrid{
+		Cols: 2, Rows: 2, CellW: 200, CellH: 200,
+		Grid: []model.TerrainType{
+			model.Water, model.Water,
+			model.Water, model.Water,
+		},
+	}
+
+	env := RuleEnv{
+		State: model.GameState{
+			Buildings: []model.Building{
+				{ID: 1, Type: "fact", X: 50, Y: 50},
+			},
+			Enemies: []model.Enemy{
+				{ID: 10, Owner: "Enemy", Type: "ss", X: 150, Y: 150, HP: 100, MaxHP: 100},
+			},
+		},
+		Memory: map[string]any{
+			"enemyBases": map[string]EnemyBaseIntel{
+				"Enemy": {Owner: "Enemy", X: 300, Y: 300, Tick: 100, FromBuildings: true},
+			},
+		},
+		Terrain: grid,
+	}
+
+	err := ActionFireParatroopers(env, nil) // nil conn — should return nil before sending
+	if err != nil {
+		t.Fatalf("expected nil error when no valid land target, got: %v", err)
+	}
+}
+
 func TestCompileDoctrineMicroRulesGating(t *testing.T) {
 	// Low aggression, low economy → focus-fire and flee gated out.
 	d := Doctrine{

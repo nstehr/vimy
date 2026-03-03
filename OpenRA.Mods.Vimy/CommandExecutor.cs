@@ -54,6 +54,9 @@ namespace OpenRA.Mods.Vimy
 					case "unload":
 						ExecuteUnload(dataJson, world, bot);
 						break;
+					case "repair_unit":
+						ExecuteRepairUnit(dataJson, world, bot);
+						break;
 					case "support_power":
 						ExecuteSupportPower(dataJson, world, bot);
 						break;
@@ -377,6 +380,32 @@ namespace OpenRA.Mods.Vimy
 
 			bot.QueueOrder(new Order("Unload", actor, false));
 			Log.Write("debug", $"CommandExecutor: unload actor {actorId}");
+		}
+
+		static void ExecuteRepairUnit(string dataJson, World world, IBot bot)
+		{
+			using var doc = JsonDocument.Parse(dataJson);
+			var root = doc.RootElement;
+
+			var actorId = root.GetProperty("actor_id").GetUInt32();
+			var repairBuildingId = root.GetProperty("repair_building_id").GetUInt32();
+
+			var actor = world.GetActorById(actorId);
+			if (!IsValidOwnedActor(actor, bot))
+			{
+				Log.Write("debug", $"CommandExecutor: repair_unit — invalid actor {actorId}");
+				return;
+			}
+
+			var repairBuilding = world.GetActorById(repairBuildingId);
+			if (repairBuilding == null || repairBuilding.IsDead || !repairBuilding.IsInWorld)
+			{
+				Log.Write("debug", $"CommandExecutor: repair_unit — invalid repair building {repairBuildingId}");
+				return;
+			}
+
+			bot.QueueOrder(new Order("Repair", actor, Target.FromActor(repairBuilding), false));
+			Log.Write("debug", $"CommandExecutor: repair_unit actor {actorId} -> building {repairBuildingId}");
 		}
 
 		static void ExecuteSupportPower(string dataJson, World world, IBot bot)

@@ -397,7 +397,7 @@ func TestSquadIdleActorIDs_SkipsRetreating(t *testing.T) {
 				Role:    "attack",
 			},
 		},
-		"retreatingUnits": map[int]bool{2: true},
+		"retreatingUnits": map[int]int{2: 0},
 	}
 	env := RuleEnv{
 		State: model.GameState{

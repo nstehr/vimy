@@ -45,7 +45,7 @@ func TestDamagedCombatUnits_SkipsRetreating(t *testing.T) {
 			},
 		},
 		Memory: map[string]any{
-			"retreatingUnits": map[int]bool{1: true},
+			"retreatingUnits": map[int]int{1: 0},
 		},
 	}
 
@@ -407,4 +407,188 @@ func TestBestGroundTarget(t *testing.T) {
 			t.Errorf("expected nil for MaxHP=0 enemy, got %+v", got)
 		}
 	})
+}
+
+func TestBestCapturable_SkipsWater(t *testing.T) {
+	grid := &model.TerrainGrid{
+		Cols: 4, Rows: 4, CellW: 100, CellH: 100,
+		Grid: []model.TerrainType{
+			model.Land, model.Land, model.Water, model.Water,
+			model.Land, model.Land, model.Water, model.Water,
+			model.Land, model.Land, model.Land, model.Land,
+			model.Land, model.Land, model.Land, model.Land,
+		},
+	}
+
+	env := RuleEnv{
+		State: model.GameState{
+			Buildings: []model.Building{
+				{ID: 1, Type: "fact", X: 50, Y: 50},
+			},
+			Capturables: []model.Enemy{
+				{ID: 10, Type: "oilb", X: 250, Y: 50},  // on water — should be skipped
+				{ID: 11, Type: "hosp", X: 150, Y: 150},  // on land — should be picked
+			},
+		},
+		Terrain: grid,
+	}
+
+	got := env.BestCapturable()
+	if got == nil {
+		t.Fatal("expected a capturable, got nil")
+	}
+	if got.ID != 11 {
+		t.Errorf("expected land-based capturable ID=11, got ID=%d", got.ID)
+	}
+}
+
+func TestBestCapturable_NoTerrainGrid(t *testing.T) {
+	// Without terrain grid, all capturables should be considered.
+	env := RuleEnv{
+		State: model.GameState{
+			Buildings: []model.Building{
+				{ID: 1, Type: "fact", X: 50, Y: 50},
+			},
+			Capturables: []model.Enemy{
+				{ID: 10, Type: "oilb", X: 60, Y: 50},
+			},
+		},
+		Terrain: nil,
+	}
+
+	got := env.BestCapturable()
+	if got == nil || got.ID != 10 {
+		t.Errorf("expected capturable ID=10 without terrain filter, got %+v", got)
+	}
+}
+
+func TestUpdateIntel_ClearsStaleIntel(t *testing.T) {
+	env := RuleEnv{
+		State: model.GameState{
+			Tick: 600,
+			Units: []model.Unit{
+				{ID: 1, Type: "3tnk", X: 100, Y: 100}, // our unit near intel position
+			},
+			Enemies: []model.Enemy{}, // no enemies visible
+		},
+		Memory: map[string]any{
+			"enemyBases": map[string]EnemyBaseIntel{
+				"Enemy1": {Owner: "Enemy1", X: 105, Y: 105, Tick: 200, FromBuildings: true},
+			},
+		},
+	}
+
+	updateIntel(env)
+
+	bases := getEnemyBases(env.Memory)
+	if _, exists := bases["Enemy1"]; exists {
+		t.Error("expected stale intel for Enemy1 to be cleared")
+	}
+}
+
+func TestUpdateIntel_KeepsFreshIntel(t *testing.T) {
+	// Intel is only 100 ticks old (< 300 threshold) — should not be cleared
+	// even though our units are at the position and no enemies visible.
+	env := RuleEnv{
+		State: model.GameState{
+			Tick: 300,
+			Units: []model.Unit{
+				{ID: 1, Type: "3tnk", X: 100, Y: 100},
+			},
+			Enemies: []model.Enemy{},
+		},
+		Memory: map[string]any{
+			"enemyBases": map[string]EnemyBaseIntel{
+				"Enemy1": {Owner: "Enemy1", X: 105, Y: 105, Tick: 200, FromBuildings: true},
+			},
+		},
+	}
+
+	updateIntel(env)
+
+	bases := getEnemyBases(env.Memory)
+	if _, exists := bases["Enemy1"]; !exists {
+		t.Error("expected fresh intel for Enemy1 to be kept (age 100 < 300 threshold)")
+	}
+}
+
+func TestUpdateIntel_KeepsIntelWhenEnemiesNearby(t *testing.T) {
+	env := RuleEnv{
+		State: model.GameState{
+			Tick: 600,
+			Units: []model.Unit{
+				{ID: 1, Type: "3tnk", X: 100, Y: 100}, // our unit near intel
+			},
+			Enemies: []model.Enemy{
+				{ID: 10, Owner: "Enemy1", Type: "tsla", X: 103, Y: 103, HP: 100, MaxHP: 100}, // enemy still there
+			},
+		},
+		Memory: map[string]any{
+			"enemyBases": map[string]EnemyBaseIntel{
+				"Enemy1": {Owner: "Enemy1", X: 105, Y: 105, Tick: 200, FromBuildings: true},
+			},
+		},
+	}
+
+	updateIntel(env)
+
+	bases := getEnemyBases(env.Memory)
+	if _, exists := bases["Enemy1"]; !exists {
+		t.Error("expected intel for Enemy1 to be kept when enemies are nearby")
+	}
+}
+
+func TestUpdateIntel_KeepsIntelWhenNoOwnUnitsNearby(t *testing.T) {
+	env := RuleEnv{
+		State: model.GameState{
+			Tick: 600,
+			Units: []model.Unit{
+				{ID: 1, Type: "3tnk", X: 500, Y: 500}, // our unit far from intel
+			},
+			Enemies: []model.Enemy{},
+		},
+		Memory: map[string]any{
+			"enemyBases": map[string]EnemyBaseIntel{
+				"Enemy1": {Owner: "Enemy1", X: 100, Y: 100, Tick: 200, FromBuildings: true},
+			},
+		},
+	}
+
+	updateIntel(env)
+
+	bases := getEnemyBases(env.Memory)
+	if _, exists := bases["Enemy1"]; !exists {
+		t.Error("expected intel for Enemy1 to be kept when no own units nearby")
+	}
+}
+
+func TestServiceDepot(t *testing.T) {
+	env := RuleEnv{
+		State: model.GameState{
+			Buildings: []model.Building{
+				{ID: 1, Type: "fact", X: 100, Y: 100},
+				{ID: 2, Type: "fix", X: 200, Y: 300},
+			},
+		},
+	}
+	depot := env.ServiceDepot()
+	if depot == nil {
+		t.Fatal("expected service depot, got nil")
+	}
+	if depot.ID != 2 {
+		t.Errorf("expected depot ID=2, got %d", depot.ID)
+	}
+}
+
+func TestServiceDepot_None(t *testing.T) {
+	env := RuleEnv{
+		State: model.GameState{
+			Buildings: []model.Building{
+				{ID: 1, Type: "fact", X: 100, Y: 100},
+			},
+		},
+	}
+	if env.ServiceDepot() != nil {
+		t.Error("expected nil when no service depot")
+	}
 }

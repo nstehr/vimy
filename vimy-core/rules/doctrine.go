@@ -27,6 +27,7 @@ type Doctrine struct {
 	PreferredVehicle           []string `json:"preferred_vehicle,omitempty"`
 	PreferredAircraft          []string `json:"preferred_aircraft,omitempty"`
 	PreferredNaval             []string `json:"preferred_naval,omitempty"`
+	TransportAssault           float64  `json:"transport_assault,omitempty"`
 }
 
 // DefaultDoctrine is used when no LLM strategist is configured.
@@ -65,6 +66,7 @@ func (d *Doctrine) Validate() {
 	d.SpecializedInfantryWeight = clamp(d.SpecializedInfantryWeight, 0, 1)
 	d.SuperweaponPriority = clamp(d.SuperweaponPriority, 0, 1)
 	d.CapturePriority = clamp(d.CapturePriority, 0, 1)
+	d.TransportAssault = clamp(d.TransportAssault, 0, 1)
 	d.GroundAttackGroupSize = clampInt(d.GroundAttackGroupSize, 3, 15)
 	d.AirAttackGroupSize = clampInt(d.AirAttackGroupSize, 1, 8)
 	d.NavalAttackGroupSize = clampInt(d.NavalAttackGroupSize, 2, 10)

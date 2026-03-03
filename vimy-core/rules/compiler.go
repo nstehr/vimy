@@ -23,6 +23,18 @@ const (
 	NavalDomainOffset = 15 // naval attack base priority below ground
 )
 
+// Per-queue production categories. Exclusive within each queue so only the
+// highest-priority rule whose conditions are met fires per tick. This prevents
+// multiple items being queued per tick (e.g. engineer+flamethrower+rifle all
+// queued on the Infantry queue in one tick) and ensures army composition
+// matches doctrine priority ordering.
+const (
+	CatProduceInfantry = "produce_infantry"
+	CatProduceVehicle  = "produce_vehicle"
+	CatProduceAircraft = "produce_aircraft"
+	CatProduceShip     = "produce_ship"
+)
+
 // Gameplay thresholds used inside expr condition strings (require fmt.Sprintf).
 const (
 	LowPowerHeadroom    = 50 // PowerExcess below this triggers advanced power
@@ -147,8 +159,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		rules = append(rules, &Rule{
 			Name:         "produce-engineer",
 			Priority:     450,
-			Category:     "production",
-			Exclusive:    false,
+			Category:     CatProduceInfantry,
+			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`CapturableCount() > 0 && !QueueBusy("Infantry") && CanBuildRole("engineer") && RoleCount("engineer") < CapturableCount() && RoleCount("engineer") < %d && Cash() >= 500`, engineerCap),
 			Action:       ActionProduceEngineer,
 		})
@@ -156,8 +168,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		rules = append(rules, &Rule{
 			Name:         "produce-apc",
 			Priority:     470,
-			Category:     "production",
-			Exclusive:    false,
+			Category:     CatProduceVehicle,
+			Exclusive:    true,
 			ConditionSrc: `CapturableCount() > 0 && RoleCount("engineer") > 0 && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("apc") && RoleCount("apc") < 1 && Cash() >= 800`,
 			Action:       ActionProduceAPC,
 		})
@@ -178,6 +190,47 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Exclusive:    false,
 			ConditionSrc: `CapturableCount() > 0 && len(IdleLoadedAPCs()) > 0`,
 			Action:       ActionUnloadAPCNearTarget,
+		})
+	}
+
+	// --- Transport assault ---
+	// Loads combat infantry into APCs and rushes them to the enemy base.
+	// Relies on infantry production from existing rules (infantry_weight > 0).
+	// Capture rules have higher priority (845/847 vs 838/840), so engineers
+	// always get APCs first when both workflows are active.
+
+	if d.TransportAssault > DoctrineEnabled {
+		assaultAPCCap := lerp(1, 3, d.TransportAssault)
+
+		// Produce APCs for assault (separate cap from capture APCs).
+		rules = append(rules, &Rule{
+			Name:         "produce-assault-apc",
+			Priority:     465,
+			Category:     CatProduceVehicle,
+			Exclusive:    true,
+			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("apc") && RoleCount("apc") < %d && %s`,
+				assaultAPCCap, buildCashCondition(800, savings)),
+			Action: ActionProduceAPC,
+		})
+
+		// Load idle combat infantry into empty APCs.
+		rules = append(rules, &Rule{
+			Name:         "load-assault-infantry",
+			Priority:     838,
+			Category:     "transport",
+			Exclusive:    false,
+			ConditionSrc: `len(IdleCombatInfantry()) > 0 && len(IdleEmptyAPCs()) > 0`,
+			Action:       ActionLoadCombatInfantry,
+		})
+
+		// Deliver loaded APCs to enemy base.
+		rules = append(rules, &Rule{
+			Name:         "deliver-assault-apc",
+			Priority:     840,
+			Category:     "transport",
+			Exclusive:    false,
+			ConditionSrc: `HasEnemyIntel() && len(IdleLoadedAPCs()) > 0`,
+			Action:       ActionDeliverAssaultAPC,
 		})
 	}
 
@@ -653,8 +706,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		rules = append(rules, &Rule{
 			Name:         "produce-extra-harvester",
 			Priority:     420,
-			Category:     "production",
-			Exclusive:    false,
+			Category:     CatProduceVehicle,
+			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`HasRole("refinery") && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("harvester") && RoleCount("harvester") < RoleCount("refinery") + 1 && %s`, buildCashCondition(1400, savings)),
 			Action:       ActionProduceHarvester,
 		})
@@ -674,27 +727,46 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		})
 	}
 
-	if d.InfantryWeight > DoctrineEnabled {
-		infantryCap := lerp(5, 20, d.InfantryWeight)
-		rules = append(rules, &Rule{
-			Name:         "produce-infantry",
-			Priority:     500,
-			Category:     "production",
-			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuild("Infantry","e1") && UnitCount("e1") < %d && %s`, infantryCap, buildCashCondition(100, infantrySavings)),
-			Action:       ActionProduceInfantry,
-		})
+	// Boost specialist priority when the LLM's top infantry preference is a
+	// specialist role. The preference list is ordered — first entry is most
+	// desired. If the LLM wants flamethrowers first, specialists should get
+	// first crack at the Infantry queue. If the top preference is a
+	// non-specialist (engineer, rocket_soldier) or absent, rifles stay
+	// dominant as cheap baseline filler.
+	infantryBasePri := 500
+	specialistBasePri := 490
+	if len(d.PreferredInfantry) > 0 {
+		specialistRoleSet := make(map[string]bool, len(specialistInfantryRoles))
+		for _, r := range specialistInfantryRoles {
+			specialistRoleSet[r] = true
+		}
+		if specialistRoleSet[d.PreferredInfantry[0]] {
+			specialistBasePri = 500
+			infantryBasePri = 490
+		}
 	}
 
 	if d.SpecializedInfantryWeight > DoctrineEnabled {
 		specialistCap := lerp(1, 6, d.SpecializedInfantryWeight)
 		rules = append(rules, &Rule{
 			Name:         "produce-specialist-infantry",
-			Priority:     490,
-			Category:     "production",
-			Exclusive:    false,
+			Priority:     specialistBasePri,
+			Category:     CatProduceInfantry,
+			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuildAnySpecialist() && SpecialistInfantryCount() < %d && %s`, specialistCap, buildCashCondition(300, infantrySavings)),
 			Action:       ActionProduceSpecialistInfantry,
+		})
+	}
+
+	if d.InfantryWeight > DoctrineEnabled {
+		infantryCap := lerp(5, 20, d.InfantryWeight)
+		rules = append(rules, &Rule{
+			Name:         "produce-infantry",
+			Priority:     infantryBasePri,
+			Category:     CatProduceInfantry,
+			Exclusive:    true,
+			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuild("Infantry","e1") && UnitCount("e1") < %d && %s`, infantryCap, buildCashCondition(100, infantrySavings)),
+			Action:       ActionProduceInfantry,
 		})
 	}
 
@@ -703,8 +775,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		rules = append(rules, &Rule{
 			Name:         "produce-vehicle",
 			Priority:     480,
-			Category:     "production",
-			Exclusive:    false,
+			Category:     CatProduceVehicle,
+			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildAnyCombatVehicle() && CombatVehicleCount() < %d && %s`, vehicleCap, buildCashCondition(800, savings)),
 			Action:       ActionProduceVehicle,
 		})
@@ -715,8 +787,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		rules = append(rules, &Rule{
 			Name:         "produce-aircraft",
 			Priority:     460,
-			Category:     "production",
-			Exclusive:    false,
+			Category:     CatProduceAircraft,
+			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`HasRole("airfield") && !QueueBusy("Aircraft") && CanBuildAnyCombatAircraft() && CombatAircraftCount() < %d && %s`, airCap, buildCashCondition(800, savings)),
 			Action:       ActionProduceAircraft,
 		})
@@ -727,8 +799,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		rules = append(rules, &Rule{
 			Name:         "produce-ship",
 			Priority:     440,
-			Category:     "production",
-			Exclusive:    false,
+			Category:     CatProduceShip,
+			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`MapHasWater() && HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("submarine") || CanBuildRole("destroyer")) && (RoleCount("submarine") + RoleCount("destroyer")) < %d && %s`, navalCap, buildCashCondition(800, savings)),
 			Action:       ActionProduceShip,
 		})
@@ -739,8 +811,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		rules = append(rules, &Rule{
 			Name:         "produce-gunboat",
 			Priority:     435,
-			Category:     "production",
-			Exclusive:    false,
+			Category:     CatProduceShip,
+			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`MapHasWater() && HasRole("naval_yard") && !QueueBusy("Ship") && CanBuildRole("gunboat") && RoleCount("gunboat") < %d && %s`, gunboatCap, buildCashCondition(500, savings)),
 			Action:       ActionProduceGunboat,
 		})
@@ -753,8 +825,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		rules = append(rules, &Rule{
 			Name:         "produce-rocket-soldier",
 			Priority:     495,
-			Category:     "production",
-			Exclusive:    false,
+			Category:     CatProduceInfantry,
+			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuildRole("rocket_soldier") && RoleCount("rocket_soldier") < %d && %s`, rocketCap, buildCashCondition(300, infantrySavings)),
 			Action:       ActionProduceRocketSoldier,
 		})
@@ -765,8 +837,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		rules = append(rules, &Rule{
 			Name:         "produce-heavy-vehicle",
 			Priority:     475,
-			Category:     "production",
-			Exclusive:    false,
+			Category:     CatProduceVehicle,
+			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && HasRole("tech_center") && !QueueBusy("Vehicle") && (CanBuildRole("heavy_tank") || CanBuildRole("medium_tank")) && (RoleCount("heavy_tank") + RoleCount("medium_tank")) < %d && %s`, heavyCap, buildCashCondition(1200, savings)),
 			Action:       ActionProduceHeavyVehicle,
 		})
@@ -776,9 +848,9 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		rules = append(rules, &Rule{
 			Name:         "produce-scout-vehicle",
 			Priority:     465,
-			Category:     "production",
-			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`!HasEnemyIntel() && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("ranger") && RoleCount("ranger") < 1 && %s`, buildCashCondition(500, savings)),
+			Category:     CatProduceVehicle,
+			Exclusive:    true,
+			ConditionSrc: fmt.Sprintf(`!HasEnemyIntel() && HasRole("war_factory") && !QueueBusy("Vehicle") && (CanBuildRole("ranger") || CanBuildRole("light_tank")) && !HasRole("ranger") && !HasScout() && %s`, buildCashCondition(500, savings)),
 			Action:       ActionProduceScoutVehicle,
 		})
 	}
@@ -788,8 +860,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		rules = append(rules, &Rule{
 			Name:         "produce-siege-vehicle",
 			Priority:     460,
-			Category:     "production",
-			Exclusive:    false,
+			Category:     CatProduceVehicle,
+			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && HasRole("radar") && !QueueBusy("Vehicle") && (CanBuildRole("artillery") || CanBuildRole("v2_launcher")) && (RoleCount("artillery") + RoleCount("v2_launcher")) < %d && %s`, siegeCap, buildCashCondition(900, savings)),
 			Action:       ActionProduceSiegeVehicle,
 		})
@@ -800,8 +872,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		rules = append(rules, &Rule{
 			Name:         "produce-flak-truck",
 			Priority:     470,
-			Category:     "production",
-			Exclusive:    false,
+			Category:     CatProduceVehicle,
+			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("flak_truck") && RoleCount("flak_truck") < %d && %s`, flakCap, buildCashCondition(600, savings)),
 			Action:       ActionProduceFlakTruck,
 		})
@@ -812,8 +884,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		rules = append(rules, &Rule{
 			Name:         "produce-basic-aircraft",
 			Priority:     445,
-			Category:     "production",
-			Exclusive:    false,
+			Category:     CatProduceAircraft,
+			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`HasRole("airfield") && !QueueBusy("Aircraft") && CanBuildRole("basic_aircraft") && RoleCount("basic_aircraft") < %d && %s`, basicAirCap, buildCashCondition(1500, savings)),
 			Action:       ActionProduceBasicAircraft,
 		})
@@ -824,8 +896,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		rules = append(rules, &Rule{
 			Name:         "produce-attack-aircraft",
 			Priority:     455,
-			Category:     "production",
-			Exclusive:    false,
+			Category:     CatProduceAircraft,
+			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`HasRole("airfield") && !QueueBusy("Aircraft") && CanBuildRole("advanced_aircraft") && RoleCount("advanced_aircraft") < %d && %s`, advAirCap, buildCashCondition(1500, savings)),
 			Action:       ActionProduceAdvancedAircraft,
 		})
@@ -836,8 +908,8 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		rules = append(rules, &Rule{
 			Name:         "produce-advanced-ship",
 			Priority:     430,
-			Category:     "production",
-			Exclusive:    false,
+			Category:     CatProduceShip,
+			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`MapHasWater() && HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("cruiser") || CanBuildRole("destroyer")) && (RoleCount("cruiser") + RoleCount("destroyer")) < %d && %s`, advNavalCap, buildCashCondition(2000, savings)),
 			Action:       ActionProduceAdvancedShip,
 		})
@@ -1167,11 +1239,11 @@ func CompileDoctrine(d Doctrine) []*Rule {
 
 	scoutPriority := lerp(250, 400, d.ScoutPriority)
 	rules = append(rules, &Rule{
-		Name:         "scout-with-rangers",
+		Name:         "scout-with-scouts",
 		Priority:     scoutPriority + SquadFormBonus,
 		Category:     "recon",
 		Exclusive:    false,
-		ConditionSrc: `len(IdleRangers()) > 0`,
+		ConditionSrc: `len(IdleScouts()) > 0`,
 		Action:       ActionScoutWithRangers,
 	})
 

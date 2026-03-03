@@ -147,6 +147,7 @@ type Doctrine struct {
 	Specialized_infantry_weight *float64 `json:"specialized_infantry_weight"`
 	Superweapon_priority        *float64 `json:"superweapon_priority"`
 	Capture_priority            *float64 `json:"capture_priority"`
+	Transport_assault           *float64 `json:"transport_assault"`
 	Preferred_infantry          []string `json:"preferred_infantry"`
 	Preferred_vehicle           []string `json:"preferred_vehicle"`
 	Preferred_aircraft          []string `json:"preferred_aircraft"`
@@ -221,6 +222,9 @@ func (c *Doctrine) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		case "capture_priority":
 			c.Capture_priority = baml.Decode(valueHolder).Interface().(*float64)
 
+		case "transport_assault":
+			c.Transport_assault = baml.Decode(valueHolder).Interface().(*float64)
+
 		case "preferred_infantry":
 			c.Preferred_infantry = baml.Decode(valueHolder).Interface().([]string)
 
@@ -280,6 +284,8 @@ func (c Doctrine) Encode() (*cffi.HostValue, error) {
 	fields["superweapon_priority"] = c.Superweapon_priority
 
 	fields["capture_priority"] = c.Capture_priority
+
+	fields["transport_assault"] = c.Transport_assault
 
 	fields["preferred_infantry"] = c.Preferred_infantry
 

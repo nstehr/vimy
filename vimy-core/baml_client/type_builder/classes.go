@@ -183,6 +183,10 @@ func (t *DoctrineClassView) PropertyCapture_priority() (ClassPropertyView, error
 	return t.inner.Property("capture_priority")
 }
 
+func (t *DoctrineClassView) PropertyTransport_assault() (ClassPropertyView, error) {
+	return t.inner.Property("transport_assault")
+}
+
 func (t *DoctrineClassView) PropertyPreferred_infantry() (ClassPropertyView, error) {
 	return t.inner.Property("preferred_infantry")
 }

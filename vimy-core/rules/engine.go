@@ -50,6 +50,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	updateIntel(env)
 	updateBuiltRoles(env)
 	updateSquads(env)
+	designateScout(env)
 	logMilitaryDiagnostics(env)
 	fired := make(map[string]bool) // category → exclusive rule already fired
 

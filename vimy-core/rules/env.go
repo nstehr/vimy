@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"log/slog"
 	"math"
 	"slices"
 	"strings"
@@ -174,9 +175,11 @@ func (e RuleEnv) DamagedSquadUnits(hpThreshold float64) []model.Unit {
 
 // DamagedCombatUnits returns all combat units below the HP threshold,
 // regardless of idle/squad status. Excludes harvesters, MCVs, rangers,
-// engineers, APCs (non-combat/utility). Skips units already retreating.
+// engineers, APCs, designated scouts (non-combat/utility). Skips units
+// already retreating.
 func (e RuleEnv) DamagedCombatUnits(hpThreshold float64) []model.Unit {
 	retreating := getRetreatingUnits(e.Memory)
+	scoutID := getScoutID(e.Memory)
 	var out []model.Unit
 	for _, u := range e.State.Units {
 		if u.MaxHP == 0 {
@@ -187,7 +190,10 @@ func (e RuleEnv) DamagedCombatUnits(hpThreshold float64) []model.Unit {
 			matchesType(u.Type, APC) || isInfantry(u) {
 			continue
 		}
-		if retreating[u.ID] {
+		if scoutID != 0 && u.ID == scoutID {
+			continue
+		}
+		if _, isRetreating := retreating[u.ID]; isRetreating {
 			continue
 		}
 		if float64(u.HP)/float64(u.MaxHP) < hpThreshold {
@@ -198,8 +204,9 @@ func (e RuleEnv) DamagedCombatUnits(hpThreshold float64) []model.Unit {
 }
 
 // getRetreatingUnits returns the set of unit IDs currently retreating.
-func getRetreatingUnits(memory map[string]any) map[int]bool {
-	if v, ok := memory["retreatingUnits"].(map[int]bool); ok {
+// Values are the tick when the retreat started (used for timeout).
+func getRetreatingUnits(memory map[string]any) map[int]int {
+	if v, ok := memory["retreatingUnits"].(map[int]int); ok {
 		return v
 	}
 	return nil
@@ -218,6 +225,16 @@ func (e RuleEnv) ServiceDepotPos() (int, int, bool) {
 		}
 	}
 	return 0, 0, false
+}
+
+// ServiceDepot returns the service depot building, or nil if none exists.
+func (e RuleEnv) ServiceDepot() *model.Building {
+	for i := range e.State.Buildings {
+		if matchesType(e.State.Buildings[i].Type, ServiceDepot) {
+			return &e.State.Buildings[i]
+		}
+	}
+	return nil
 }
 
 // BuildingCentroid returns the average position of all buildings.
@@ -435,6 +452,7 @@ func isNaval(u model.Unit) bool {
 // IdleGroundUnits returns idle land combat units — excludes economic units
 // (harvesters, MCVs) and other domains (aircraft, naval).
 func (e RuleEnv) IdleGroundUnits() []model.Unit {
+	scoutID := getScoutID(e.Memory)
 	var out []model.Unit
 	for _, u := range e.State.Units {
 		if !u.Idle {
@@ -442,6 +460,9 @@ func (e RuleEnv) IdleGroundUnits() []model.Unit {
 		}
 		if matchesType(u.Type, Harvester) || matchesType(u.Type, MCV) || matchesType(u.Type, Ranger) || matchesType(u.Type, Engineer) || matchesType(u.Type, APC) {
 			continue
+		}
+		if scoutID != 0 && u.ID == scoutID {
+			continue // designated scout — handled by scouting rules
 		}
 		if isAircraft(u) || isNaval(u) {
 			continue
@@ -524,6 +545,74 @@ func (e RuleEnv) IdleRangers() []model.Unit {
 	return out
 }
 
+// getScoutID returns the designated scout light tank ID (0 = none).
+func getScoutID(memory map[string]any) int {
+	if v, ok := memory["scoutUnitID"].(int); ok {
+		return v
+	}
+	return 0
+}
+
+// HasScout returns true if a scout unit (ranger or designated light tank) exists.
+func (e RuleEnv) HasScout() bool {
+	for _, u := range e.State.Units {
+		if matchesType(u.Type, Ranger) {
+			return true
+		}
+	}
+	return getScoutID(e.Memory) != 0
+}
+
+// IdleScouts returns idle rangers plus the designated scout light tank (if idle).
+func (e RuleEnv) IdleScouts() []model.Unit {
+	scoutID := getScoutID(e.Memory)
+	var out []model.Unit
+	for _, u := range e.State.Units {
+		if !u.Idle {
+			continue
+		}
+		if matchesType(u.Type, Ranger) {
+			out = append(out, u)
+		} else if scoutID != 0 && u.ID == scoutID {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// designateScout assigns the first unassigned idle light tank as the scout.
+// Called each tick from updateScoutDesignation so the scout is auto-assigned
+// after production completes.
+func designateScout(env RuleEnv) {
+	scoutID := getScoutID(env.Memory)
+	if scoutID != 0 {
+		// Check if the designated scout is still alive.
+		for _, u := range env.State.Units {
+			if u.ID == scoutID {
+				return // still alive, keep designation
+			}
+		}
+		// Scout died — clear designation.
+		delete(env.Memory, "scoutUnitID")
+		scoutID = 0
+	}
+	// If we have rangers, no need for a scout light tank.
+	for _, u := range env.State.Units {
+		if matchesType(u.Type, Ranger) {
+			return
+		}
+	}
+	// Designate the first idle, unassigned light tank.
+	assigned := squadUnitIDSet(env.Memory)
+	for _, u := range env.State.Units {
+		if u.Idle && matchesType(u.Type, LightTank) && !assigned[u.ID] {
+			env.Memory["scoutUnitID"] = u.ID
+			slog.Debug("designated scout light tank", "id", u.ID)
+			return
+		}
+	}
+}
+
 func (e RuleEnv) CapturableCount() int { return len(e.State.Capturables) }
 
 // capturableValue assigns a strategic value to capturable building types.
@@ -558,6 +647,13 @@ func (e RuleEnv) BestCapturable() *model.Enemy {
 	bestScore := -1.0
 	for i := range e.State.Capturables {
 		c := &e.State.Capturables[i]
+		// Skip water/cliff capturables — engineers are ground units.
+		if e.Terrain != nil {
+			t := e.Terrain.AtMapPos(c.X, c.Y)
+			if t != model.Land && t != model.Bridge {
+				continue
+			}
+		}
 		dx := float64(c.X - bx)
 		dy := float64(c.Y - by)
 		dist := math.Sqrt(dx*dx + dy*dy)
@@ -714,6 +810,21 @@ func (e RuleEnv) BestGroundTarget() *model.Enemy {
 		}
 	}
 	return best
+}
+
+// IdleCombatInfantry returns idle infantry excluding engineers (which have
+// their own capture workflow). Used for transport assault loading.
+func (e RuleEnv) IdleCombatInfantry() []model.Unit {
+	var out []model.Unit
+	for _, u := range e.State.Units {
+		if !u.Idle {
+			continue
+		}
+		if isInfantry(u) && !matchesType(u.Type, Engineer) {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 func (e RuleEnv) IdleEngineers() []model.Unit {
@@ -977,10 +1088,6 @@ func updateIntel(env RuleEnv) {
 		}
 	}
 
-	if len(buildingsByOwner) == 0 && len(unitsByOwner) == 0 {
-		return
-	}
-
 	bases := getEnemyBases(env.Memory)
 
 	// Building sightings always overwrite — structures don't move.
@@ -1006,6 +1113,50 @@ func updateIntel(env RuleEnv) {
 			Y:             a.sumY / a.count,
 			Tick:          env.State.Tick,
 			FromBuildings: false,
+		}
+	}
+
+	// Clear stale intel: when our units are near a known enemy base position
+	// and no enemies are visible nearby, the base has been scouted and cleared.
+	// Only consider intel older than 300 ticks to avoid clearing fresh sightings
+	// that might just be behind fog of war momentarily.
+	const intelClearRadius = 10  // cells
+	const intelMinAge      = 300 // ticks before intel is eligible for clearing
+	intelClearRadiusSq := intelClearRadius * intelClearRadius
+
+	for owner, intel := range bases {
+		if !intel.FromBuildings {
+			continue // only clear high-confidence intel
+		}
+		if env.State.Tick-intel.Tick < intelMinAge {
+			continue // too fresh — could be behind fog of war
+		}
+		// Check: any of our units near this intel position?
+		ourUnitNearby := false
+		for _, u := range env.State.Units {
+			dx := u.X - intel.X
+			dy := u.Y - intel.Y
+			if dx*dx+dy*dy < intelClearRadiusSq {
+				ourUnitNearby = true
+				break
+			}
+		}
+		if !ourUnitNearby {
+			continue
+		}
+		// Our units are there — check if any enemies visible nearby.
+		enemyNearby := false
+		for _, e := range env.State.Enemies {
+			dx := e.X - intel.X
+			dy := e.Y - intel.Y
+			if dx*dx+dy*dy < intelClearRadiusSq {
+				enemyNearby = true
+				break
+			}
+		}
+		if !enemyNearby {
+			slog.Info("clearing stale enemy base intel", "owner", owner, "x", intel.X, "y", intel.Y)
+			delete(bases, owner)
 		}
 	}
 

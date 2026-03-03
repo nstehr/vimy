@@ -197,10 +197,11 @@ var roles = map[string]role{
 
 // combatVehicleRoles determines production priority — first buildable role wins.
 // Order: heaviest armor first, then support vehicles.
+// APC is excluded — it's a transport with dedicated capture/assault production rules.
 var combatVehicleRoles = []string{
 	"heavy_tank", "medium_tank", "light_tank",
 	"v2_launcher", "artillery", "ranger",
-	"flak_truck", "apc", "demo_truck",
+	"flak_truck", "demo_truck",
 }
 
 // combatAircraftRoles: advanced (longbow/MiG) preferred over basic (blackhawk/yak).

@@ -16,6 +16,7 @@ const (
 	TypeSupportPower     = "support_power"
 	TypeEnterTransport   = "enter_transport"
 	TypeUnload           = "unload"
+	TypeRepairUnit       = "repair_unit"
 )
 
 type ProduceCommand struct {
@@ -92,4 +93,9 @@ type EnterTransportCommand struct {
 
 type UnloadCommand struct {
 	ActorID uint32 `json:"actor_id"`
+}
+
+type RepairUnitCommand struct {
+	ActorID          uint32 `json:"actor_id"`
+	RepairBuildingID uint32 `json:"repair_building_id"`
 }

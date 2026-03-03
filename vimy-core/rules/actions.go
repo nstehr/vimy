@@ -522,6 +522,10 @@ func ActionProduceHeavyVehicle(env RuleEnv, conn *ipc.Connection) error {
 func ActionProduceScoutVehicle(env RuleEnv, conn *ipc.Connection) error {
 	item := env.BuildableType("ranger")
 	if item == "" {
+		// Soviets don't have rangers — use a light tank as scout.
+		item = env.BuildableType("light_tank")
+	}
+	if item == "" {
 		return nil
 	}
 	slog.Debug("producing scout vehicle", "item", item)
@@ -775,13 +779,13 @@ func ActionScoutWithRangers(env RuleEnv, conn *ipc.Connection) error {
 	}
 
 	idx, _ := env.Memory["rangerScoutIdx"].(int)
-	rangers := env.IdleRangers()
+	scouts := env.IdleScouts()
 
-	for _, r := range rangers {
+	for _, s := range scouts {
 		wp := waypoints[idx%len(waypoints)]
-		slog.Debug("ranger scouting", "id", r.ID, "waypoint", wp, "wpIdx", idx%len(waypoints))
+		slog.Debug("scout patrolling", "id", s.ID, "type", s.Type, "waypoint", wp, "wpIdx", idx%len(waypoints))
 		if err := conn.Send(ipc.TypeMove, ipc.MoveCommand{
-			ActorID: uint32(r.ID),
+			ActorID: uint32(s.ID),
 			X:       wp[0],
 			Y:       wp[1],
 		}); err != nil {
@@ -1018,12 +1022,12 @@ func ActionFireSpyPlane(env RuleEnv, conn *ipc.Connection) error {
 
 func ActionFireParatroopers(env RuleEnv, conn *ipc.Connection) error {
 	x, y := 0, 0
-	if base := env.NearestEnemyBase(); base != nil {
+	if base := env.NearestEnemyBase(); base != nil && env.IsLandAt(base.X, base.Y) {
 		x, y = base.X, base.Y
-	} else if enemy := env.NearestEnemy(); enemy != nil {
+	} else if enemy := env.NearestEnemy(); enemy != nil && env.IsLandAt(enemy.X, enemy.Y) {
 		x, y = enemy.X, enemy.Y
 	} else {
-		return nil
+		return nil // no valid land target
 	}
 	recordSuperweaponFire(env, "paratroopers")
 	slog.Info("firing paratroopers", "x", x, "y", y)
@@ -1036,12 +1040,12 @@ func ActionFireParatroopers(env RuleEnv, conn *ipc.Connection) error {
 
 func ActionFireParabombs(env RuleEnv, conn *ipc.Connection) error {
 	x, y := 0, 0
-	if base := env.NearestEnemyBase(); base != nil {
+	if base := env.NearestEnemyBase(); base != nil && env.IsLandAt(base.X, base.Y) {
 		x, y = base.X, base.Y
-	} else if enemy := env.NearestEnemy(); enemy != nil {
+	} else if enemy := env.NearestEnemy(); enemy != nil && env.IsLandAt(enemy.X, enemy.Y) {
 		x, y = enemy.X, enemy.Y
 	} else {
-		return nil
+		return nil // no valid land target
 	}
 	recordSuperweaponFire(env, "parabombs")
 	slog.Info("firing parabombs", "x", x, "y", y)
@@ -1107,6 +1111,22 @@ func ActionLoadEngineerIntoAPC(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
+// nearestTo returns the unit closest to (x, y) and the distance.
+func nearestTo(units []model.Unit, x, y int) (model.Unit, float64) {
+	best := units[0]
+	bestDist := math.MaxFloat64
+	for _, u := range units {
+		dx := float64(u.X - x)
+		dy := float64(u.Y - y)
+		d := dx*dx + dy*dy
+		if d < bestDist {
+			bestDist = d
+			best = u
+		}
+	}
+	return best, math.Sqrt(bestDist)
+}
+
 func ActionUnloadAPCNearTarget(env RuleEnv, conn *ipc.Connection) error {
 	target := env.NearestCapturable()
 	if target == nil {
@@ -1116,19 +1136,7 @@ func ActionUnloadAPCNearTarget(env RuleEnv, conn *ipc.Connection) error {
 	if len(apcs) == 0 {
 		return nil
 	}
-	// Find the APC closest to the capture target.
-	best := apcs[0]
-	bestDist := math.MaxFloat64
-	for _, a := range apcs {
-		dx := float64(a.X - target.X)
-		dy := float64(a.Y - target.Y)
-		d := dx*dx + dy*dy
-		if d < bestDist {
-			bestDist = d
-			best = a
-		}
-	}
-	dist := math.Sqrt(bestDist)
+	best, dist := nearestTo(apcs, target.X, target.Y)
 	if dist < 5 {
 		slog.Debug("unloading APC near target", "apc", best.ID, "target", target.ID)
 		return conn.Send(ipc.TypeUnload, ipc.UnloadCommand{ActorID: uint32(best.ID)})
@@ -1139,6 +1147,58 @@ func ActionUnloadAPCNearTarget(env RuleEnv, conn *ipc.Connection) error {
 		ActorID: uint32(best.ID),
 		X:       target.X,
 		Y:       target.Y,
+	})
+}
+
+// ActionLoadCombatInfantry loads one idle combat infantry into an idle empty
+// APC each tick. Skips squad-assigned infantry so we don't steal from attack squads.
+func ActionLoadCombatInfantry(env RuleEnv, conn *ipc.Connection) error {
+	apcs := env.IdleEmptyAPCs()
+	if len(apcs) == 0 {
+		return nil
+	}
+	assigned := squadUnitIDSet(env.Memory)
+	for _, u := range env.IdleCombatInfantry() {
+		if assigned[u.ID] {
+			continue
+		}
+		slog.Debug("loading combat infantry into APC", "infantry", u.ID, "apc", apcs[0].ID)
+		return conn.Send(ipc.TypeEnterTransport, ipc.EnterTransportCommand{
+			ActorID:     uint32(u.ID),
+			TransportID: uint32(apcs[0].ID),
+		})
+	}
+	return nil
+}
+
+// ActionDeliverAssaultAPC moves loaded APCs toward the nearest known enemy
+// base. Unloads when within 7 cells, otherwise moves closer. Skips water-based
+// intel (e.g. naval yard) since APCs are ground units.
+func ActionDeliverAssaultAPC(env RuleEnv, conn *ipc.Connection) error {
+	// Find a valid land target — skip water-based intel (e.g. naval yard).
+	tx, ty := 0, 0
+	if base := env.NearestEnemyBase(); base != nil && env.IsLandAt(base.X, base.Y) {
+		tx, ty = base.X, base.Y
+	} else if enemy := env.NearestEnemy(); enemy != nil && env.IsLandAt(enemy.X, enemy.Y) {
+		tx, ty = enemy.X, enemy.Y
+	} else {
+		return nil // no valid land target for APC
+	}
+
+	apcs := env.IdleLoadedAPCs()
+	if len(apcs) == 0 {
+		return nil
+	}
+	best, dist := nearestTo(apcs, tx, ty)
+	if dist < 7 {
+		slog.Debug("unloading assault APC near target", "apc", best.ID, "dist", dist)
+		return conn.Send(ipc.TypeUnload, ipc.UnloadCommand{ActorID: uint32(best.ID)})
+	}
+	slog.Debug("moving assault APC toward target", "apc", best.ID, "dist", dist, "x", tx, "y", ty)
+	return conn.Send(ipc.TypeMove, ipc.MoveCommand{
+		ActorID: uint32(best.ID),
+		X:       tx,
+		Y:       ty,
 	})
 }
 
@@ -1481,7 +1541,8 @@ func squadIdleActorIDs(env RuleEnv, name string) []uint32 {
 	retreating := getRetreatingUnits(env.Memory)
 	var ids []uint32
 	for _, id := range sq.UnitIDs {
-		if idleSet[id] && !retreating[id] {
+		_, isRetreating := retreating[id]
+		if idleSet[id] && !isRetreating {
 			ids = append(ids, uint32(id))
 		}
 	}
@@ -1502,37 +1563,49 @@ func RetreatDamagedUnits(hpThreshold float64) ActionFunc {
 		}
 		retreating := getRetreatingUnits(env.Memory)
 		if retreating == nil {
-			retreating = make(map[int]bool)
+			retreating = make(map[int]int)
 		}
 
-		depotX, depotY, hasDepot := env.ServiceDepotPos()
+		depot := env.ServiceDepot()
 		centX, centY := env.BuildingCentroid()
 
 		for _, u := range units {
 			if isInfantry(u) {
 				continue // infantry can't heal — no benefit to retreating
 			}
-			tx, ty := centX, centY
-			if hasDepot && !isAircraft(u) && !isNaval(u) {
-				tx, ty = depotX, depotY
+			if depot != nil && !isAircraft(u) && !isNaval(u) {
+				// Send repair order — unit will enter the depot pad and heal.
+				slog.Debug("retreating damaged unit to depot", "id", u.ID, "type", u.Type,
+					"hp_ratio", float64(u.HP)/float64(u.MaxHP), "depot", depot.ID)
+				if err := conn.Send(ipc.TypeRepairUnit, ipc.RepairUnitCommand{
+					ActorID:          uint32(u.ID),
+					RepairBuildingID: uint32(depot.ID),
+				}); err != nil {
+					return err
+				}
+			} else {
+				// Fallback: move to centroid (aircraft, naval, or no depot).
+				slog.Debug("retreating damaged unit to centroid", "id", u.ID, "type", u.Type,
+					"hp_ratio", float64(u.HP)/float64(u.MaxHP), "dest_x", centX, "dest_y", centY)
+				if err := conn.Send(ipc.TypeMove, ipc.MoveCommand{
+					ActorID: uint32(u.ID), X: centX, Y: centY,
+				}); err != nil {
+					return err
+				}
 			}
-			slog.Debug("retreating damaged unit", "id", u.ID, "type", u.Type,
-				"hp_ratio", float64(u.HP)/float64(u.MaxHP), "dest_x", tx, "dest_y", ty)
-			if err := conn.Send(ipc.TypeMove, ipc.MoveCommand{
-				ActorID: uint32(u.ID), X: tx, Y: ty,
-			}); err != nil {
-				return err
-			}
-			retreating[u.ID] = true
+			retreating[u.ID] = env.State.Tick
 		}
 		env.Memory["retreatingUnits"] = retreating
 		return nil
 	}
 }
 
-// ClearHealedUnits removes healed or dead units from the retreating set,
-// returning them to the combat pool.
+// ClearHealedUnits removes healed, dead, or timed-out units from the
+// retreating set, returning them to the combat pool. The timeout prevents
+// permanent unit leaks when repair fails (e.g. depot destroyed mid-repair).
 func ClearHealedUnits(hpThreshold float64) ActionFunc {
+	const retreatTimeout = 200 // ticks before forcing release
+
 	return func(env RuleEnv, conn *ipc.Connection) error {
 		retreating := getRetreatingUnits(env.Memory)
 		if len(retreating) == 0 {
@@ -1541,13 +1614,16 @@ func ClearHealedUnits(hpThreshold float64) ActionFunc {
 		aliveIDs := make(map[int]bool)
 		for _, u := range env.State.Units {
 			aliveIDs[u.ID] = true
-			if retreating[u.ID] && u.MaxHP > 0 && float64(u.HP)/float64(u.MaxHP) >= hpThreshold {
+			if _, ok := retreating[u.ID]; ok && u.MaxHP > 0 && float64(u.HP)/float64(u.MaxHP) >= hpThreshold {
 				delete(retreating, u.ID)
 				slog.Debug("unit healed, returning to duty", "id", u.ID, "type", u.Type)
 			}
 		}
-		for id := range retreating {
-			if !aliveIDs[id] {
+		for id, tick := range retreating {
+			if !aliveIDs[id] || (env.State.Tick-tick > retreatTimeout) {
+				if aliveIDs[id] {
+					slog.Debug("retreat timeout, returning to duty", "id", id, "elapsed", env.State.Tick-tick)
+				}
 				delete(retreating, id)
 			}
 		}

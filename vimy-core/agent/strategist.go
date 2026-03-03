@@ -214,6 +214,7 @@ func (s *Strategist) evaluate(ctx context.Context) {
 		"prefVehicle", doctrine.PreferredVehicle,
 		"prefAircraft", doctrine.PreferredAircraft,
 		"prefNaval", doctrine.PreferredNaval,
+		"transportAssault", doctrine.TransportAssault,
 	)
 
 	s.engine.SetPreferences(rules.UnitPreferences{
@@ -255,6 +256,7 @@ func fromBAML(d types.Doctrine) rules.Doctrine {
 		SpecializedInfantryWeight: d.Specialized_infantry_weight,
 		SuperweaponPriority:       d.Superweapon_priority,
 		CapturePriority:           d.Capture_priority,
+		TransportAssault:          d.Transport_assault,
 		PreferredInfantry:         d.Preferred_infantry,
 		PreferredVehicle:          d.Preferred_vehicle,
 		PreferredAircraft:         d.Preferred_aircraft,
