@@ -94,9 +94,9 @@ class Doctrine {
   capture_priority float @description("0.0-1.0: eagerness to capture neutral tech buildings with engineers — controls engineer and APC production. Set above 0.1 to produce engineers, above 0.3 to also produce APCs for delivery. Set to 0 for pure defense doctrines that shouldn't waste the Infantry queue on engineers")
   transport_assault float @description("0.0-1.0: use APCs to rush infantry into the enemy base. Requires war factory and infantry production. Pair with preferred_infantry to choose which troops to load (e.g. flamethrowers). Set above 0.1 to produce assault APCs. Higher = more APCs (up to 3). Set to 0 for standard play without APC rushes")
   preferred_infantry string[] @description("Ordered list of infantry roles to prioritize. Soviet: flamethrower, shock_trooper, medic, engineer. Allied: tanya, medic, engineer. Both: rocket_soldier. Only list roles available to your faction. Empty = default priority.")
-  preferred_vehicle string[] @description("Ordered list of vehicle roles to prioritize. Soviet: heavy_tank, medium_tank, v2_launcher, flak_truck, demo_truck, apc. Allied: medium_tank, light_tank, artillery, ranger, apc. Only list roles available to your faction. Empty = default priority.")
+  preferred_vehicle string[] @description("Ordered list of vehicle roles to prioritize. Soviet: heavy_tank, medium_tank, tesla_tank, v2_launcher, flak_truck, demo_truck, apc. Allied: medium_tank, light_tank, artillery, ranger, apc. Only list roles available to your faction. Empty = default priority.")
   preferred_aircraft string[] @description("Ordered list of aircraft roles to prioritize. Soviet: basic_aircraft (Yak/MiG), advanced_aircraft (MiG/Hind). Allied: basic_aircraft (Black Hawk), advanced_aircraft (Longbow). Empty = default priority.")
-  preferred_naval string[] @description("Ordered list of naval roles to prioritize. Soviet: submarine. Allied: gunboat, destroyer, cruiser. Empty = default priority.")
+  preferred_naval string[] @description("Ordered list of naval roles to prioritize. Soviet: submarine, missile_sub (requires tech center, can attack land targets). Allied: gunboat, destroyer, cruiser. Empty = default priority.")
 }
 
 function GenerateDoctrine(directive: string, situation: GameSituation, faction: string) -> Doctrine {

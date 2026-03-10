@@ -673,6 +673,26 @@ func (e RuleEnv) BestCapturable() *model.Enemy {
 	return best
 }
 
+// EngineerNearCapturable returns true if any idle engineer is within capture
+// range of a capturable building (e.g. just unloaded from an APC).
+func (e RuleEnv) EngineerNearCapturable() bool {
+	engineers := e.IdleEngineers()
+	if len(engineers) == 0 {
+		return false
+	}
+	for i := range e.State.Capturables {
+		c := &e.State.Capturables[i]
+		for _, eng := range engineers {
+			dx := float64(eng.X - c.X)
+			dy := float64(eng.Y - c.Y)
+			if dx*dx+dy*dy < 8*8 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // airTargetValue assigns a strategic value to enemy types for air strikes.
 // Higher value = more desirable target. Defense structures score highest
 // because aircraft bypass ground defenses and can soften positions before
@@ -1256,18 +1276,12 @@ func (e RuleEnv) CombatVehicleCount() int {
 
 // BestBuildableVehicle returns the highest-priority buildable combat vehicle.
 // Checks LLM preferences first, then falls back to combatVehicleRoles.
+// Uses round-robin fairness so preferred roles don't starve others.
 func (e RuleEnv) BestBuildableVehicle() string {
-	for _, r := range e.Preferences.Vehicle {
-		if item := e.BuildableType(r); item != "" {
-			return item
-		}
+	if item := e.bestBuildableFrom(e.Preferences.Vehicle, nil); item != "" {
+		return item
 	}
-	for _, r := range combatVehicleRoles {
-		if item := e.BuildableType(r); item != "" {
-			return item
-		}
-	}
-	return ""
+	return e.bestBuildableFrom(combatVehicleRoles, nil)
 }
 
 func (e RuleEnv) CanBuildAnyCombatAircraft() bool {
@@ -1306,18 +1320,48 @@ func (e RuleEnv) SpecialistInfantryCount() int {
 
 // BestBuildableSpecialist picks the best available elite infantry.
 // Checks LLM preferences first, then falls back to specialistInfantryRoles.
-// Medics are sub-capped at 2 so remaining specialist slots go to combat units.
+// Only considers specialist roles from preferences — non-specialists like
+// engineer and rocket_soldier are skipped so they don't hijack the slot.
+// Uses round-robin fairness so preferred roles don't starve others.
 func (e RuleEnv) BestBuildableSpecialist() string {
-	for _, r := range e.Preferences.Infantry {
-		if r == "medic" && e.RoleCount("medic") >= 2 {
+	specialistSet := make(map[string]bool, len(specialistInfantryRoles))
+	for _, r := range specialistInfantryRoles {
+		specialistSet[r] = true
+	}
+	if item := e.bestBuildableFrom(e.Preferences.Infantry, specialistSet); item != "" {
+		return item
+	}
+	return e.bestBuildableFrom(specialistInfantryRoles, nil)
+}
+
+// bestBuildableFrom picks the buildable role from candidates with the fewest
+// existing units. Among roles tied at the minimum count, the first in the list
+// wins (preserving preference order). This cycles production across roles
+// while still respecting priority. If allowSet is non-nil, only roles in the
+// set are considered (used to filter non-specialist infantry from preferences).
+func (e RuleEnv) bestBuildableFrom(candidates []string, allowSet map[string]bool) string {
+	// Find the minimum count among buildable candidates.
+	minCount := math.MaxInt
+	for _, r := range candidates {
+		if allowSet != nil && !allowSet[r] {
 			continue
 		}
-		if item := e.BuildableType(r); item != "" {
-			return item
+		if e.BuildableType(r) == "" {
+			continue
+		}
+		if c := e.RoleCount(r); c < minCount {
+			minCount = c
 		}
 	}
-	for _, r := range specialistInfantryRoles {
-		if r == "medic" && e.RoleCount("medic") >= 2 {
+	if minCount == math.MaxInt {
+		return "" // nothing buildable
+	}
+	// Pick the first candidate at the minimum count (preference order tiebreak).
+	for _, r := range candidates {
+		if allowSet != nil && !allowSet[r] {
+			continue
+		}
+		if e.RoleCount(r) != minCount {
 			continue
 		}
 		if item := e.BuildableType(r); item != "" {
@@ -1329,34 +1373,22 @@ func (e RuleEnv) BestBuildableSpecialist() string {
 
 // BestBuildableAircraft picks the best available combat aircraft.
 // Checks LLM preferences first, then falls back to combatAircraftRoles.
+// Uses round-robin fairness so preferred roles don't starve others.
 func (e RuleEnv) BestBuildableAircraft() string {
-	for _, r := range e.Preferences.Aircraft {
-		if item := e.BuildableType(r); item != "" {
-			return item
-		}
+	if item := e.bestBuildableFrom(e.Preferences.Aircraft, nil); item != "" {
+		return item
 	}
-	for _, r := range combatAircraftRoles {
-		if item := e.BuildableType(r); item != "" {
-			return item
-		}
-	}
-	return ""
+	return e.bestBuildableFrom(combatAircraftRoles, nil)
 }
 
 // BestBuildableNaval picks the best available naval combat unit.
 // Checks LLM preferences first, then falls back to combatNavalRoles.
+// Uses round-robin fairness so preferred roles don't starve others.
 func (e RuleEnv) BestBuildableNaval() string {
-	for _, r := range e.Preferences.Naval {
-		if item := e.BuildableType(r); item != "" {
-			return item
-		}
+	if item := e.bestBuildableFrom(e.Preferences.Naval, nil); item != "" {
+		return item
 	}
-	for _, r := range combatNavalRoles {
-		if item := e.BuildableType(r); item != "" {
-			return item
-		}
-	}
-	return ""
+	return e.bestBuildableFrom(combatNavalRoles, nil)
 }
 
 // HasRole abstracts over faction-specific types (e.g. "barracks" matches both "barr" and "tent").

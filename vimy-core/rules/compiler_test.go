@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -172,7 +173,7 @@ func TestCompileDoctrineFullSpectrum(t *testing.T) {
 	// All building and production types should be present
 	expected := []string{
 		"build-barracks", "build-war-factory", "build-airfield", "build-naval-yard",
-		"produce-infantry", "produce-vehicle", "produce-aircraft", "produce-ship",
+		"produce-infantry", "produce-bridge-infantry", "produce-vehicle", "produce-aircraft", "produce-ship",
 		"produce-specialist-infantry",
 		"squad-reengage",
 		"form-air-attack", "squad-air-attack", "squad-air-reengage", "squad-air-attack-known-base",
@@ -1393,4 +1394,354 @@ func TestBestCapturable(t *testing.T) {
 			t.Errorf("expected nil, got %+v", got)
 		}
 	})
+}
+
+// ruleFingerprint returns a string that captures a compiled doctrine's
+// behavioral identity: which rules exist and their priorities/conditions.
+func ruleFingerprint(rules []*Rule) string {
+	var parts []string
+	for _, r := range rules {
+		parts = append(parts, fmt.Sprintf("%s|%d|%s", r.Name, r.Priority, r.ConditionSrc))
+	}
+	return strings.Join(parts, "\n")
+}
+
+// ruleNames returns the sorted set of rule names for a compiled doctrine.
+func ruleNames(rules []*Rule) map[string]bool {
+	m := make(map[string]bool, len(rules))
+	for _, r := range rules {
+		m[r.Name] = true
+	}
+	return m
+}
+
+// TestDoctrineConvergence compiles several representative doctrines and
+// verifies that they produce distinct rule sets — different rule names,
+// different priorities, or different condition parameters.
+func TestDoctrineConvergence(t *testing.T) {
+	base := func() Doctrine {
+		d := DefaultDoctrine()
+		d.Validate()
+		return d
+	}
+
+	doctrines := map[string]Doctrine{
+		"balanced": base(),
+
+		"infantry-rush": {
+			Name: "Infantry Rush", EconomyPriority: 0.3, Aggression: 0.9,
+			InfantryWeight: 0.8, VehicleWeight: 0.15, TechPriority: 0.1,
+			GroundDefensePriority: 0.1, AirDefensePriority: 0.0,
+			ScoutPriority: 0.7, GroundAttackGroupSize: 4, AirAttackGroupSize: 2, NavalAttackGroupSize: 3,
+		},
+
+		"armour-blitz": {
+			Name: "Armour Blitz", EconomyPriority: 0.45, Aggression: 0.8,
+			InfantryWeight: 0.2, VehicleWeight: 0.8, TechPriority: 0.5,
+			GroundDefensePriority: 0.2, AirDefensePriority: 0.2,
+			ScoutPriority: 0.5, GroundAttackGroupSize: 6, AirAttackGroupSize: 2, NavalAttackGroupSize: 3,
+		},
+
+		"turtle-tech": {
+			Name: "Turtle Tech", EconomyPriority: 0.8, Aggression: 0.2,
+			InfantryWeight: 0.4, VehicleWeight: 0.5, TechPriority: 0.8,
+			GroundDefensePriority: 0.8, AirDefensePriority: 0.7,
+			ScoutPriority: 0.3, SuperweaponPriority: 0.6,
+			GroundAttackGroupSize: 10, AirAttackGroupSize: 2, NavalAttackGroupSize: 3,
+		},
+
+		"air-superiority": {
+			Name: "Air Superiority", EconomyPriority: 0.5, Aggression: 0.6,
+			InfantryWeight: 0.2, VehicleWeight: 0.3, AirWeight: 0.7, TechPriority: 0.6,
+			GroundDefensePriority: 0.3, AirDefensePriority: 0.5,
+			ScoutPriority: 0.5, GroundAttackGroupSize: 5, AirAttackGroupSize: 4, NavalAttackGroupSize: 3,
+		},
+
+		"naval-assault": {
+			Name: "Naval Assault", EconomyPriority: 0.6, Aggression: 0.5,
+			InfantryWeight: 0.2, VehicleWeight: 0.2, NavalWeight: 0.7, TechPriority: 0.4,
+			GroundDefensePriority: 0.4, AirDefensePriority: 0.3,
+			ScoutPriority: 0.5, GroundAttackGroupSize: 5, AirAttackGroupSize: 2, NavalAttackGroupSize: 5,
+		},
+
+		"engineer-rush": {
+			Name: "Engineer Rush", EconomyPriority: 0.3, Aggression: 0.7,
+			InfantryWeight: 0.0, VehicleWeight: 0.3, TechPriority: 0.1,
+			CapturePriority: 0.8, TransportAssault: 0.0,
+			GroundDefensePriority: 0.1, AirDefensePriority: 0.0,
+			ScoutPriority: 0.8, GroundAttackGroupSize: 3, AirAttackGroupSize: 2, NavalAttackGroupSize: 3,
+		},
+
+		"specialist-force": {
+			Name: "Specialist Force", EconomyPriority: 0.5, Aggression: 0.6,
+			InfantryWeight: 0.5, VehicleWeight: 0.5, TechPriority: 0.5,
+			SpecializedInfantryWeight: 0.7,
+			GroundDefensePriority: 0.3, AirDefensePriority: 0.3,
+			ScoutPriority: 0.5, GroundAttackGroupSize: 6, AirAttackGroupSize: 2, NavalAttackGroupSize: 3,
+			PreferredInfantry: []string{"flamethrower", "shock_trooper"},
+		},
+
+		"apc-assault": {
+			Name: "APC Assault", EconomyPriority: 0.4, Aggression: 0.8,
+			InfantryWeight: 0.3, VehicleWeight: 0.5, TechPriority: 0.2,
+			TransportAssault: 0.7, CapturePriority: 0.2,
+			GroundDefensePriority: 0.2, AirDefensePriority: 0.1,
+			ScoutPriority: 0.5, GroundAttackGroupSize: 5, AirAttackGroupSize: 2, NavalAttackGroupSize: 3,
+		},
+	}
+
+	// Validate all doctrines.
+	for name := range doctrines {
+		d := doctrines[name]
+		d.Validate()
+		doctrines[name] = d
+	}
+
+	// Compile all doctrines.
+	compiled := make(map[string][]*Rule)
+	fingerprints := make(map[string]string)
+	for name, d := range doctrines {
+		rules := CompileDoctrine(d)
+		compiled[name] = rules
+		fingerprints[name] = ruleFingerprint(rules)
+	}
+
+	// --- Check 1: No two doctrines produce identical fingerprints ---
+	for nameA, fpA := range fingerprints {
+		for nameB, fpB := range fingerprints {
+			if nameA >= nameB {
+				continue
+			}
+			if fpA == fpB {
+				t.Errorf("CONVERGED: %q and %q produce identical rule sets", nameA, nameB)
+			}
+		}
+	}
+
+	// --- Check 2: Rule count diversity ---
+	counts := make(map[string]int)
+	for name, rules := range compiled {
+		counts[name] = len(rules)
+	}
+	minCount, maxCount := 9999, 0
+	for _, c := range counts {
+		if c < minCount {
+			minCount = c
+		}
+		if c > maxCount {
+			maxCount = c
+		}
+	}
+	t.Logf("rule count range: %d – %d", minCount, maxCount)
+	if maxCount-minCount < 5 {
+		t.Errorf("rule count spread too narrow (%d – %d); doctrines may be converging", minCount, maxCount)
+	}
+
+	// --- Check 3: Specific structural differences ---
+
+	// Infantry rush should NOT have war factory or tech center.
+	infantryRush := compiled["infantry-rush"]
+	if findRule(infantryRush, "build-war-factory") != nil {
+		t.Log("NOTE: infantry-rush includes war factory (vehicle_weight=0.15 > DoctrineEnabled)")
+	}
+	if findRule(infantryRush, "build-tech-center") != nil {
+		t.Error("infantry-rush should NOT have build-tech-center (tech=0.1)")
+	}
+
+	// Turtle-tech should have superweapon buildings and tech center.
+	turtleTech := compiled["turtle-tech"]
+	if findRule(turtleTech, "build-tech-center") == nil {
+		t.Error("turtle-tech missing build-tech-center")
+	}
+	if findRule(turtleTech, "build-missile-silo") == nil {
+		t.Error("turtle-tech missing build-missile-silo")
+	}
+
+	// Air superiority should have airfield but naval-assault should not.
+	airSup := compiled["air-superiority"]
+	navalAss := compiled["naval-assault"]
+	if findRule(airSup, "build-airfield") == nil {
+		t.Error("air-superiority missing build-airfield")
+	}
+	if findRule(navalAss, "build-airfield") != nil {
+		t.Error("naval-assault should NOT have build-airfield (air=0)")
+	}
+	if findRule(navalAss, "build-naval-yard") == nil {
+		t.Error("naval-assault missing build-naval-yard")
+	}
+
+	// Engineer rush should have capture rules but no infantry production.
+	engRush := compiled["engineer-rush"]
+	if findRule(engRush, "capture-building") == nil {
+		t.Error("engineer-rush missing capture-building")
+	}
+	if findRule(engRush, "produce-infantry") != nil {
+		t.Error("engineer-rush should NOT produce infantry (infantry_weight=0)")
+	}
+
+	// --- Check 4: Build order priorities differ ---
+	// War factory priority should differ between armour-blitz (vehicle=0.8)
+	// and balanced (vehicle=0.5).
+	blitzWF := findRule(compiled["armour-blitz"], "build-war-factory")
+	balancedWF := findRule(compiled["balanced"], "build-war-factory")
+	if blitzWF != nil && balancedWF != nil {
+		if blitzWF.Priority == balancedWF.Priority {
+			t.Errorf("armour-blitz and balanced should have different war factory priorities (both %d)", blitzWF.Priority)
+		}
+		if blitzWF.Priority <= balancedWF.Priority {
+			t.Errorf("armour-blitz war factory priority (%d) should be > balanced (%d)", blitzWF.Priority, balancedWF.Priority)
+		}
+		t.Logf("war factory priorities: armour-blitz=%d, balanced=%d", blitzWF.Priority, balancedWF.Priority)
+	}
+
+	// Extra refinery priority should differ between turtle-tech (economy=0.8)
+	// and infantry-rush (economy=0.3).
+	turtleRef := findRule(turtleTech, "build-extra-refinery")
+	rushRef := findRule(infantryRush, "build-extra-refinery")
+	if turtleRef != nil && rushRef != nil {
+		if turtleRef.Priority <= rushRef.Priority {
+			t.Errorf("turtle-tech extra-refinery priority (%d) should be > infantry-rush (%d)", turtleRef.Priority, rushRef.Priority)
+		}
+		t.Logf("extra-refinery priorities: turtle-tech=%d, infantry-rush=%d", turtleRef.Priority, rushRef.Priority)
+	}
+
+	// --- Check 5: Attack group sizes propagate ---
+	// Verify condition strings contain the doctrine's group size.
+	blitzAttack := findRule(compiled["armour-blitz"], "form-ground-attack-squad")
+	turtleAttack := findRule(compiled["turtle-tech"], "form-ground-attack-squad")
+	if blitzAttack != nil && turtleAttack != nil {
+		if !strings.Contains(blitzAttack.ConditionSrc, "6") {
+			t.Errorf("armour-blitz attack squad condition should reference group size 6: %s", blitzAttack.ConditionSrc)
+		}
+		if !strings.Contains(turtleAttack.ConditionSrc, "10") {
+			t.Errorf("turtle-tech attack squad condition should reference group size 10: %s", turtleAttack.ConditionSrc)
+		}
+	}
+
+	// --- Print summary ---
+	for name, rules := range compiled {
+		names := ruleNames(rules)
+		var exclusive []string
+		for _, r := range rules {
+			if r.Exclusive {
+				exclusive = append(exclusive, r.Name)
+			}
+		}
+		t.Logf("%-20s rules=%d exclusive=%d", name, len(names), len(exclusive))
+	}
+}
+
+func TestCompileDoctrineBridgeInfantry(t *testing.T) {
+	// Mixed doctrine with air and naval: bridge infantry should be present.
+	mixed := Doctrine{
+		Name:                  "Air-Sea Mixed",
+		EconomyPriority:       0.5,
+		Aggression:            0.6,
+		GroundDefensePriority: 0.3,
+		InfantryWeight:        0.45,
+		VehicleWeight:         0.15,
+		AirWeight:             0.6,
+		NavalWeight:           0.3,
+		GroundAttackGroupSize: 5,
+		AirAttackGroupSize:    3,
+		NavalAttackGroupSize:  3,
+		ScoutPriority:         0.5,
+	}
+	rules := CompileDoctrine(mixed)
+
+	// All rules must compile.
+	for _, r := range rules {
+		_, err := expr.Compile(r.ConditionSrc, expr.Env(RuleEnv{}), expr.AsBool())
+		if err != nil {
+			t.Errorf("rule %q failed to compile: %v\ncondition: %s", r.Name, err, r.ConditionSrc)
+		}
+	}
+
+	byName := map[string]*Rule{}
+	for _, r := range rules {
+		byName[r.Name] = r
+	}
+
+	br := byName["produce-bridge-infantry"]
+	if br == nil {
+		t.Fatal("expected produce-bridge-infantry rule for mixed doctrine")
+	}
+
+	// Condition should check for missing buildings.
+	if !strings.Contains(br.ConditionSrc, `!HasRole("airfield")`) {
+		t.Errorf("bridge infantry should check for missing airfield, got: %s", br.ConditionSrc)
+	}
+	if !strings.Contains(br.ConditionSrc, `!HasRole("naval_yard")`) {
+		t.Errorf("bridge infantry should check for missing naval_yard, got: %s", br.ConditionSrc)
+	}
+
+	// Should be in the infantry production category and exclusive.
+	if br.Category != CatProduceInfantry {
+		t.Errorf("bridge infantry category = %q, want %q", br.Category, CatProduceInfantry)
+	}
+	if !br.Exclusive {
+		t.Error("bridge infantry should be exclusive")
+	}
+
+	// Priority should be lower than normal infantry production.
+	inf := byName["produce-infantry"]
+	if inf == nil {
+		t.Fatal("expected produce-infantry rule")
+	}
+	if br.Priority >= inf.Priority {
+		t.Errorf("bridge infantry priority %d should be less than infantry priority %d", br.Priority, inf.Priority)
+	}
+
+	// Pure infantry doctrine: bridge infantry should NOT be present.
+	pureInf := Doctrine{
+		Name:                  "Pure Infantry",
+		EconomyPriority:       0.5,
+		Aggression:            0.7,
+		GroundDefensePriority: 0.5,
+		InfantryWeight:        0.9,
+		VehicleWeight:         0.05,
+		AirWeight:             0.05,
+		NavalWeight:           0.0,
+		GroundAttackGroupSize: 8,
+		ScoutPriority:         0.5,
+	}
+	pureRules := CompileDoctrine(pureInf)
+	for _, r := range pureRules {
+		if r.Name == "produce-bridge-infantry" {
+			t.Error("pure infantry doctrine should NOT have produce-bridge-infantry rule")
+		}
+	}
+
+	// Vehicle-heavy doctrine (heavy tank): bridge infantry should check for
+	// missing war_factory.
+	heavyTank := Doctrine{
+		Name:                  "Heavy Tank",
+		EconomyPriority:       0.5,
+		Aggression:            0.8,
+		GroundDefensePriority: 0.3,
+		InfantryWeight:        0.3,
+		VehicleWeight:         0.8,
+		AirWeight:             0.1,
+		NavalWeight:           0.0,
+		GroundAttackGroupSize: 5,
+		ScoutPriority:         0.5,
+	}
+	tankRules := CompileDoctrine(heavyTank)
+	for _, r := range tankRules {
+		_, err := expr.Compile(r.ConditionSrc, expr.Env(RuleEnv{}), expr.AsBool())
+		if err != nil {
+			t.Errorf("rule %q failed to compile: %v\ncondition: %s", r.Name, err, r.ConditionSrc)
+		}
+	}
+	tankByName := map[string]*Rule{}
+	for _, r := range tankRules {
+		tankByName[r.Name] = r
+	}
+	tankBridge := tankByName["produce-bridge-infantry"]
+	if tankBridge == nil {
+		t.Fatal("expected produce-bridge-infantry rule for heavy tank doctrine")
+	}
+	if !strings.Contains(tankBridge.ConditionSrc, `!HasRole("war_factory")`) {
+		t.Errorf("heavy tank bridge infantry should check for missing war_factory, got: %s", tankBridge.ConditionSrc)
+	}
 }

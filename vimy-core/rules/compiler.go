@@ -1,6 +1,9 @@
 package rules
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Doctrine gate thresholds control which rule blocks CompileDoctrine emits.
 // Named constants make the vocabulary self-documenting across 40+ guard checks.
@@ -78,6 +81,10 @@ func CompileDoctrine(d Doctrine) []*Rule {
 	// priorities (0.3-0.5) create enormous cash thresholds (2300+ for a tank)
 	// that prevent any army from being built in early/mid game.
 	var savings []buildingSaving
+	if d.VehicleWeight > DoctrineModerate {
+		// War factory requires radar. Don't reserve 2000 until radar exists.
+		savings = append(savings, buildingSaving{`HasRole("war_factory") || !HasRole("radar")`, 2000})
+	}
 	if d.TechPriority > DoctrineHigh {
 		// Tech center requires radar. Don't reserve 1500 until radar exists.
 		// Threshold matches build-tech-center rule (DoctrineHigh) so we never
@@ -152,7 +159,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     850,
 			Category:     "capture",
 			Exclusive:    false,
-			ConditionSrc: `CapturableCount() > 0 && len(IdleEngineers()) > 0 && !CanBuildRole("apc")`,
+			ConditionSrc: `CapturableCount() > 0 && len(IdleEngineers()) > 0 && (!CanBuildRole("apc") || EngineerNearCapturable())`,
 			Action:       ActionCaptureBuilding,
 		})
 
@@ -417,23 +424,39 @@ func CompileDoctrine(d Doctrine) []*Rule {
 	refineryMax := lerp(1, 5, d.EconomyPriority)
 	refineryCashThreshold := lerp(2000, 800, d.EconomyPriority)
 
-	// Initial refineries (1st and 2nd) — critical economy, high priority.
-	// Cap at refineryMax so low-economy doctrines don't over-build.
-	initialRefCap := min(2, refineryMax)
+	// First refinery — critical economy, highest non-power priority.
 	rules = append(rules, &Rule{
 		Name:         "build-refinery",
 		Priority:     750,
 		Category:     "economy",
 		Exclusive:    true,
-		ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("refinery") && RoleCount("refinery") < %d && Cash() >= %d`, initialRefCap, refineryCashThreshold),
+		ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("refinery") && RoleCount("refinery") < 1 && Cash() >= %d`, refineryCashThreshold),
 		Action:       ActionProduceRefinery,
 	})
 
-	// Expansion refineries (3rd+) — economy optimization, below tech progression.
-	if d.EconomyPriority > DoctrineSignificant {
+	// Second refinery — strong early-game investment that pays for itself
+	// quickly. Lower cash threshold than later refineries so it comes out
+	// competitively with built-in AI timing.
+	if d.EconomyPriority > DoctrineEnabled {
+		secondRefPriority := lerp(560, 700, d.EconomyPriority)
+		secondRefCash := lerp(1500, 500, d.EconomyPriority)
+		rules = append(rules, &Rule{
+			Name:         "build-second-refinery",
+			Priority:     secondRefPriority,
+			Category:     "economy",
+			Exclusive:    true,
+			ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("refinery") && RoleCount("refinery") == 1 && (HasRole("barracks") || HasRole("war_factory")) && Cash() >= %d`, secondRefCash),
+			Action:       ActionProduceRefinery,
+		})
+	}
+
+	// Expansion refineries (3rd+) — priority scales with economy emphasis so
+	// military buildings can compete when doctrine favours them.
+	if d.EconomyPriority > DoctrineEnabled && refineryMax > 2 {
+		extraRefPriority := lerp(520, 680, d.EconomyPriority)
 		rules = append(rules, &Rule{
 			Name:         "build-extra-refinery",
-			Priority:     520,
+			Priority:     extraRefPriority,
 			Category:     "economy",
 			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("refinery") && RoleCount("refinery") >= 2 && RoleCount("refinery") < %d && (HasRole("barracks") || HasRole("war_factory")) && Cash() >= %d`, refineryMax, refineryCashThreshold),
@@ -485,12 +508,16 @@ func CompileDoctrine(d Doctrine) []*Rule {
 
 	if d.VehicleWeight > DoctrineEnabled {
 		warFactoryPriority := lerp(580, 680, d.VehicleWeight)
+		// Scale cash threshold inversely with vehicle weight: low-vehicle
+		// doctrines need a bigger buffer so the 2000-credit building doesn't
+		// starve air/naval production during construction.
+		wfCashThreshold := lerp(3500, 2000, d.VehicleWeight)
 		rules = append(rules, &Rule{
 			Name:         "build-war-factory",
 			Priority:     warFactoryPriority,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("war_factory") && !HasRole("war_factory") && PowerExcess() >= 0 && Cash() >= 2000`,
+			ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("war_factory") && !HasRole("war_factory") && PowerExcess() >= 0 && Cash() >= %d`, wfCashThreshold),
 			Action:       ActionProduceWarFactory,
 		})
 	}
@@ -534,7 +561,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 	}
 
 	if d.NavalWeight > DoctrineEnabled {
-		navalYardPriority := lerp(540, 620, d.NavalWeight)
+		navalYardPriority := lerp(580, 680, d.NavalWeight)
 		rules = append(rules, &Rule{
 			Name:         "build-naval-yard",
 			Priority:     navalYardPriority,
@@ -655,24 +682,30 @@ func CompileDoctrine(d Doctrine) []*Rule {
 
 	if d.AirWeight > DoctrineExtreme {
 		extraAirCap := lerp(1, 3, d.AirWeight)
+		// Only build extra airfields once existing ones are fully utilized
+		// (aircraft count near cap). Otherwise the building drains cash
+		// that should go to unit production at the existing airfield.
+		airCapForGate := lerp(2, 8, d.AirWeight)
 		rules = append(rules, &Rule{
 			Name:         "build-extra-airfield",
 			Priority:     480,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("airfield") && RoleCount("airfield") < %d && PowerExcess() >= 0 && Cash() >= 500`, extraAirCap),
+			ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("airfield") && RoleCount("airfield") < %d && CombatAircraftCount() >= %d && PowerExcess() >= 0 && Cash() >= 500`, extraAirCap, airCapForGate-1),
 			Action:       ActionProduceAirfield,
 		})
 	}
 
 	if d.NavalWeight > DoctrineExtreme {
 		extraNavalCap := lerp(1, 2, d.NavalWeight)
+		// Same logic: only expand naval yards when existing capacity is used.
+		navalCapForGate := lerp(3, 8, d.NavalWeight)
 		rules = append(rules, &Rule{
 			Name:         "build-extra-naval-yard",
 			Priority:     470,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`MapHasWater() && !QueueBusy("Building") && CanBuildRole("naval_yard") && RoleCount("naval_yard") < %d && PowerExcess() >= 0 && Cash() >= 500`, extraNavalCap),
+			ConditionSrc: fmt.Sprintf(`MapHasWater() && !QueueBusy("Building") && CanBuildRole("naval_yard") && RoleCount("naval_yard") < %d && (RoleCount("submarine") + RoleCount("destroyer")) >= %d && PowerExcess() >= 0 && Cash() >= 500`, extraNavalCap, navalCapForGate-1),
 			Action:       ActionProduceNavalYard,
 		})
 	}
@@ -759,7 +792,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 	}
 
 	if d.InfantryWeight > DoctrineEnabled {
-		infantryCap := lerp(5, 20, d.InfantryWeight)
+		infantryCap := lerp(8, 20, d.InfantryWeight)
 		rules = append(rules, &Rule{
 			Name:         "produce-infantry",
 			Priority:     infantryBasePri,
@@ -768,6 +801,36 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuild("Infantry","e1") && UnitCount("e1") < %d && %s`, infantryCap, buildCashCondition(100, infantrySavings)),
 			Action:       ActionProduceInfantry,
 		})
+
+		// Bridge infantry: produce extra e1 while doctrine-desired production
+		// buildings are still missing (teching up). Once all buildings come
+		// online the rule deactivates and normal caps govern composition.
+		var bridgeMissing []string
+		bridgeBonus := 0
+		if d.AirWeight > DoctrineEnabled {
+			bridgeMissing = append(bridgeMissing, `!HasRole("airfield")`)
+			bridgeBonus += lerp(2, 5, d.AirWeight)
+		}
+		if d.NavalWeight > DoctrineEnabled {
+			bridgeMissing = append(bridgeMissing, `!HasRole("naval_yard")`)
+			bridgeBonus += lerp(1, 4, d.NavalWeight)
+		}
+		if d.VehicleWeight > DoctrineModerate {
+			bridgeMissing = append(bridgeMissing, `!HasRole("war_factory")`)
+			bridgeBonus += lerp(1, 3, d.VehicleWeight)
+		}
+		if len(bridgeMissing) > 0 {
+			bridgeCap := infantryCap + bridgeBonus
+			missingCond := "(" + strings.Join(bridgeMissing, " || ") + ")"
+			rules = append(rules, &Rule{
+				Name:         "produce-bridge-infantry",
+				Priority:     infantryBasePri - 5,
+				Category:     CatProduceInfantry,
+				Exclusive:    true,
+				ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuild("Infantry","e1") && %s && UnitCount("e1") >= %d && UnitCount("e1") < %d && %s`, missingCond, infantryCap, bridgeCap, buildCashCondition(100, infantrySavings)),
+				Action:       ActionProduceInfantry,
+			})
+		}
 	}
 
 	if d.VehicleWeight > DoctrineEnabled {
@@ -910,7 +973,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     430,
 			Category:     CatProduceShip,
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`MapHasWater() && HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("cruiser") || CanBuildRole("destroyer")) && (RoleCount("cruiser") + RoleCount("destroyer")) < %d && %s`, advNavalCap, buildCashCondition(2000, savings)),
+			ConditionSrc: fmt.Sprintf(`MapHasWater() && HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("cruiser") || CanBuildRole("destroyer") || CanBuildRole("missile_sub")) && (RoleCount("cruiser") + RoleCount("destroyer") + RoleCount("missile_sub")) < %d && %s`, advNavalCap, buildCashCondition(2000, savings)),
 			Action:       ActionProduceAdvancedShip,
 		})
 	}

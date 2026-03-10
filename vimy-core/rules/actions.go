@@ -616,7 +616,7 @@ func ActionProduceOreSilo(env RuleEnv, conn *ipc.Connection) error {
 }
 
 func ActionProduceAdvancedShip(env RuleEnv, conn *ipc.Connection) error {
-	for _, role := range []string{"cruiser", "destroyer"} {
+	for _, role := range []string{"cruiser", "missile_sub", "destroyer"} {
 		item := env.BuildableType(role)
 		if item != "" {
 			slog.Debug("producing advanced ship", "item", item)
@@ -729,15 +729,15 @@ func ActionScoutWithIdleUnits(env RuleEnv, conn *ipc.Connection) error {
 }
 
 // generateWaypoints creates a 9-point search pattern (center, corners, edges)
-// with 10% margins to avoid map-edge pathing issues. When a terrain grid is
+// with a small margin to avoid map-edge pathing issues. When a terrain grid is
 // available, waypoints in Water or Cliff zones are filtered out so ground
 // scouts only visit reachable positions.
 func generateWaypoints(mapW, mapH int, terrain *model.TerrainGrid) [][2]int {
 	if mapW == 0 || mapH == 0 {
 		return nil
 	}
-	marginX := mapW / 10
-	marginY := mapH / 10
+	marginX := max(3, mapW/25)
+	marginY := max(3, mapH/25)
 	minX, maxX := marginX, mapW-marginX
 	minY, maxY := marginY, mapH-marginY
 	midX := mapW / 2
@@ -820,7 +820,9 @@ func ActionCaptureBuilding(env RuleEnv, conn *ipc.Connection) error {
 	if len(engineers) == 0 {
 		return nil
 	}
-	eng := engineers[0]
+	// Pick the engineer closest to the target so recently-unloaded engineers
+	// capture instead of being re-loaded into a different APC.
+	eng, _ := nearestTo(engineers, target.X, target.Y)
 	slog.Debug("capturing building", "engineer", eng.ID, "target", target.ID, "type", target.Type)
 	return conn.Send(ipc.TypeCapture, ipc.CaptureCommand{
 		ActorID:  uint32(eng.ID),

@@ -52,6 +52,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	updateSquads(env)
 	designateScout(env)
 	logMilitaryDiagnostics(env)
+	logProductionDiagnostics(env)
 	fired := make(map[string]bool) // category → exclusive rule already fired
 
 	anyFired := false
@@ -185,6 +186,33 @@ func logMilitaryDiagnostics(env RuleEnv) {
 		"idleNaval", idleNaval,
 		"enemiesVisible", enemiesVisible,
 		"hasEnemyIntel", hasIntel,
+	)
+}
+
+// logProductionDiagnostics logs production queue state every 100 ticks,
+// regardless of whether rules fired. Helps debug "why isn't X being produced?"
+// when other rules (e.g. infantry) are still firing normally.
+var lastProdDiagTick int
+
+func logProductionDiagnostics(env RuleEnv) {
+	gs := env.State
+	if gs.Tick-lastProdDiagTick < 100 {
+		return
+	}
+	lastProdDiagTick = gs.Tick
+
+	for _, pq := range gs.ProductionQueues {
+		slog.Info("production diagnostics",
+			"queue", pq.Type,
+			"busy", pq.CurrentItem != "" && pq.CurrentProgress < 100,
+			"currentItem", pq.CurrentItem,
+			"buildable", strings.Join(pq.Buildable, ","),
+		)
+	}
+	slog.Info("production diagnostics",
+		"cash", gs.Player.Cash,
+		"powerState", gs.Player.PowerState,
+		"powerExcess", gs.Player.PowerProvided-gs.Player.PowerDrained,
 	)
 }
 

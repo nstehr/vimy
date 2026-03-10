@@ -98,6 +98,7 @@ const (
 	Hind          = "hind" // Soviet Hind attack helicopter
 	Flamethrower  = "e4"   // Flamethrower infantry
 	ShockTrooper  = "shok" // Shock Trooper (Russia only)
+	TeslaTank     = "ttnk" // Tesla Tank (Russia only)
 	Tanya         = "e7"   // Tanya (Allied commando)
 	Medic         = "medi" // Medic
 	Submarine     = "ss"   // Soviet Submarine
@@ -176,10 +177,12 @@ var roles = map[string]role{
 	"rocket_soldier":    {queue: QueueInfantry, types: []string{RocketSoldier}},
 	"flamethrower":      {queue: QueueInfantry, types: []string{Flamethrower}},
 	"shock_trooper":     {queue: QueueInfantry, types: []string{ShockTrooper}},
+	"tesla_tank":        {queue: QueueVehicle, types: []string{TeslaTank}},
 	"tanya":             {queue: QueueInfantry, types: []string{Tanya}},
 	"medic":             {queue: QueueInfantry, types: []string{Medic}},
 	"engineer":          {queue: QueueInfantry, types: []string{Engineer}},
-	"submarine":         {queue: QueueShip, types: []string{Submarine, MissileSub}},
+	"submarine":         {queue: QueueShip, types: []string{Submarine}},
+	"missile_sub":       {queue: QueueShip, types: []string{MissileSub}},
 	"destroyer":         {queue: QueueShip, types: []string{Destroyer}},
 	"cruiser":           {queue: QueueShip, types: []string{Cruiser}},
 	"gunboat":           {queue: QueueShip, types: []string{Gunboat}},
@@ -199,7 +202,7 @@ var roles = map[string]role{
 // Order: heaviest armor first, then support vehicles.
 // APC is excluded — it's a transport with dedicated capture/assault production rules.
 var combatVehicleRoles = []string{
-	"heavy_tank", "medium_tank", "light_tank",
+	"heavy_tank", "medium_tank", "tesla_tank", "light_tank",
 	"v2_launcher", "artillery", "ranger",
 	"flak_truck", "demo_truck",
 }
@@ -211,7 +214,7 @@ var combatAircraftRoles = []string{
 
 // combatNavalRoles: heaviest firepower first.
 var combatNavalRoles = []string{
-	"cruiser", "destroyer", "submarine", "gunboat",
+	"cruiser", "missile_sub", "destroyer", "submarine", "gunboat",
 }
 
 // specialistInfantryRoles: most impactful unit first.
