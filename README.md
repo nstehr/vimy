@@ -1,6 +1,6 @@
 # Vimy
 
-> An AI that plays Command & Conquer: Red Alert using LLM-generated strategy — not micro.
+> An AI that plays Command & Conquer: Red Alert (OpenRA) using LLM-generated strategy — not micro.
 
 Vimy uses an LLM to generate a high-level doctrine (aggression, economy, unit composition, attack timing), compiles it into deterministic rules, and executes them at game speed.
 
