@@ -5,6 +5,9 @@
 Vimy uses an LLM to generate a high-level doctrine (aggression, economy, unit composition, attack timing), compiles it into deterministic rules, and executes them at game speed.
 
 As the match unfolds, it adapts its strategy based on game events causing it to shift tactics when countered, and reinforcing strengths when winning.
+<img width="1313" height="360" alt="Screenshot 2026-03-26 at 12 14 00 PM" src="https://github.com/user-attachments/assets/be562e3b-93d4-4ffc-b36a-6ad480ad60f5" />
+<img width="1317" height="736" alt="Screenshot 2026-03-26 at 12 13 47 PM" src="https://github.com/user-attachments/assets/e7fc6569-449c-45dd-823f-9a5fc1ca514b" />
+<img width="1314" height="530" alt="Screenshot 2026-03-26 at 12 13 53 PM" src="https://github.com/user-attachments/assets/489a18bd-720c-4d32-8f12-8d535eb3d974" />
 
 ## How It Works
 - LLM as strategist (high-level doctrine)
