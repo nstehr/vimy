@@ -651,6 +651,30 @@ func ActionDefendBase(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
+// ActionEmergencyDefendBase redirects nearby ground units (regardless of idle
+// status) to defend the base. Used when no idle units are available but units
+// near the base have stale orders and aren't responding to the attack.
+func ActionEmergencyDefendBase(env RuleEnv, conn *ipc.Connection) error {
+	enemy := env.NearestEnemy()
+	if enemy == nil {
+		return nil
+	}
+	nearby := env.NearBaseGroundUnits()
+	if len(nearby) == 0 {
+		return nil
+	}
+	ids := make([]uint32, len(nearby))
+	for i, u := range nearby {
+		ids[i] = uint32(u.ID)
+	}
+	slog.Info("emergency base defense — recalling nearby units", "count", len(ids), "target", enemy.ID)
+	return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
+		ActorIDs: ids,
+		X:        enemy.X,
+		Y:        enemy.Y,
+	})
+}
+
 func ActionNavalDefendBase(env RuleEnv, conn *ipc.Connection) error {
 	enemy := env.NearestEnemy()
 	if enemy == nil {

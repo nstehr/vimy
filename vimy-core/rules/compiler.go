@@ -310,7 +310,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Priority:     810,
 		Category:     "rebuild",
 		Exclusive:    true,
-		ConditionSrc: `LostRole("radar") && !QueueBusy("Building") && CanBuildRole("radar") && Cash() >= 500`,
+		ConditionSrc: `LostRole("radar") && !QueueBusy("Building") && !QueueProducingRole("radar") && CanBuildRole("radar") && Cash() >= 500`,
 		Action:       ActionProduceRadar,
 	})
 
@@ -380,6 +380,20 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Exclusive:    false,
 		ConditionSrc: `BaseUnderAttack() && len(IdleGroundUnits()) > 0`,
 		Action:       ActionDefendBase,
+	})
+
+	// Emergency recall: when the base is under attack and no idle ground
+	// units are available, redirect any nearby ground units (even those with
+	// active orders) to defend. This catches units that were given attack-
+	// move orders and haven't completed them yet — they appear to be
+	// standing at the base but OpenRA considers them "not idle."
+	rules = append(rules, &Rule{
+		Name:         "emergency-base-defense",
+		Priority:     349,
+		Category:     "emergency_defense",
+		Exclusive:    false,
+		ConditionSrc: `BaseUnderAttack() && len(IdleGroundUnits()) == 0 && len(NearBaseGroundUnits()) > 0`,
+		Action:       ActionEmergencyDefendBase,
 	})
 
 	rules = append(rules, &Rule{
@@ -475,7 +489,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Priority:     710,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("radar") && !HasRole("radar") && (HasRole("barracks") || HasRole("war_factory")) && PowerExcess() >= 0 && Cash() >= 1000`,
+			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("radar") && !HasRole("radar") && !QueueProducingRole("radar") && (HasRole("barracks") || HasRole("war_factory")) && PowerExcess() >= 0 && Cash() >= 1000`,
 			Action:       ActionProduceRadar,
 		})
 	}
@@ -1144,6 +1158,16 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Exclusive:    false,
 			ConditionSrc: `MapHasWater() && SquadExists("naval-attack") && SquadIdleCount("naval-attack") > 0 && NearestEnemy() != nil`,
 			Action:       SquadAttackMove("naval-attack"),
+		})
+
+		// Fallback: attack last-known enemy base when fog hides all enemies.
+		rules = append(rules, &Rule{
+			Name:         "squad-naval-attack-known-base",
+			Priority:     navalAttackPriority - KnownBaseDiscount,
+			Category:     "naval_combat",
+			Exclusive:    false,
+			ConditionSrc: fmt.Sprintf(`MapHasWater() && SquadExists("naval-attack") && SquadReadyRatio("naval-attack") >= %.2f && !EnemiesVisible() && HasEnemyIntel()`, activationThreshold),
+			Action:       SquadAttackKnownBase("naval-attack", d.Aggression),
 		})
 	}
 

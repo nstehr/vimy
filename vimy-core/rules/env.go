@@ -57,6 +57,37 @@ func (e RuleEnv) QueueReady(q string) bool {
 	return false
 }
 
+// QueueProducingRole returns true if any queue for the given role is currently
+// building or has queued an item that matches the role. This catches cases
+// where QueueBusy returns false (e.g. item at 100%, or a second queue is free)
+// but the role is already in production.
+func (e RuleEnv) QueueProducingRole(name string) bool {
+	r, ok := roles[name]
+	if !ok {
+		return false
+	}
+	for _, pq := range e.State.ProductionQueues {
+		if !strings.EqualFold(pq.Type, r.queue) {
+			continue
+		}
+		// Check current item.
+		for _, t := range r.types {
+			if matchesType(pq.CurrentItem, t) {
+				return true
+			}
+		}
+		// Check queued items.
+		for _, item := range pq.Items {
+			for _, t := range r.types {
+				if matchesType(item, t) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (e RuleEnv) CanBuild(q, item string) bool {
 	for _, pq := range e.State.ProductionQueues {
 		if strings.EqualFold(pq.Type, q) {
@@ -468,6 +499,39 @@ func (e RuleEnv) IdleGroundUnits() []model.Unit {
 			continue
 		}
 		out = append(out, u)
+	}
+	return out
+}
+
+// NearBaseGroundUnits returns ground combat units near any building, regardless
+// of idle status. Used for emergency base defense so units with active orders
+// (e.g. en route to an attack) are recalled when the base is under attack.
+// Uses the same 20% map-diagonal threshold as BaseUnderAttack.
+func (e RuleEnv) NearBaseGroundUnits() []model.Unit {
+	if len(e.State.Buildings) == 0 {
+		return nil
+	}
+	mw := float64(e.State.MapWidth)
+	mh := float64(e.State.MapHeight)
+	threshold := math.Sqrt(mw*mw+mh*mh) * 0.20
+	threshSq := threshold * threshold
+
+	var out []model.Unit
+	for _, u := range e.State.Units {
+		if matchesType(u.Type, Harvester) || matchesType(u.Type, MCV) || matchesType(u.Type, Engineer) || matchesType(u.Type, APC) {
+			continue
+		}
+		if isAircraft(u) || isNaval(u) {
+			continue
+		}
+		for j := range e.State.Buildings {
+			dx := float64(u.X - e.State.Buildings[j].X)
+			dy := float64(u.Y - e.State.Buildings[j].Y)
+			if dx*dx+dy*dy < threshSq {
+				out = append(out, u)
+				break
+			}
+		}
 	}
 	return out
 }

@@ -31,6 +31,7 @@ var ActionRegistry = map[string]ActionFunc{
 	"produce_ore_silo":         ActionProduceOreSilo,
 	"produce_advanced_ship":    ActionProduceAdvancedShip,
 	"defend_base":              ActionDefendBase,
+	"emergency_defend_base":    ActionEmergencyDefendBase,
 	"air_defend_base":          ActionAirDefendBase,
 	"repair_buildings":     ActionRepairDamagedBuildings,
 	"scout":                ActionScoutWithIdleUnits,
