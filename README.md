@@ -1,8 +1,16 @@
 # Vimy
 
-An AI-controlled bot for OpenRA (Red Alert) that uses LLM-generated strategy compiled into runtime rules to play the game autonomously.
+> An AI that plays Command & Conquer: Red Alert using LLM-generated strategy — not micro.
+
+Vimy uses an LLM to generate a high-level doctrine (aggression, economy, unit composition, attack timing), compiles it into deterministic rules, and executes them at game speed.
+
+As the match unfolds, it adapts its strategy based on game events causing it to shift tactics when countered, and reinforcing strengths when winning.
 
 ## How It Works
+- LLM as strategist (high-level doctrine)
+- Rule engine for executor (deterministic, safe, fast)
+- Event-driven adaptation mid-game
+- No direct LLM control of units
 
 An LLM generates a high-level strategy (e.g., "Blitzkrieg", "Turtle Defense") which is compiled into rules that execute at game speed. The bot plays immediately with seed rules on startup, and adapts its strategy as game events unfold.
 
