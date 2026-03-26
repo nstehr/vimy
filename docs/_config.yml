@@ -1,0 +1,10 @@
+title: Vimy
+description: >-
+  Vimy project documentation
+baseurl: "/vimy"
+url: ""
+
+theme: minima
+
+plugins:
+  - jekyll-feed
