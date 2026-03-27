@@ -261,7 +261,7 @@ This means the LLM can suggest strategy, but it cannot produce undefined or unsa
 
 ## Dashboard
 
-To observe the system in action, the agent serves a live dashboard over HTTP. It provides a window into the agent's strategic thinking as a game unfolds.
+To observe the system in action, the agent serves a live dashboard. It provides a window into the agent's strategic thinking as a game unfolds.
 
 ![Directive]({{ site.baseurl }}/assets/Screenshot%202026-03-26%20at%2012.14.00%E2%80%AFPM.png)
 
