@@ -524,8 +524,11 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		warFactoryPriority := lerp(580, 680, d.VehicleWeight)
 		// Scale cash threshold inversely with vehicle weight: low-vehicle
 		// doctrines need a bigger buffer so the 2000-credit building doesn't
-		// starve air/naval production during construction.
-		wfCashThreshold := lerp(3500, 2000, d.VehicleWeight)
+		// starve air/naval production during construction. Ceiling capped at
+		// 2500 (was 3500) — the old value made it nearly impossible for rush
+		// doctrines to accumulate enough cash since infantry production drained
+		// funds below the threshold.
+		wfCashThreshold := lerp(2500, 2000, d.VehicleWeight)
 		rules = append(rules, &Rule{
 			Name:         "build-war-factory",
 			Priority:     warFactoryPriority,
@@ -762,10 +765,21 @@ func CompileDoctrine(d Doctrine) []*Rule {
 
 	// --- Unit production ---
 
+	// War-factory reservation: when the doctrine wants vehicles, infantry
+	// rules save cash for the war factory building (2000 credits). Without
+	// this, infantry production drains cash below the war factory threshold
+	// and the war factory is never built — especially in rush doctrines.
+	infantrySavings := append([]buildingSaving(nil), savings...)
+	if d.VehicleWeight > DoctrineEnabled {
+		infantrySavings = append(infantrySavings, buildingSaving{
+			existsExpr: `HasRole("war_factory")`,
+			cost:       2000,
+		})
+	}
+
 	// Vehicle-cost reservation: when the doctrine wants both infantry and
 	// vehicles, infantry rules save 800 cash headroom so vehicle production
 	// can start. The reservation releases once vehicles reach their cap.
-	infantrySavings := append([]buildingSaving(nil), savings...)
 	if d.VehicleWeight > DoctrineModerate {
 		vehicleCapForSaving := lerp(3, 10, d.VehicleWeight)
 		infantrySavings = append(infantrySavings, buildingSaving{

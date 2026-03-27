@@ -13,6 +13,15 @@ import (
 	"github.com/nstehr/vimy/vimy-core/model"
 )
 
+// RuleSummary is a read-only DTO for exposing compiled rules to the dashboard.
+type RuleSummary struct {
+	Name         string
+	Priority     int
+	Category     string
+	Exclusive    bool
+	ConditionSrc string
+}
+
 // Engine runs compiled rules against game state each tick.
 // Rules fire in priority order; exclusive rules block lower-priority rules
 // in the same category, preventing conflicting orders on the same queue.
@@ -119,6 +128,25 @@ func (e *Engine) Swap(newRules []*Rule) error {
 // Used by the strategist to safely read Memory from a background goroutine.
 func (e *Engine) LockMemory()   { e.memMu.Lock() }
 func (e *Engine) UnlockMemory() { e.memMu.Unlock() }
+
+// Rules returns a snapshot of the current rule set as read-only summaries.
+func (e *Engine) Rules() []RuleSummary {
+	e.mu.RLock()
+	rules := e.rules
+	e.mu.RUnlock()
+
+	out := make([]RuleSummary, len(rules))
+	for i, r := range rules {
+		out[i] = RuleSummary{
+			Name:         r.Name,
+			Priority:     r.Priority,
+			Category:     r.Category,
+			Exclusive:    r.Exclusive,
+			ConditionSrc: r.ConditionSrc,
+		}
+	}
+	return out
+}
 
 // SetTerrain stores the coarse terrain grid received during the hello handshake.
 func (e *Engine) SetTerrain(grid *model.TerrainGrid) {

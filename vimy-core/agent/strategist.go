@@ -12,6 +12,14 @@ import (
 	"github.com/nstehr/vimy/vimy-core/rules"
 )
 
+// DoctrineRecord is a timestamped doctrine output from the LLM.
+type DoctrineRecord struct {
+	Tick          int
+	Doctrine      rules.Doctrine
+	Events        []Event
+	HasEnemyIntel bool
+}
+
 // Strategist runs in the background, periodically consulting the LLM
 // to generate a doctrine and swap the rule engine's rule set.
 type Strategist struct {
@@ -26,6 +34,7 @@ type Strategist struct {
 	prevSnap  *stateSnapshot // previous state snapshot for event diff
 	cooldown  int            // minimum ticks between event-driven evaluations
 	pending   []Event        // events accumulated since last evaluation
+	history   []DoctrineRecord // append-only log of all doctrine outputs
 
 	// Cumulative loss tracking — independent of event windowing.
 	// prevFreshIDs holds per-domain unit IDs from the PREVIOUS tick (never merged).
@@ -56,6 +65,49 @@ func (s *Strategist) SetFaction(f string) {
 	s.mu.Lock()
 	s.faction = f
 	s.mu.Unlock()
+}
+
+// GetDirective returns the current directive string.
+func (s *Strategist) GetDirective() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.directive
+}
+
+// SetDirective updates the directive and signals an immediate re-evaluation.
+func (s *Strategist) SetDirective(d string) {
+	s.mu.Lock()
+	s.directive = d
+	s.mu.Unlock()
+	select {
+	case s.ready <- struct{}{}:
+	default:
+	}
+}
+
+// GetCurrentDoctrine returns the most recent doctrine output, or nil if none yet.
+func (s *Strategist) GetCurrentDoctrine() *DoctrineRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.history) == 0 {
+		return nil
+	}
+	rec := s.history[len(s.history)-1]
+	return &rec
+}
+
+// GetHistory returns a copy of the full doctrine history.
+func (s *Strategist) GetHistory() []DoctrineRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]DoctrineRecord, len(s.history))
+	copy(out, s.history)
+	return out
+}
+
+// GetRules returns the current compiled rules from the engine.
+func (s *Strategist) GetRules() []rules.RuleSummary {
+	return s.engine.Rules()
 }
 
 // UpdateState stores the latest game state, detects events, and signals
@@ -183,6 +235,8 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	s.engine.LockMemory()
 	swFires := snapshotSuperweaponFires(s.engine.Memory)
 	situation := buildSituation(*gs, s.engine.Memory, events, swFires, losses)
+	enemyBases, _ := s.engine.Memory["enemyBases"].(map[string]rules.EnemyBaseIntel)
+	hasEnemyIntel := len(enemyBases) > 0
 	s.engine.UnlockMemory()
 
 	bamlDoctrine, err := baml_client.GenerateDoctrine(ctx, s.directive, situation, faction)
@@ -193,6 +247,15 @@ func (s *Strategist) evaluate(ctx context.Context) {
 
 	doctrine := fromBAML(bamlDoctrine)
 	doctrine.Validate()
+
+	s.mu.Lock()
+	s.history = append(s.history, DoctrineRecord{
+		Tick:          gs.Tick,
+		Doctrine:      doctrine,
+		Events:        events,
+		HasEnemyIntel: hasEnemyIntel,
+	})
+	s.mu.Unlock()
 
 	slog.Info("doctrine generated",
 		"name", doctrine.Name,

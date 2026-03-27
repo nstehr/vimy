@@ -1,0 +1,123 @@
+package views
+
+templ Dashboard(currentDirective string) {
+	@Layout("Vimy - Doctrine Dashboard") {
+		<div class="space-y-8">
+			<!-- Directive Panel -->
+			@DirectiveForm(currentDirective)
+
+			<!-- Current Doctrine Panel -->
+			<div>
+				<h2 class="text-lg font-semibold text-gray-200 mb-4">Current Doctrine</h2>
+				@DoctrineCard(nil)
+			</div>
+
+			<!-- Compiled Rules Panel -->
+			<div>
+				<h2 class="text-lg font-semibold text-gray-200 mb-4">Compiled Rules</h2>
+				@RulesPanel(nil)
+			</div>
+
+			<!-- Doctrine Evolution Chart -->
+			<div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+				<h2 class="text-lg font-semibold text-gray-200 mb-4">Doctrine Evolution</h2>
+				<div class="relative" style="height: 400px;">
+					<canvas id="doctrine-chart"></canvas>
+				</div>
+				<!-- Hidden div that polls for history data and triggers chart update -->
+				<div
+					id="chart-data"
+					hx-get="/api/doctrine/history"
+					hx-trigger="every 10s"
+					hx-swap="none"
+					class="hidden"
+				></div>
+			</div>
+		</div>
+
+		<script src="https://unpkg.com/htmx-ext-json-enc@2.0.3/json-enc.js"></script>
+		<script>
+			// Chart.js setup
+			const ctx = document.getElementById('doctrine-chart').getContext('2d');
+
+			const weightKeys = [
+				{ key: 'economy_priority', label: 'Economy', color: '#10b981' },
+				{ key: 'tech_priority', label: 'Tech', color: '#06b6d4' },
+				{ key: 'infantry_weight', label: 'Infantry', color: '#f59e0b' },
+				{ key: 'vehicle_weight', label: 'Vehicle', color: '#ef4444' },
+				{ key: 'air_weight', label: 'Air', color: '#8b5cf6' },
+				{ key: 'naval_weight', label: 'Naval', color: '#3b82f6' },
+				{ key: 'aggression', label: 'Aggression', color: '#f43f5e' },
+				{ key: 'ground_defense_priority', label: 'Ground Def', color: '#84cc16' },
+				{ key: 'air_defense_priority', label: 'Air Def', color: '#a78bfa' },
+				{ key: 'scout_priority', label: 'Scout', color: '#fbbf24' },
+				{ key: 'superweapon_priority', label: 'Superweapon', color: '#ec4899' },
+			];
+
+			const chart = new Chart(ctx, {
+				type: 'line',
+				data: {
+					labels: [],
+					datasets: weightKeys.map(w => ({
+						label: w.label,
+						data: [],
+						borderColor: w.color,
+						backgroundColor: w.color + '20',
+						borderWidth: 2,
+						pointRadius: 3,
+						tension: 0.3,
+					})),
+				},
+				options: {
+					responsive: true,
+					maintainAspectRatio: false,
+					scales: {
+						x: {
+							title: { display: true, text: 'Tick', color: '#9ca3af' },
+							ticks: { color: '#6b7280' },
+							grid: { color: '#1f2937' },
+						},
+						y: {
+							min: 0, max: 1,
+							title: { display: true, text: 'Weight', color: '#9ca3af' },
+							ticks: { color: '#6b7280' },
+							grid: { color: '#1f2937' },
+						},
+					},
+					plugins: {
+						legend: {
+							labels: { color: '#d1d5db', usePointStyle: true, pointStyle: 'circle' },
+						},
+					},
+				},
+			});
+
+			// Update chart when history data arrives
+			document.body.addEventListener('htmx:afterRequest', function(evt) {
+				if (evt.detail.pathInfo && evt.detail.pathInfo.requestPath === '/api/doctrine/history') {
+					try {
+						const data = JSON.parse(evt.detail.xhr.responseText);
+						chart.data.labels = data.map(d => d.tick);
+						weightKeys.forEach((w, i) => {
+							chart.data.datasets[i].data = data.map(d => d[w.key]);
+						});
+						chart.update();
+					} catch(e) {
+						console.error('Failed to update chart:', e);
+					}
+				}
+			});
+
+			// Initial chart load
+			fetch('/api/doctrine/history')
+				.then(r => r.json())
+				.then(data => {
+					chart.data.labels = data.map(d => d.tick);
+					weightKeys.forEach((w, i) => {
+						chart.data.datasets[i].data = data.map(d => d[w.key]);
+					});
+					chart.update();
+				});
+		</script>
+	}
+}

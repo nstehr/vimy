@@ -1,0 +1,229 @@
+package views
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+	"github.com/nstehr/vimy/vimy-core/agent"
+	"github.com/nstehr/vimy/vimy-core/rules"
+)
+
+templ WeightBar(label string, value float64) {
+	<div class="flex items-center gap-3 text-sm">
+		<span class="w-28 text-gray-400 truncate" title={ label }>{ label }</span>
+		<div class="flex-1 bg-gray-800 rounded-full h-3 overflow-hidden">
+			<div
+				class="h-full rounded-full bg-emerald-500"
+				style={ fmt.Sprintf("width: %.0f%%", value*100) }
+			></div>
+		</div>
+		<span class="w-12 text-right font-mono text-gray-300">{ fmt.Sprintf("%.2f", value) }</span>
+	</div>
+}
+
+templ DoctrineCard(rec *agent.DoctrineRecord) {
+	<div id="doctrine-current" hx-get="/api/doctrine/current" hx-trigger="every 5s" hx-swap="outerHTML">
+		if rec == nil {
+			<div class="bg-gray-900 border border-gray-800 rounded-xl p-6 text-gray-500">
+				No doctrine generated yet. Waiting for game connection...
+			</div>
+		} else {
+			<div class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-6">
+				<div class="flex items-start justify-between">
+					<div>
+						<h3 class="text-xl font-semibold text-emerald-400">{ rec.Doctrine.Name }</h3>
+						<p class="text-gray-400 mt-1 text-sm max-w-2xl">{ rec.Doctrine.Rationale }</p>
+					</div>
+					<div class="flex flex-col items-end gap-1">
+						<span class="text-sm text-gray-500 font-mono">Tick { fmt.Sprintf("%d", rec.Tick) }</span>
+						if rec.HasEnemyIntel {
+							<span class="text-xs font-medium text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full">Enemy Located</span>
+						} else {
+							<span class="text-xs font-medium text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full">No Enemy Intel</span>
+						}
+					</div>
+				</div>
+
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+					<!-- Economy & Tech -->
+					<div class="space-y-2">
+						<h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Economy &amp; Tech</h4>
+						@WeightBar("Economy", rec.Doctrine.EconomyPriority)
+						@WeightBar("Tech", rec.Doctrine.TechPriority)
+					</div>
+
+					<!-- Combat Composition -->
+					<div class="space-y-2">
+						<h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Combat Composition</h4>
+						@WeightBar("Infantry", rec.Doctrine.InfantryWeight)
+						@WeightBar("Vehicle", rec.Doctrine.VehicleWeight)
+						@WeightBar("Air", rec.Doctrine.AirWeight)
+						@WeightBar("Naval", rec.Doctrine.NavalWeight)
+					</div>
+
+					<!-- Aggression & Defense -->
+					<div class="space-y-2">
+						<h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Aggression &amp; Defense</h4>
+						@WeightBar("Aggression", rec.Doctrine.Aggression)
+						@WeightBar("Ground Def", rec.Doctrine.GroundDefensePriority)
+						@WeightBar("Air Def", rec.Doctrine.AirDefensePriority)
+					</div>
+
+					<!-- Squad Sizes -->
+					<div class="space-y-2">
+						<h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Squad Sizes</h4>
+						<div class="flex gap-6 text-sm">
+							<div class="text-gray-400">Ground: <span class="text-gray-100 font-mono">{ fmt.Sprintf("%d", rec.Doctrine.GroundAttackGroupSize) }</span></div>
+							<div class="text-gray-400">Air: <span class="text-gray-100 font-mono">{ fmt.Sprintf("%d", rec.Doctrine.AirAttackGroupSize) }</span></div>
+							<div class="text-gray-400">Naval: <span class="text-gray-100 font-mono">{ fmt.Sprintf("%d", rec.Doctrine.NavalAttackGroupSize) }</span></div>
+						</div>
+					</div>
+
+					<!-- Special -->
+					<div class="space-y-2">
+						<h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Special</h4>
+						@WeightBar("Scout", rec.Doctrine.ScoutPriority)
+						@WeightBar("Specialist Inf", rec.Doctrine.SpecializedInfantryWeight)
+						@WeightBar("Superweapon", rec.Doctrine.SuperweaponPriority)
+						@WeightBar("Capture", rec.Doctrine.CapturePriority)
+						@WeightBar("Transport", rec.Doctrine.TransportAssault)
+					</div>
+
+					<!-- Preferences -->
+					<div class="space-y-2">
+						<h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Preferences</h4>
+						if len(rec.Doctrine.PreferredInfantry) > 0 {
+							<div class="text-sm"><span class="text-gray-400">Infantry:</span> <span class="text-gray-200">{ strings.Join(rec.Doctrine.PreferredInfantry, ", ") }</span></div>
+						}
+						if len(rec.Doctrine.PreferredVehicle) > 0 {
+							<div class="text-sm"><span class="text-gray-400">Vehicle:</span> <span class="text-gray-200">{ strings.Join(rec.Doctrine.PreferredVehicle, ", ") }</span></div>
+						}
+						if len(rec.Doctrine.PreferredAircraft) > 0 {
+							<div class="text-sm"><span class="text-gray-400">Aircraft:</span> <span class="text-gray-200">{ strings.Join(rec.Doctrine.PreferredAircraft, ", ") }</span></div>
+						}
+						if len(rec.Doctrine.PreferredNaval) > 0 {
+							<div class="text-sm"><span class="text-gray-400">Naval:</span> <span class="text-gray-200">{ strings.Join(rec.Doctrine.PreferredNaval, ", ") }</span></div>
+						}
+						if len(rec.Doctrine.PreferredInfantry) == 0 && len(rec.Doctrine.PreferredVehicle) == 0 && len(rec.Doctrine.PreferredAircraft) == 0 && len(rec.Doctrine.PreferredNaval) == 0 {
+							<div class="text-sm text-gray-500">No unit preferences set</div>
+						}
+					</div>
+				</div>
+			</div>
+		}
+	</div>
+}
+
+// categoryOrder defines the display order for rule categories.
+var categoryOrder = map[string]int{
+	"setup":          0,
+	"economy":        1,
+	"power":          2,
+	"tech":           3,
+	"produce_building": 4,
+	"produce_defense": 5,
+	"produce_infantry": 6,
+	"produce_vehicle": 7,
+	"produce_air":    8,
+	"produce_naval":  9,
+	"combat":         10,
+	"micro":          11,
+	"recon":          12,
+	"capture":        13,
+	"superweapon":    14,
+}
+
+func groupAndSortRules(summaries []rules.RuleSummary) []categoryGroup {
+	grouped := make(map[string][]rules.RuleSummary)
+	for _, s := range summaries {
+		grouped[s.Category] = append(grouped[s.Category], s)
+	}
+	var groups []categoryGroup
+	for cat, rs := range grouped {
+		groups = append(groups, categoryGroup{Category: cat, Rules: rs})
+	}
+	sort.Slice(groups, func(i, j int) bool {
+		oi, oki := categoryOrder[groups[i].Category]
+		oj, okj := categoryOrder[groups[j].Category]
+		if !oki { oi = 100 }
+		if !okj { oj = 100 }
+		if oi != oj { return oi < oj }
+		return groups[i].Category < groups[j].Category
+	})
+	return groups
+}
+
+type categoryGroup struct {
+	Category string
+	Rules    []rules.RuleSummary
+}
+
+templ RulesPanel(summaries []rules.RuleSummary) {
+	<div id="rules-panel" hx-get="/api/rules" hx-trigger="every 10s" hx-swap="outerHTML">
+		if len(summaries) == 0 {
+			<div class="bg-gray-900 border border-gray-800 rounded-xl p-6 text-gray-500">
+				No rules compiled yet. Waiting for doctrine generation...
+			</div>
+		} else {
+			<div class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-2">
+				<div class="flex items-center gap-3 mb-4">
+					<h2 class="text-lg font-semibold text-gray-200">Compiled Rules</h2>
+					<span class="text-xs font-medium text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full">{ fmt.Sprintf("%d", len(summaries)) } rules</span>
+				</div>
+				for _, g := range groupAndSortRules(summaries) {
+					<details class="group border border-gray-800 rounded-lg">
+						<summary class="flex items-center justify-between cursor-pointer px-4 py-2 hover:bg-gray-800/50 rounded-lg">
+							<span class="text-sm font-medium text-gray-300">{ g.Category }</span>
+							<span class="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full">{ fmt.Sprintf("%d", len(g.Rules)) }</span>
+						</summary>
+						<div class="px-4 pb-3 space-y-2">
+							for _, r := range g.Rules {
+								<div class="flex items-start gap-3 text-sm border-t border-gray-800/50 pt-2">
+									<span class="font-mono text-xs text-gray-500 w-8 text-right shrink-0">{ fmt.Sprintf("%d", r.Priority) }</span>
+									<div class="flex-1 min-w-0">
+										<div class="flex items-center gap-2">
+											<span class="text-gray-200">{ r.Name }</span>
+											if r.Exclusive {
+												<span class="text-xs font-medium text-amber-400 bg-amber-400/10 px-1.5 py-0 rounded">excl</span>
+											}
+										</div>
+										<code class="block mt-1 text-xs text-gray-500 break-all">{ r.ConditionSrc }</code>
+									</div>
+								</div>
+							}
+						</div>
+					</details>
+				}
+			</div>
+		}
+	</div>
+}
+
+templ DirectiveForm(current string) {
+	<div id="directive-form" class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4">
+		<h2 class="text-lg font-semibold text-gray-200">Directive</h2>
+		<form
+			hx-put="/api/directive"
+			hx-target="#directive-form"
+			hx-swap="outerHTML"
+			hx-headers='{"Content-Type": "application/json"}'
+			hx-ext="json-enc"
+			class="flex flex-col gap-3"
+		>
+			<textarea
+				name="directive"
+				rows="3"
+				class="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent resize-y"
+				placeholder="Enter doctrine directive..."
+			>{ current }</textarea>
+			<div class="flex justify-end">
+				<button
+					type="submit"
+					class="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+				>
+					Update
+				</button>
+			</div>
+		</form>
+	</div>
+}

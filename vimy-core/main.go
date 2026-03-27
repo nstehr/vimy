@@ -13,6 +13,7 @@ import (
 	"github.com/nstehr/vimy/vimy-core/agent"
 	"github.com/nstehr/vimy/vimy-core/ipc"
 	"github.com/nstehr/vimy/vimy-core/rules"
+	"github.com/nstehr/vimy/vimy-core/server"
 )
 
 const banner = `
@@ -25,10 +26,14 @@ const banner = `
 
 Doctrine-Driven RTS Intelligence`
 
-var directive string
+var (
+	directive string
+	addr      string
+)
 
 func main() {
 	flag.StringVar(&directive, "doctrine", "", "initial doctrine directive (e.g. \"Blitzkrieg\", \"guerrilla warfare\")")
+	flag.StringVar(&addr, "addr", ":8080", "HTTP dashboard listen address")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
@@ -39,6 +44,29 @@ func main() {
 	fmt.Println(banner)
 
 	slog.Info("starting vimy", "doctrine", directive)
+
+	// Create engine and strategist at top level so the dashboard can access them
+	// before a game connection arrives.
+	engine, err := rules.NewEngine(rules.DefaultRules())
+	if err != nil {
+		slog.Error("failed to create rule engine", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("rule engine initialized", "rules", len(rules.DefaultRules()))
+
+	var strategist *agent.Strategist
+	if directive != "" {
+		strategist = agent.NewStrategist(engine, directive, 500)
+	}
+
+	// Start the HTTP dashboard.
+	srv := server.New(strategist)
+	go func() {
+		slog.Info("starting dashboard", "addr", addr)
+		if err := srv.Start(addr); err != nil {
+			slog.Error("dashboard server failed", "error", err)
+		}
+	}()
 
 	const socketPath = "/tmp/vimy.sock"
 
@@ -74,7 +102,7 @@ func main() {
 				}
 			}
 			slog.Info("new connection accepted")
-			go handleConn(ctx, conn)
+			go handleConn(ctx, conn, engine, strategist)
 		}
 	}()
 
@@ -82,20 +110,7 @@ func main() {
 	slog.Info("shutting down")
 }
 
-func handleConn(ctx context.Context, conn net.Conn) {
-	engine, err := rules.NewEngine(rules.DefaultRules())
-	if err != nil {
-		slog.Error("failed to create rule engine", "error", err)
-		conn.Close()
-		return
-	}
-	slog.Info("rule engine initialized", "rules", len(rules.DefaultRules()))
-
-	var strategist *agent.Strategist
-	if directive != "" {
-		strategist = agent.NewStrategist(engine, directive, 500)
-	}
-
+func handleConn(ctx context.Context, conn net.Conn, engine *rules.Engine, strategist *agent.Strategist) {
 	c := ipc.NewConnection(conn, nil)
 	a := agent.New(c, engine, strategist, ctx)
 	c.RegisterHandler(ipc.TypeHello, a.HandleHello)

@@ -1,0 +1,29 @@
+package views
+
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang="en" class="dark">
+	<head>
+		<meta charset="UTF-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+		<title>{ title }</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+		<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+		<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+		<style>
+			body { background: #030712; color: #f3f4f6; }
+		</style>
+	</head>
+	<body class="bg-gray-950 text-gray-100 min-h-screen">
+		<nav class="border-b border-gray-800 px-6 py-4">
+			<div class="max-w-7xl mx-auto flex items-center gap-3">
+				<span class="text-2xl font-bold tracking-tight text-emerald-400">VIMY</span>
+				<span class="text-gray-400 text-sm">Doctrine Dashboard</span>
+			</div>
+		</nav>
+		<main class="max-w-7xl mx-auto px-6 py-8">
+			{ children... }
+		</main>
+	</body>
+	</html>
+}
