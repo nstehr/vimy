@@ -197,7 +197,7 @@ The doctrine weights on their own can't affect the game. They need to be transla
 
 A rule is a simple pairing: a **condition** and an **action**. Each game tick, the engine evaluates every rule's condition against the current game state. If the condition is true, the action fires. Rules also have a **priority** (higher evaluates first) and a **category**. Within a category, a rule can be marked **exclusive**, meaning once it fires, no lower-priority rule in the same category can fire that tick. This prevents conflicts like trying to queue two buildings on the same production queue.
 
-Conditions are written using the [expr](https://github.com/expr-lang/expr) expression language. This gives us a concise, readable way to express game logic as boolean expressions. For example:
+Conditions are written using the [expr](https://github.com/expr-lang/expr) expression language. This lets us express game logic as boolean expressions. For example:
 
 ```
 HasUnit("mcv") && !HasBuilding("fact")
@@ -213,7 +213,7 @@ The agent doesn't need the LLM to play. On startup, a set of **seed rules** prov
 
 ### OpenRA Integration
 
-The agent communicates with the game through a [custom OpenRA mod](https://github.com/nstehr/vimy/tree/main/openra-mod). The mod connects to the agent over a Unix domain socket (`/tmp/vimy.sock`) using a simple protocol: length-prefixed JSON messages. Each game tick, the mod sends the full game state; the buildings, units, production queues, visible enemies, support powers, and map dimensions. The agent evaluates its rules against this state and sends back commands (produce, place building, attack-move, repair, etc.) over the same connection. I tried to keep this side of the design as "dumb" as possible. Just producing and sending game state and executing commands. I also tried to preserve things like the fog of war so that our agent is close to the human experience when playing the game.
+The agent communicates with the game through a [custom OpenRA mod](https://github.com/nstehr/vimy/tree/main/openra-mod). The mod connects to the agent over a Unix domain socket using length-prefixed JSON messages. Each game tick, the mod sends the full game state; the buildings, units, production queues, visible enemies, support powers, etc. The agent evaluates its rules against this state and sends back commands (produce, place building, attack-move, repair, etc.) over the same connection. I tried to keep this side of the design as "dumb" as possible. Just producing and sending game state and executing commands. I also tried to preserve things like the fog of war so that our agent is close to the human experience when playing the game.
 
 ### The Compiler
 
@@ -255,7 +255,7 @@ Once compiled, the new rule set is atomically swapped into the engine via `Engin
 
 ### Determinism Boundary
 
-The compiler enforces strict guarantees: all rule conditions are generated via templates so there are no invalid expressions, numeric values are bounded through `lerp` and validation, and the LLM never directly controls actions. Rule execution is fully deterministic per game tick.
+The compiler enforces strict guarantees: all rule conditions are generated via templates so there are no invalid expressions, numeric values are bounded through `lerp` and validation, and the LLM never directly controls actions.
 
 This means the LLM can suggest strategy, but it cannot produce undefined or unsafe behavior.
 
