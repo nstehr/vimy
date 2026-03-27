@@ -17,6 +17,7 @@ As the match unfolds, it adapts its strategy based on game events causing it to 
 
 An LLM generates a high-level strategy (e.g., "Blitzkrieg", "Turtle Defense") which is compiled into rules that execute at game speed. The bot plays immediately with seed rules on startup, and adapts its strategy as game events unfold.
 
+Check out: https://nstehr.github.io/vimy/ for a more detailed breakdown
 ```
 ┌──────────────────────────────┐
 │     LLM (OpenAI via BAML)    │
