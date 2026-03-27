@@ -9,6 +9,13 @@ title: ""
 LLMs have been improving exponentially over the last few years. While their capabilities have been growing, there are still two major
 challenges: determinism and latency. This project explores how to build an RTS agent that can leverage the strategic reasoning capabilities of LLMs while mitigating these challenges.
 
+## The Key Idea
+
+> The LLM never directly controls the game.
+> It produces a doctrine, a set of weights.
+
+That doctrine is compiled into deterministic rules, and only those rules are allowed to act.
+
 ## High Level Approach
 There have been examples of LLMs playing games and they have been capable of generating decent gameplay. An example of this is:
 [hallucinating-splines](https://github.com/andrewedunn/hallucinating-splines) where an agent can play Micropolis. This works because the game is turn based so
@@ -180,14 +187,7 @@ Outputting fixed weights helps to minimize hallucinations. We can programaticall
 
 From an implementation perspective, this is all implemented using [BAML](https://docs.boundaryml.com/home). BAML has been my go to tool for integrating LLMs. It uses code generation and structured inputs and outputs. It lets me treat interactions with LLMs as 'just another function call' and the structured input and output give an elegant way to model our interactions. You can see the BAML used for the agent [here](https://github.com/nstehr/vimy/blob/main/vimy-core/baml_src/doctrine.baml)
 
-From a gameplay perspective there is also one key insight. The agent keeps track of unit losses and other game details and feeds those back as part of the prompt. This forces the LLM to ground the initial directive against the realities of what is happening in the game. You can see in the screenshots below the changing of the output parameters as a game unfolds.
-
-### Screenshots
-![Screenshot 2]({{ site.baseurl }}/assets/Screenshot%202026-03-26%20at%2012.14.00%E2%80%AFPM.png)
-
-![Screenshot 3]({{ site.baseurl }}/assets/Screenshot%202026-03-26%20at%203.50.30%E2%80%AFPM.png)
-
-![Screenshot 1]({{ site.baseurl }}/assets/Screenshot%202026-03-26%20at%2012.13.53%E2%80%AFPM.png)
+From a gameplay perspective there is also one key insight. The agent keeps track of unit losses and other game details and feeds those back as part of the prompt. This forces the LLM to ground the initial directive against the realities of what is happening in the game.
 
 ## Rule Engine
 
@@ -213,7 +213,7 @@ The agent doesn't need the LLM to play. On startup, a set of **seed rules** prov
 
 ### OpenRA Integration
 
-The agent communicates with the game through a [custom OpenRA mod](https://github.com/nstehr/vimy/tree/main/openra-mod). The mod connects to the agent over a Unix domain socket (`/tmp/vimy.sock`) using a simple protocol: length-prefixed JSON messages. Each game tick, the mod sends the full game state — buildings, units, production queues, visible enemies, support powers, and map dimensions. The agent evaluates its rules against this state and sends back commands (produce, place building, attack-move, repair, etc.) over the same connection. I tried to keep this side of the design as "dumb" as possible. Just producing and sending game state and executing commands. I also tried to preserve things like the fog of war so that our agent is close to the human experience when playing the game.
+The agent communicates with the game through a [custom OpenRA mod](https://github.com/nstehr/vimy/tree/main/openra-mod). The mod connects to the agent over a Unix domain socket (`/tmp/vimy.sock`) using a simple protocol: length-prefixed JSON messages. Each game tick, the mod sends the full game state; the buildings, units, production queues, visible enemies, support powers, and map dimensions. The agent evaluates its rules against this state and sends back commands (produce, place building, attack-move, repair, etc.) over the same connection. I tried to keep this side of the design as "dumb" as possible. Just producing and sending game state and executing commands. I also tried to preserve things like the fog of war so that our agent is close to the human experience when playing the game.
 
 ### The Compiler
 
@@ -223,13 +223,60 @@ The compilation process uses **threshold gates** to decide which rules to includ
 
 The weights also control **numeric parameters** within rules. The `infantry_weight` scales the infantry production cap (from 8 units at 0.0 to 20 at 1.0). The `aggression` weight determines attack squad sizes and how eagerly units are sent forward. The `ground_defense_priority` controls how many defensive structures get built and how quickly units scramble to defend when the base is attacked.
 
-Once compiled, the new rule set is atomically swapped into the engine via `Engine.Swap()`, replacing the previous rules mid-game.
+To make this concrete, consider this snippet from a doctrine:
 
-The game state is treated as the input, and the rule engine takes that and evaluates and executes.
+```json
+{
+  "infantry_weight": 0.6,
+  "vehicle_weight": 0.3
+}
+```
 
-### Screenshots
+The compiler takes `infantry_weight: 0.6` and produces a rule like this:
 
-![Screenshot 4]({{ site.baseurl }}/assets/Screenshot%202026-03-26%20at%2010.27.04%E2%80%AFPM.png)
+```go
+if d.InfantryWeight > DoctrineEnabled { // 0.6 > 0.1, so this block runs
+    infantryCap := lerp(8, 20, d.InfantryWeight) // lerp(8, 20, 0.6) = 15
+    rules = append(rules, &Rule{
+        Name:         "produce-infantry",
+        Priority:     infantryBasePri,
+        Category:     CatProduceInfantry,
+        Exclusive:    true,
+        ConditionSrc: `HasRole("barracks") && !QueueBusy("Infantry") &&
+                       CanBuild("Infantry","e1") && UnitCount("e1") < 15 && Cash() >= 100`,
+        Action:       ActionProduceInfantry,
+    })
+}
+```
+
+The `0.6` weight became a concrete unit cap of 15 baked into a deterministic rule condition. At game time, the rule engine just evaluates `UnitCount("e1") < 15`
+
+Once compiled, the new rule set is atomically swapped into the engine via `Engine.Swap()`, replacing the previous rules mid-game. The game state is treated as the input, and the rule engine takes that and evaluates and executes.
+
+### Determinism Boundary
+
+The compiler enforces strict guarantees: all rule conditions are generated via templates so there are no invalid expressions, numeric values are bounded through `lerp` and validation, and the LLM never directly controls actions. Rule execution is fully deterministic per game tick.
+
+This means the LLM can suggest strategy, but it cannot produce undefined or unsafe behavior.
+
+## Dashboard
+
+To observe the system in action, the agent serves a live dashboard over HTTP. It provides a window into the agent's strategic thinking as a game unfolds.
+
+![Directive]({{ site.baseurl }}/assets/Screenshot%202026-03-26%20at%2012.14.00%E2%80%AFPM.png)
+
+The current doctrine panel shows the latest weights produced by the LLM, organized by category: economy and tech, combat composition, aggression and defense, squad sizes, and unit preferences. The rationale at the top explains *why* the LLM chose these weights given the current game state.  You can see some adaptation here as the LLM has detected that infantry is being hard-countered and is shifting toward naval and vehicle production.
+
+
+![Current Doctrine]({{ site.baseurl }}/assets/Screenshot%202026-03-26%20at%203.50.30%E2%80%AFPM.png)
+
+The doctrine evolution chart tracks how weights change over the course of a game. Each point is a new doctrine generated by the LLM in response to changing conditions.
+
+![Doctrine Evolution]({{ site.baseurl }}/assets/Screenshot%202026-03-26%20at%2012.13.53%E2%80%AFPM.png)
+
+The compiled rules panel shows the actual rules that the compiler produced from the current doctrine. Rules are grouped by category and you can see their priority, exclusivity, and the full `expr` condition strings.
+
+![Compiled Rules]({{ site.baseurl }}/assets/Screenshot%202026-03-26%20at%2010.27.04%E2%80%AFPM.png)
 
 ## Gameplay
 TODO
