@@ -1,10 +1,11 @@
 title: Vimy
-description: >-
-  Vimy project documentation
+description: "LLM Driven RTS Doctrine"
 baseurl: "/vimy"
 url: ""
 
 theme: minima
+
+header_pages: []
 
 plugins:
   - jekyll-feed
