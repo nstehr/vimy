@@ -203,7 +203,7 @@ Conditions are written using the [expr](https://github.com/expr-lang/expr) expre
 HasUnit("mcv") && !HasBuilding("fact")
 ```
 
-This checks if we have a Mobile Construction Vehicle but haven't deployed it yet. The expressions can call methods on a rich environment object that exposes game state queries like `Cash()`, `PowerExcess()`, `UnitCount("e1")`, `HasRole("barracks")`, `BaseUnderAttack()`, `len(IdleGroundUnits())`, and many more. The `HasRole` and `CanBuildRole` functions abstract away faction differences — `"war_factory"` maps to the correct internal building type whether you're playing Allied or Soviet.
+This checks if we have a Mobile Construction Vehicle but haven't deployed it yet. The expressions can call methods on a rich environment object that exposes game state queries like `Cash()`, `PowerExcess()`, `UnitCount("e1")`, `HasRole("barracks")`, `BaseUnderAttack()`, `len(IdleGroundUnits())`, and many more. The `HasRole` and `CanBuildRole` functions abstract away faction differences, for example  `"war_factory"` maps to the correct internal building type whether you're playing Allied or Soviet.
 
 When a condition evaluates to true, the corresponding action sends commands back to the game: produce a unit, place a building, attack-move units to a position, repair a structure, and so on.
 
