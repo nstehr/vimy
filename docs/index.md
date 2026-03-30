@@ -7,7 +7,7 @@ title: ""
 # LLM Driven RTS Doctrine
 
 LLMs have been improving exponentially over the last few years. While their capabilities have been growing, there are still two major
-challenges: determinism and latency. This project explores how to build an RTS agent that can leverage the strategic reasoning capabilities of LLMs while mitigating these challenges.
+challenges: determinism and latency. This project explores how to build an RTS agent to play OpenRA (open source version of red alert) that can leverage the strategic reasoning capabilities of LLMs while mitigating these challenges.
 
 ## The Key Idea
 
