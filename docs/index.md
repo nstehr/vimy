@@ -259,7 +259,7 @@ The compiler enforces strict guarantees: all rule conditions are generated via t
 
 Some actions, however, introduce controlled randomness for tactical variety. For example, defense building placement generates scored candidates and then picks randomly from the top options, so structures don't always land in the exact same spot. This keeps the bot's behavior less predictable to opponents while still being strategically sound.
 
-The LLM can suggest strategy, but it cannot produce undefined or unsafe behavior. The randomness lives only in the action layer and is bounded — it chooses *where* within a good set of options, never *what* to do.
+The LLM can suggest strategy, but it cannot produce undefined or unsafe behavior. The randomness lives only in the action layer and is bounded. The LLM chooses *where* within a good set of options, never *what* to do.
 
 ## Dashboard
 
