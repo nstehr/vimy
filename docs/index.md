@@ -7,23 +7,23 @@ title: ""
 # LLM Driven RTS Doctrine
 
 LLMs have been improving exponentially over the last few years. While their capabilities have been growing, there are still two major
-challenges: determinism and latency. This project explores how to build an RTS agent to play OpenRA (open source version of red alert) that can leverage the strategic reasoning capabilities of LLMs while mitigating these challenges.
+challenges: predictability and latency. This project explores how to build an RTS agent to play OpenRA (open source version of red alert) that can leverage the strategic reasoning capabilities of LLMs while mitigating these challenges.
 
 ## The Key Idea
 
 > The LLM never directly controls the game.
 > It produces a doctrine, a set of weights.
 
-That doctrine is compiled into deterministic rules, and only those rules are allowed to act.
+That doctrine is compiled into rules with deterministic conditions, and only those rules are allowed to act.
 
 ## High Level Approach
 There have been examples of LLMs playing games and they have been capable of generating decent gameplay. An example of this is:
 [hallucinating-splines](https://github.com/andrewedunn/hallucinating-splines) where an agent can play Micropolis. This works because the game is turn based so
 the latency doesn't impact it as much. For an RTS, having the agent involved in every game tick is not feasible.
 
-The other challenge is determinism. LLMs are not deterministic and can generate different outputs for the same input. This is a problem for an RTS agent because it needs to be able to predict the outcome of its actions and plan accordingly.
+The other challenge is predictability. LLMs are not deterministic and can generate different outputs for the same input. This is a problem for an RTS agent because it needs to be able to reliably translate strategy into consistent actions.
 
-To address these challenges, the approach taken in this project is to use the LLM to generate a high level doctrine (aggression, economy, unit composition, attack timing) and then compile that into deterministic rules that can be executed at game speed. The agent will play immediately with seed rules on startup and then adapt its strategy as game events unfold.
+To address these challenges, the approach taken in this project is to use the LLM to generate a high level doctrine (aggression, economy, unit composition, attack timing) and then compile that into rules that can be executed at game speed. The agent will play immediately with seed rules on startup and then adapt its strategy as game events unfold.
 
 ## Doctrine Generation
 The doctrine generation is done via goroutine in the agent. It is initially seeded at start up with a directive. The directive
@@ -191,7 +191,7 @@ From a gameplay perspective there is also one key insight. The agent keeps track
 
 ## Rule Engine
 
-The doctrine weights on their own can't affect the game. They need to be translated into concrete, deterministic actions that can execute at game speed. This is where the rule engine comes in.
+The doctrine weights on their own can't affect the game. They need to be translated into concrete rules that can execute at game speed. This is where the rule engine comes in.
 
 ### Rules
 
@@ -217,7 +217,7 @@ The agent communicates with the game through a [custom OpenRA mod](https://githu
 
 ### The Compiler
 
-The compiler is the bridge between the LLM's strategic reasoning and the rule engine's deterministic execution. It takes a doctrine (the set of weights from the LLM) and compiles it into a complete rule set.
+The compiler is the bridge between the LLM's strategic reasoning and the rule engine's execution. It takes a doctrine (the set of weights from the LLM) and compiles it into a complete rule set.
 
 The compilation process uses **threshold gates** to decide which rules to include. A weight below 0.1 means that capability is effectively disabled and no rules are generated for it. As the weight increases, more sophisticated rules are added. For example, if `vehicle_weight` is above 0.1, the compiler adds rules for a war factory and basic vehicle production. Above 0.2, siege vehicle rules are included. Above 0.3, a service depot is added for repairs.
 
@@ -249,15 +249,17 @@ if d.InfantryWeight > DoctrineEnabled { // 0.6 > 0.1, so this block runs
 }
 ```
 
-The `0.6` weight became a concrete unit cap of 15 baked into a deterministic rule condition. At game time, the rule engine just evaluates `UnitCount("e1") < 15`
+The `0.6` weight became a concrete unit cap of 15 baked into a rule condition. At game time, the rule engine just evaluates `UnitCount("e1") < 15`
 
 Once compiled, the new rule set is atomically swapped into the engine via `Engine.Swap()`, replacing the previous rules mid-game. The game state is treated as the input, and the rule engine takes that and evaluates and executes.
 
-### Determinism Boundary
+### Determinism and Controlled Randomness
 
-The compiler enforces strict guarantees: all rule conditions are generated via templates so there are no invalid expressions, numeric values are bounded through `lerp` and validation, and the LLM never directly controls actions.
+The compiler enforces strict guarantees: all rule conditions are generated via templates so there are no invalid expressions, numeric values are bounded through `lerp` and validation, and the LLM never directly controls actions. Condition evaluation is fully deterministic per game tick — given the same game state, the same rules will fire.
 
-This means the LLM can suggest strategy, but it cannot produce undefined or unsafe behavior.
+Some actions, however, introduce controlled randomness for tactical variety. For example, defense building placement generates scored candidates and then picks randomly from the top options, so structures don't always land in the exact same spot. This keeps the bot's behavior less predictable to opponents while still being strategically sound.
+
+The LLM can suggest strategy, but it cannot produce undefined or unsafe behavior. The randomness lives only in the action layer and is bounded — it chooses *where* within a good set of options, never *what* to do.
 
 ## Dashboard
 
