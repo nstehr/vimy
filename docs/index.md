@@ -255,7 +255,7 @@ Once compiled, the new rule set is atomically swapped into the engine via `Engin
 
 ### Determinism and Controlled Randomness
 
-The compiler enforces strict guarantees: all rule conditions are generated via templates so there are no invalid expressions, numeric values are bounded through `lerp` and validation, and the LLM never directly controls actions. Condition evaluation is fully deterministic per game tick — given the same game state, the same rules will fire.
+The compiler enforces strict guarantees: all rule conditions are generated via templates so there are no invalid expressions, numeric values are bounded through `lerp` and validation, and the LLM never directly controls actions. Given the same game state, the same rules will fire.
 
 Some actions, however, introduce controlled randomness for tactical variety. For example, defense building placement generates scored candidates and then picks randomly from the top options, so structures don't always land in the exact same spot. This keeps the bot's behavior less predictable to opponents while still being strategically sound.
 
