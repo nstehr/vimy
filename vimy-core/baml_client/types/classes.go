@@ -417,25 +417,29 @@ func (c GameEvent) BamlTypeName() string {
 }
 
 type GameSituation struct {
-	Tick              int64                `json:"tick"`
-	Phase             string               `json:"phase"`
-	Cash              int64                `json:"cash"`
-	Resources         int64                `json:"resources"`
-	Resource_capacity int64                `json:"resource_capacity"`
-	Power             PowerStatus          `json:"power"`
-	Buildings         []TypeCount          `json:"buildings"`
-	Units             []TypeCount          `json:"units"`
-	Idle_unit_count   int64                `json:"idle_unit_count"`
-	Active_production []ActiveProduction   `json:"active_production"`
-	Support_powers    []SupportPowerStatus `json:"support_powers"`
-	Superweapon_fires []SuperweaponFire    `json:"superweapon_fires"`
-	Squads            []SquadInfo          `json:"squads"`
-	Enemies_visible   int64                `json:"enemies_visible"`
-	Known_enemy_bases []EnemyBase          `json:"known_enemy_bases"`
-	Map_width         int64                `json:"map_width"`
-	Map_height        int64                `json:"map_height"`
-	Recent_events     []GameEvent          `json:"recent_events"`
-	Combat_stats      *CombatStats         `json:"combat_stats"`
+	Tick                 int64                `json:"tick"`
+	Phase                string               `json:"phase"`
+	Cash                 int64                `json:"cash"`
+	Resources            int64                `json:"resources"`
+	Resource_capacity    int64                `json:"resource_capacity"`
+	Power                PowerStatus          `json:"power"`
+	Buildings            []TypeCount          `json:"buildings"`
+	Units                []TypeCount          `json:"units"`
+	Idle_unit_count      int64                `json:"idle_unit_count"`
+	Active_production    []ActiveProduction   `json:"active_production"`
+	Support_powers       []SupportPowerStatus `json:"support_powers"`
+	Superweapon_fires    []SuperweaponFire    `json:"superweapon_fires"`
+	Squads               []SquadInfo          `json:"squads"`
+	Enemies_visible      int64                `json:"enemies_visible"`
+	Enemy_units          []TypeCount          `json:"enemy_units"`
+	Enemy_units_seen     []TypeCount          `json:"enemy_units_seen"`
+	Enemy_buildings      []TypeCount          `json:"enemy_buildings"`
+	Enemy_buildings_seen []TypeCount          `json:"enemy_buildings_seen"`
+	Known_enemy_bases    []EnemyBase          `json:"known_enemy_bases"`
+	Map_width            int64                `json:"map_width"`
+	Map_height           int64                `json:"map_height"`
+	Recent_events        []GameEvent          `json:"recent_events"`
+	Combat_stats         *CombatStats         `json:"combat_stats"`
 }
 
 func (c *GameSituation) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -494,6 +498,18 @@ func (c *GameSituation) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap
 		case "enemies_visible":
 			c.Enemies_visible = baml.Decode(valueHolder).Int()
 
+		case "enemy_units":
+			c.Enemy_units = baml.Decode(valueHolder).Interface().([]TypeCount)
+
+		case "enemy_units_seen":
+			c.Enemy_units_seen = baml.Decode(valueHolder).Interface().([]TypeCount)
+
+		case "enemy_buildings":
+			c.Enemy_buildings = baml.Decode(valueHolder).Interface().([]TypeCount)
+
+		case "enemy_buildings_seen":
+			c.Enemy_buildings_seen = baml.Decode(valueHolder).Interface().([]TypeCount)
+
 		case "known_enemy_bases":
 			c.Known_enemy_bases = baml.Decode(valueHolder).Interface().([]EnemyBase)
 
@@ -548,6 +564,14 @@ func (c GameSituation) Encode() (*cffi.HostValue, error) {
 	fields["squads"] = c.Squads
 
 	fields["enemies_visible"] = c.Enemies_visible
+
+	fields["enemy_units"] = c.Enemy_units
+
+	fields["enemy_units_seen"] = c.Enemy_units_seen
+
+	fields["enemy_buildings"] = c.Enemy_buildings
+
+	fields["enemy_buildings_seen"] = c.Enemy_buildings_seen
 
 	fields["known_enemy_bases"] = c.Known_enemy_bases
 

@@ -133,6 +133,27 @@ var categoryOrder = map[string]int{
 	"superweapon":    14,
 }
 
+func sortTypeCounts(tcs []agent.TypeCount) []agent.TypeCount {
+	out := make([]agent.TypeCount, len(tcs))
+	copy(out, tcs)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count != out[j].Count {
+			return out[i].Count > out[j].Count
+		}
+		return out[i].Type < out[j].Type
+	})
+	return out
+}
+
+func countOf(tcs []agent.TypeCount, typeName string) int {
+	for _, tc := range tcs {
+		if tc.Type == typeName {
+			return tc.Count
+		}
+	}
+	return 0
+}
+
 func groupAndSortRules(summaries []rules.RuleSummary) []categoryGroup {
 	grouped := make(map[string][]rules.RuleSummary)
 	for _, s := range summaries {
@@ -196,6 +217,80 @@ templ RulesPanel(summaries []rules.RuleSummary) {
 				}
 			</div>
 		}
+	</div>
+}
+
+templ BattlefieldPanel(status *agent.BattlefieldStatus) {
+	<div id="battlefield-panel" hx-get="/api/battlefield" hx-trigger="every 5s" hx-swap="outerHTML">
+		if status == nil {
+			<div class="bg-gray-900 border border-gray-800 rounded-xl p-6 text-gray-500">
+				No battlefield data yet. Waiting for game connection...
+			</div>
+		} else {
+			<div class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-6">
+				<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+					<!-- Our Losses -->
+					<div class="space-y-3">
+						<h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Our Losses</h3>
+						<div class="grid grid-cols-3 gap-4">
+							@lossCounter("Infantry", status.InfantryLost)
+							@lossCounter("Vehicles", status.VehiclesLost)
+							@lossCounter("Aircraft", status.AircraftLost)
+						</div>
+					</div>
+
+					<!-- Enemy Buildings -->
+					<div class="space-y-3">
+						<h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Enemy Buildings</h3>
+						if len(status.EnemyBuildingsSeen) == 0 && len(status.EnemyBuildings) == 0 {
+							<div class="text-sm text-gray-600">No enemy buildings observed</div>
+						} else {
+							<div class="space-y-1">
+								for _, tc := range sortTypeCounts(status.EnemyBuildingsSeen) {
+									@enemyTypeRow(tc.Type, tc.Count, countOf(status.EnemyBuildings, tc.Type))
+								}
+							</div>
+						}
+					</div>
+
+					<!-- Enemy Troops (spans full width) -->
+					<div class="md:col-span-2 space-y-3">
+						<h3 class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Enemy Troops</h3>
+						if len(status.EnemyUnitsSeen) == 0 && len(status.EnemyUnits) == 0 {
+							<div class="text-sm text-gray-600">No enemy troops observed</div>
+						} else {
+							<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-1">
+								for _, tc := range sortTypeCounts(status.EnemyUnitsSeen) {
+									@enemyTypeRow(tc.Type, tc.Count, countOf(status.EnemyUnits, tc.Type))
+								}
+							</div>
+						}
+					</div>
+				</div>
+			</div>
+		}
+	</div>
+}
+
+templ lossCounter(label string, count int) {
+	<div class="bg-gray-800 rounded-lg p-3 text-center">
+		<div class={ "text-2xl font-mono font-bold", templ.KV("text-red-400", count > 0), templ.KV("text-gray-600", count == 0) }>
+			{ fmt.Sprintf("%d", count) }
+		</div>
+		<div class="text-xs text-gray-500 mt-1">{ label }</div>
+	</div>
+}
+
+templ enemyTypeRow(typeName string, seenCount int, visibleCount int) {
+	<div class="flex items-center justify-between text-sm py-0.5">
+		<span class="text-gray-300 truncate">{ rules.DisplayName(typeName) }</span>
+		<div class="flex items-center gap-2 shrink-0">
+			if visibleCount > 0 {
+				<span class="text-emerald-400 font-mono text-xs">{ fmt.Sprintf("%d", visibleCount) } visible</span>
+				<span class="text-gray-600">/</span>
+			}
+			<span class="text-gray-500 font-mono text-xs">{ fmt.Sprintf("%d", seenCount) } seen</span>
+		</div>
 	</div>
 }
 

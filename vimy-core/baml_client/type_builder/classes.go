@@ -371,6 +371,22 @@ func (t *GameSituationClassView) PropertyEnemies_visible() (ClassPropertyView, e
 	return t.inner.Property("enemies_visible")
 }
 
+func (t *GameSituationClassView) PropertyEnemy_units() (ClassPropertyView, error) {
+	return t.inner.Property("enemy_units")
+}
+
+func (t *GameSituationClassView) PropertyEnemy_units_seen() (ClassPropertyView, error) {
+	return t.inner.Property("enemy_units_seen")
+}
+
+func (t *GameSituationClassView) PropertyEnemy_buildings() (ClassPropertyView, error) {
+	return t.inner.Property("enemy_buildings")
+}
+
+func (t *GameSituationClassView) PropertyEnemy_buildings_seen() (ClassPropertyView, error) {
+	return t.inner.Property("enemy_buildings_seen")
+}
+
 func (t *GameSituationClassView) PropertyKnown_enemy_bases() (ClassPropertyView, error) {
 	return t.inner.Property("known_enemy_bases")
 }

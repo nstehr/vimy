@@ -20,6 +20,23 @@ type DoctrineRecord struct {
 	HasEnemyIntel bool
 }
 
+// TypeCount is a type name with a count, used for display purposes.
+type TypeCount struct {
+	Type  string
+	Count int
+}
+
+// BattlefieldStatus summarises our losses and enemy composition for dashboard display.
+type BattlefieldStatus struct {
+	InfantryLost       int
+	VehiclesLost       int
+	AircraftLost       int
+	EnemyBuildings     []TypeCount // currently visible
+	EnemyBuildingsSeen []TypeCount // cumulative historical
+	EnemyUnits         []TypeCount // currently visible
+	EnemyUnitsSeen     []TypeCount // cumulative historical
+}
+
 // Strategist runs in the background, periodically consulting the LLM
 // to generate a doctrine and swap the rule engine's rule set.
 type Strategist struct {
@@ -108,6 +125,56 @@ func (s *Strategist) GetHistory() []DoctrineRecord {
 // GetRules returns the current compiled rules from the engine.
 func (s *Strategist) GetRules() []rules.RuleSummary {
 	return s.engine.Rules()
+}
+
+// GetBattlefieldStatus returns current losses and enemy composition.
+func (s *Strategist) GetBattlefieldStatus() *BattlefieldStatus {
+	s.mu.Lock()
+	losses := make(map[string]int, len(s.totalLosses))
+	for k, v := range s.totalLosses {
+		losses[k] = v
+	}
+	gs := s.latest
+	s.mu.Unlock()
+
+	if gs == nil {
+		return nil
+	}
+
+	status := &BattlefieldStatus{
+		InfantryLost: losses["infantry"],
+		VehiclesLost: losses["vehicle"],
+		AircraftLost: losses["aircraft"],
+	}
+
+	// Current enemy composition from game state.
+	enemyUnitCounts := make(map[string]int)
+	enemyBuildingCounts := make(map[string]int)
+	for _, e := range gs.Enemies {
+		if rules.IsKnownBuildingType(e.Type) {
+			enemyBuildingCounts[e.Type]++
+		} else {
+			enemyUnitCounts[e.Type]++
+		}
+	}
+	for t, c := range enemyUnitCounts {
+		status.EnemyUnits = append(status.EnemyUnits, TypeCount{Type: t, Count: c})
+	}
+	for t, c := range enemyBuildingCounts {
+		status.EnemyBuildings = append(status.EnemyBuildings, TypeCount{Type: t, Count: c})
+	}
+
+	// Historical sightings from engine memory.
+	s.engine.LockMemory()
+	for t, c := range rules.GetEnemyUnitsSeen(s.engine.Memory) {
+		status.EnemyUnitsSeen = append(status.EnemyUnitsSeen, TypeCount{Type: t, Count: c})
+	}
+	for t, c := range rules.GetEnemyBuildingsSeen(s.engine.Memory) {
+		status.EnemyBuildingsSeen = append(status.EnemyBuildingsSeen, TypeCount{Type: t, Count: c})
+	}
+	s.engine.UnlockMemory()
+
+	return status
 }
 
 // UpdateState stores the latest game state, detects events, and signals
@@ -379,6 +446,23 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 		Superweapon_fires: swFires,
 	}
 
+	// Enemy units and buildings summary (currently visible)
+	enemyUnitCounts := make(map[string]int)
+	enemyBuildingCounts := make(map[string]int)
+	for _, e := range gs.Enemies {
+		if rules.IsKnownBuildingType(e.Type) {
+			enemyBuildingCounts[e.Type]++
+		} else {
+			enemyUnitCounts[e.Type]++
+		}
+	}
+	for t, c := range enemyUnitCounts {
+		sit.Enemy_units = append(sit.Enemy_units, types.TypeCount{Type: t, Count: int64(c)})
+	}
+	for t, c := range enemyBuildingCounts {
+		sit.Enemy_buildings = append(sit.Enemy_buildings, types.TypeCount{Type: t, Count: int64(c)})
+	}
+
 	// Buildings summary
 	buildingCounts := make(map[string]int)
 	for _, b := range gs.Buildings {
@@ -437,6 +521,14 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 				Unit_count: int64(len(sq.UnitIDs)),
 			})
 		}
+	}
+
+	// Historical enemy sightings
+	for t, c := range rules.GetEnemyUnitsSeen(memory) {
+		sit.Enemy_units_seen = append(sit.Enemy_units_seen, types.TypeCount{Type: t, Count: int64(c)})
+	}
+	for t, c := range rules.GetEnemyBuildingsSeen(memory) {
+		sit.Enemy_buildings_seen = append(sit.Enemy_buildings_seen, types.TypeCount{Type: t, Count: int64(c)})
 	}
 
 	// Known enemy bases

@@ -1299,7 +1299,7 @@ func CompileDoctrine(d Doctrine) []*Rule {
 				Priority:     retreatPriority - 5,
 				Category:     "micro",
 				Exclusive:    false,
-				ConditionSrc: fmt.Sprintf(`SquadExists("%s") && SquadThreatRatio("%s", %.2f) > %.2f`, squadName, squadName, checkRadius, threatThreshold),
+				ConditionSrc: fmt.Sprintf(`SquadExists("%s") && SquadAwayFromBase("%s", %.2f) && SquadThreatRatio("%s", %.2f) > %.2f`, squadName, squadName, checkRadius, squadName, checkRadius, threatThreshold),
 				Action:       SquadDisengage(squadName),
 			})
 		}

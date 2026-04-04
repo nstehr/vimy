@@ -6,6 +6,12 @@ templ Dashboard(currentDirective string) {
 			<!-- Directive Panel -->
 			@DirectiveForm(currentDirective)
 
+			<!-- Battlefield Status -->
+			<div>
+				<h2 class="text-lg font-semibold text-gray-200 mb-4">Battlefield Status</h2>
+				@BattlefieldPanel(nil)
+			</div>
+
 			<!-- Current Doctrine Panel -->
 			<div>
 				<h2 class="text-lg font-semibold text-gray-200 mb-4">Current Doctrine</h2>

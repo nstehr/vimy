@@ -66,6 +66,10 @@ class GameSituation {
   superweapon_fires SuperweaponFire[]
   squads SquadInfo[]
   enemies_visible int
+  enemy_units TypeCount[] @description("Currently visible enemy units grouped by type code")
+  enemy_units_seen TypeCount[] @description("All enemy unit types ever observed, cumulative counts")
+  enemy_buildings TypeCount[] @description("Currently visible enemy buildings grouped by type code")
+  enemy_buildings_seen TypeCount[] @description("All enemy building types ever observed, cumulative counts")
   known_enemy_bases EnemyBase[]
   map_width int
   map_height int
@@ -136,6 +140,18 @@ function GenerateDoctrine(directive: string, situation: GameSituation, faction: 
     {% endif %}
 
     Enemies visible: {{ situation.enemies_visible }}
+    {% if situation.enemy_units %}
+    Enemy units (visible now):{% for u in situation.enemy_units %} {{ u.count }}x {{ u.type }}{% endfor %}
+    {% endif %}
+    {% if situation.enemy_units_seen %}
+    Enemy units (all observed):{% for u in situation.enemy_units_seen %} {{ u.count }}x {{ u.type }}{% endfor %}
+    {% endif %}
+    {% if situation.enemy_buildings %}
+    Enemy buildings (visible now):{% for b in situation.enemy_buildings %} {{ b.count }}x {{ b.type }}{% endfor %}
+    {% endif %}
+    {% if situation.enemy_buildings_seen %}
+    Enemy buildings (all observed):{% for b in situation.enemy_buildings_seen %} {{ b.count }}x {{ b.type }}{% endfor %}
+    {% endif %}
 
     {% if situation.known_enemy_bases %}
     {% for eb in situation.known_enemy_bases %}

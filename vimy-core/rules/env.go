@@ -993,13 +993,38 @@ func (e RuleEnv) SquadNeedsReinforcement(name string) bool {
 	return len(sq.UnitIDs) < sq.TargetSize
 }
 
+// SquadReadyRatio returns the fraction of *available* squad members that are
+// idle. Retreating/repairing units are excluded from both numerator and
+// denominator so they don't block the ratio — a cautious doctrine waiting
+// for 100% readiness can still attack with all healthy members while one
+// unit heals at the depot.
 func (e RuleEnv) SquadReadyRatio(name string) float64 {
 	squads := getSquads(e.Memory)
 	sq, ok := squads[name]
 	if !ok || len(sq.UnitIDs) == 0 {
 		return 0
 	}
-	return float64(e.SquadIdleCount(name)) / float64(len(sq.UnitIDs))
+	idleSet := make(map[int]bool)
+	for _, u := range e.State.Units {
+		if u.Idle {
+			idleSet[u.ID] = true
+		}
+	}
+	retreating := getRetreatingUnits(e.Memory)
+	idle, available := 0, 0
+	for _, id := range sq.UnitIDs {
+		if _, isRetreating := retreating[id]; isRetreating {
+			continue
+		}
+		available++
+		if idleSet[id] {
+			idle++
+		}
+	}
+	if available == 0 {
+		return 0
+	}
+	return float64(idle) / float64(available)
 }
 
 func (e RuleEnv) SquadIdleCount(name string) int {
@@ -1014,13 +1039,49 @@ func (e RuleEnv) SquadIdleCount(name string) int {
 			idleSet[u.ID] = true
 		}
 	}
+	retreating := getRetreatingUnits(e.Memory)
 	n := 0
 	for _, id := range sq.UnitIDs {
-		if idleSet[id] {
+		_, isRetreating := retreating[id]
+		if idleSet[id] && !isRetreating {
 			n++
 		}
 	}
 	return n
+}
+
+// SquadAwayFromBase returns true if the squad centroid is further than
+// radiusPct (fraction of map diagonal) from the building centroid.
+// Used to prevent disengage from firing when the squad is already home.
+func (e RuleEnv) SquadAwayFromBase(name string, radiusPct float64) bool {
+	squads := getSquads(e.Memory)
+	sq, ok := squads[name]
+	if !ok || len(sq.UnitIDs) == 0 {
+		return false
+	}
+	unitMap := make(map[int]model.Unit)
+	for _, u := range e.State.Units {
+		unitMap[u.ID] = u
+	}
+	sumX, sumY, n := 0, 0, 0
+	for _, id := range sq.UnitIDs {
+		if u, ok := unitMap[id]; ok {
+			sumX += u.X
+			sumY += u.Y
+			n++
+		}
+	}
+	if n == 0 {
+		return false
+	}
+	sx, sy := float64(sumX/n), float64(sumY/n)
+	bx, by := e.BuildingCentroid()
+	dx := sx - float64(bx)
+	dy := sy - float64(by)
+	mw := float64(e.State.MapWidth)
+	mh := float64(e.State.MapHeight)
+	radius := math.Sqrt(mw*mw+mh*mh) * radiusPct
+	return dx*dx+dy*dy > radius*radius
 }
 
 func (e RuleEnv) UnassignedIdleGround() []model.Unit {
@@ -1131,8 +1192,8 @@ var knownBuildingTypes = map[string]bool{
 	TeslaCoil: true, AAGun: true, SAMSite: true,
 }
 
-// isKnownBuildingType handles faction variants (e.g. "afld.ukraine" → "afld").
-func isKnownBuildingType(t string) bool {
+// IsKnownBuildingType handles faction variants (e.g. "afld.ukraine" → "afld").
+func IsKnownBuildingType(t string) bool {
 	base := strings.ToLower(t)
 	if idx := strings.IndexByte(base, '.'); idx >= 0 {
 		base = base[:idx]
@@ -1151,7 +1212,7 @@ func updateIntel(env RuleEnv) {
 	unitsByOwner := make(map[string]*acc)
 
 	for _, e := range env.State.Enemies {
-		if isKnownBuildingType(e.Type) {
+		if IsKnownBuildingType(e.Type) {
 			a, ok := buildingsByOwner[e.Owner]
 			if !ok {
 				a = &acc{}
@@ -1245,6 +1306,58 @@ func updateIntel(env RuleEnv) {
 	}
 
 	env.Memory["enemyBases"] = bases
+
+	// Accumulate historical enemy sightings.
+	// Units: deduplicate by ID — each unit is unique.
+	// Buildings: track high-water mark — max visible at once per type,
+	// since buildings get destroyed and rebuilt with new IDs.
+	seenIDs := getEnemySeenIDs(env.Memory)
+	unitsSeen := GetEnemyUnitsSeen(env.Memory)
+	buildingsSeen := GetEnemyBuildingsSeen(env.Memory)
+
+	curBuildingCounts := make(map[string]int)
+	for _, e := range env.State.Enemies {
+		if IsKnownBuildingType(e.Type) {
+			curBuildingCounts[e.Type]++
+		} else {
+			if seenIDs[e.ID] {
+				continue
+			}
+			seenIDs[e.ID] = true
+			unitsSeen[e.Type]++
+		}
+	}
+	for t, c := range curBuildingCounts {
+		if c > buildingsSeen[t] {
+			buildingsSeen[t] = c
+		}
+	}
+	env.Memory["enemySeenIDs"] = seenIDs
+	env.Memory["enemyUnitsSeen"] = unitsSeen
+	env.Memory["enemyBuildingsSeen"] = buildingsSeen
+}
+
+// GetEnemyUnitsSeen returns the cumulative count of enemy units observed by type.
+func GetEnemyUnitsSeen(memory map[string]any) map[string]int {
+	if v, ok := memory["enemyUnitsSeen"].(map[string]int); ok {
+		return v
+	}
+	return make(map[string]int)
+}
+
+// GetEnemyBuildingsSeen returns the cumulative count of enemy buildings observed by type.
+func GetEnemyBuildingsSeen(memory map[string]any) map[string]int {
+	if v, ok := memory["enemyBuildingsSeen"].(map[string]int); ok {
+		return v
+	}
+	return make(map[string]int)
+}
+
+func getEnemySeenIDs(memory map[string]any) map[int]bool {
+	if v, ok := memory["enemySeenIDs"].(map[int]bool); ok {
+		return v
+	}
+	return make(map[int]bool)
 }
 
 func getEnemyBases(memory map[string]any) map[string]EnemyBaseIntel {

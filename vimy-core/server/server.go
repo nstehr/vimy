@@ -37,6 +37,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/doctrine/current", s.handleCurrentDoctrine)
 	s.mux.HandleFunc("GET /api/doctrine/history", s.handleDoctrineHistory)
 	s.mux.HandleFunc("GET /api/rules", s.handleRules)
+	s.mux.HandleFunc("GET /api/battlefield", s.handleBattlefield)
 }
 
 func (s *Server) currentDirective() string {
@@ -89,6 +90,14 @@ func (s *Server) handleRules(w http.ResponseWriter, r *http.Request) {
 		summaries = s.strategist.GetRules()
 	}
 	views.RulesPanel(summaries).Render(r.Context(), w)
+}
+
+func (s *Server) handleBattlefield(w http.ResponseWriter, r *http.Request) {
+	var status *agent.BattlefieldStatus
+	if s.strategist != nil {
+		status = s.strategist.GetBattlefieldStatus()
+	}
+	views.BattlefieldPanel(status).Render(r.Context(), w)
 }
 
 type historyPoint struct {

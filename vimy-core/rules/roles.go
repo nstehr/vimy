@@ -142,6 +142,55 @@ const (
 	FlameTower  = "ftur" // Soviet Flame Tower
 )
 
+// displayNames maps internal type codes to human-readable names.
+var displayNames = map[string]string{
+	// Units
+	MCV: "MCV", Harvester: "Ore Harvester",
+	RifleInfantry: "Rifle Infantry", "e2": "Grenadier", RocketSoldier: "Rocket Soldier",
+	Engineer: "Engineer", Flamethrower: "Flamethrower", ShockTrooper: "Shock Trooper",
+	Tanya: "Tanya", Medic: "Medic", "dog": "Attack Dog", "spy": "Spy", "thf": "Thief",
+	LightTank: "Light Tank", MediumTank: "Medium Tank",
+	HeavyTank: "Heavy Tank", MammothTank: "Mammoth Tank",
+	V2Launcher: "V2 Launcher", APC: "APC", FlakTruck: "Flak Truck",
+	DemoTruck: "Demo Truck", Ranger: "Ranger", Artillery: "Artillery",
+	TeslaTank: "Tesla Tank", "mnly": "Minelayer",
+	BlackHawk: "Black Hawk", Longbow: "Longbow", MiG: "MiG", Yak: "Yak", Hind: "Hind",
+	"badr": "Badger Bomber", "u2": "Spy Plane", "camera": "Camera",
+	Submarine: "Submarine", MissileSub: "Missile Sub",
+	Gunboat: "Gunboat", Destroyer: "Destroyer", Cruiser: "Cruiser",
+	"tran": "Chinook Transport",
+	// Buildings
+	ConstructionYard: "Construction Yard", PowerPlant: "Power Plant",
+	AdvancedPower: "Advanced Power", Refinery: "Ore Refinery",
+	OreSilo: "Ore Silo", WarFactory: "War Factory",
+	AlliedBarracks: "Allied Barracks", SovietBarracks: "Soviet Barracks",
+	AlliedTechCenter: "Allied Tech Center", SovietTechCenter: "Soviet Tech Center",
+	RadarDome: "Radar Dome", Airfield: "Airfield", Helipad: "Helipad",
+	NavalYard: "Naval Yard", SubPen: "Sub Pen",
+	ServiceDepot: "Service Depot", MissileSilo: "Missile Silo",
+	IronCurtain: "Iron Curtain", GapGenerator: "Gap Generator",
+	// Defenses
+	Pillbox: "Pillbox", CamoPillbox: "Camo Pillbox", Turret: "Gun Turret",
+	TeslaCoil: "Tesla Coil", AAGun: "AA Gun", SAMSite: "SAM Site",
+	FlameTower: "Flame Tower",
+}
+
+// DisplayName returns a human-readable name for an internal type code.
+// Faction variants like "afld.ukraine" are resolved to the base type.
+// Unknown codes are returned as-is.
+func DisplayName(code string) string {
+	if name, ok := displayNames[code]; ok {
+		return name
+	}
+	// Handle faction variants (e.g. "afld.ukraine" → "afld")
+	if dot := strings.IndexByte(code, '.'); dot > 0 {
+		if name, ok := displayNames[code[:dot]]; ok {
+			return name
+		}
+	}
+	return code
+}
+
 // role abstracts over faction-specific type names. The compiler and env
 // methods use roles so rules say "barracks" instead of checking for both
 // "barr" (Soviet) and "tent" (Allied).
