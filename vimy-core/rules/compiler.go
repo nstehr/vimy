@@ -368,6 +368,15 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		Action:       ActionProduceIronCurtain,
 	})
 
+	rules = append(rules, &Rule{
+		Name:         "rebuild-kennel",
+		Priority:     780,
+		Category:     "rebuild",
+		Exclusive:    true,
+		ConditionSrc: `LostRole("kennel") && !QueueBusy("Building") && CanBuildRole("kennel") && Cash() >= 200`,
+		Action:       ActionProduceKennel,
+	})
+
 	// Scramble defense: any idle ground unit responds to a base attack,
 	// regardless of squad assignment. The dedicated squad-defend-base and
 	// defend-base rules handle their own pools; this catches idle attack-
@@ -807,6 +816,50 @@ func CompileDoctrine(d Doctrine) []*Rule {
 		}
 	}
 
+	// --- Specialist infantry prerequisite buildings ---
+	// When the doctrine prefers specialist infantry, ensure the prerequisite
+	// buildings are queued. Without these, the specialist units never appear
+	// in the Buildable list and production never fires.
+
+	if d.SpecializedInfantryWeight > DoctrineEnabled && prefersInfantry(d, "flamethrower") {
+		// Flamethrower (e4) requires a Flame Tower (ftur) — Defense queue.
+		rules = append(rules, &Rule{
+			Name:         "build-flame-tower-for-flamethrower",
+			Priority:     555,
+			Category:     "defense",
+			Exclusive:    true,
+			ConditionSrc: `!QueueBusy("Defense") && CanBuildRole("flame_tower") && !HasRole("flame_tower") && HasRole("barracks") && PowerExcess() >= 0 && Cash() >= 600`,
+			Action:       ActionProduceFlameTower,
+		})
+	}
+
+	if d.SpecializedInfantryWeight > DoctrineEnabled && prefersInfantry(d, "shock_trooper") {
+		// Shock Trooper (shok) requires Soviet Tech Center (stek) + Tesla Coil (tsla).
+
+		// Tech center — only add this rule if TechPriority didn't already
+		// include it (DoctrineHigh threshold). This avoids duplicate rules.
+		if d.TechPriority <= DoctrineHigh {
+			rules = append(rules, &Rule{
+				Name:         "build-tech-center-for-shock-trooper",
+				Priority:     560,
+				Category:     "economy",
+				Exclusive:    true,
+				ConditionSrc: `!QueueBusy("Building") && CanBuildRole("tech_center") && !HasRole("tech_center") && HasRole("radar") && PowerExcess() >= 0 && Cash() >= 1500`,
+				Action:       ActionProduceTechCenter,
+			})
+		}
+
+		// Tesla Coil — Defense queue prerequisite for shock troopers.
+		rules = append(rules, &Rule{
+			Name:         "build-tesla-coil-for-shock-trooper",
+			Priority:     555,
+			Category:     "defense",
+			Exclusive:    true,
+			ConditionSrc: `!QueueBusy("Defense") && CanBuildRole("tesla_coil") && !HasRole("tesla_coil") && HasRole("barracks") && PowerExcess() >= 0 && Cash() >= 800`,
+			Action:       ActionProduceTeslaCoil,
+		})
+	}
+
 	if d.SpecializedInfantryWeight > DoctrineEnabled {
 		specialistCap := lerp(1, 6, d.SpecializedInfantryWeight)
 		rules = append(rules, &Rule{
@@ -859,6 +912,54 @@ func CompileDoctrine(d Doctrine) []*Rule {
 				Action:       ActionProduceInfantry,
 			})
 		}
+	}
+
+	// Grenadier — Soviet anti-structure infantry, complements rifles.
+	if d.InfantryWeight > DoctrineModerate {
+		grenadierCap := lerp(2, 6, d.InfantryWeight)
+		rules = append(rules, &Rule{
+			Name:         "produce-grenadier",
+			Priority:     infantryBasePri - 2,
+			Category:     CatProduceInfantry,
+			Exclusive:    true,
+			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuildRole("grenadier") && RoleCount("grenadier") < %d && %s`, grenadierCap, buildCashCondition(160, infantrySavings)),
+			Action:       ActionProduceGrenadier,
+		})
+	}
+
+	// Attack dog — cheap, fast scout and anti-spy unit. Requires kennel (Soviet).
+	if d.InfantryWeight > DoctrineModerate {
+		// Build kennel when infantry doctrine warrants it.
+		rules = append(rules, &Rule{
+			Name:         "build-kennel",
+			Priority:     550,
+			Category:     "economy",
+			Exclusive:    true,
+			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("kennel") && !HasRole("kennel") && PowerExcess() >= 0 && Cash() >= 300`,
+			Action:       ActionProduceKennel,
+		})
+
+		dogCap := lerp(1, 3, d.InfantryWeight)
+		rules = append(rules, &Rule{
+			Name:         "produce-attack-dog",
+			Priority:     infantryBasePri - 8,
+			Category:     CatProduceInfantry,
+			Exclusive:    true,
+			ConditionSrc: fmt.Sprintf(`HasRole("kennel") && !QueueBusy("Infantry") && CanBuildRole("attack_dog") && RoleCount("attack_dog") < %d && %s`, dogCap, buildCashCondition(200, infantrySavings)),
+			Action:       ActionProduceAttackDog,
+		})
+	}
+
+	// Spy — Allied infiltration unit. Ties to capture/scout priority.
+	if d.CapturePriority > DoctrineModerate || d.ScoutPriority > DoctrineSignificant {
+		rules = append(rules, &Rule{
+			Name:         "produce-spy",
+			Priority:     440,
+			Category:     CatProduceInfantry,
+			Exclusive:    true,
+			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && HasRole("radar") && !QueueBusy("Infantry") && CanBuildRole("spy") && RoleCount("spy") < 1 && %s`, buildCashCondition(500, infantrySavings)),
+			Action:       ActionProduceSpy,
+		})
 	}
 
 	if d.VehicleWeight > DoctrineEnabled {
@@ -969,6 +1070,46 @@ func CompileDoctrine(d Doctrine) []*Rule {
 			Action:       ActionProduceFlakTruck,
 		})
 	}
+
+	// MAD tank — Soviet area-denial vehicle. Requires tech center + service depot.
+	// High aggression doctrines get more — it's a suicide unit for pushing.
+	if d.Aggression > DoctrineSignificant && d.TechPriority > DoctrineSignificant {
+		madCap := lerp(1, 2, d.Aggression)
+		rules = append(rules, &Rule{
+			Name:         "produce-mad-tank",
+			Priority:     455,
+			Category:     CatProduceVehicle,
+			Exclusive:    true,
+			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && HasRole("tech_center") && !QueueBusy("Vehicle") && CanBuildRole("mad_tank") && RoleCount("mad_tank") < %d && %s`, madCap, buildCashCondition(2000, savings)),
+			Action:       ActionProduceMADTank,
+		})
+	}
+
+	// Minelayer — area denial vehicle for defensive doctrines.
+	if d.GroundDefensePriority > DoctrineSignificant {
+		mineCap := lerp(1, 2, d.GroundDefensePriority)
+		rules = append(rules, &Rule{
+			Name:         "produce-minelayer",
+			Priority:     450,
+			Category:     CatProduceVehicle,
+			Exclusive:    true,
+			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && HasRole("service_depot") && !QueueBusy("Vehicle") && CanBuildRole("minelayer") && RoleCount("minelayer") < %d && %s`, mineCap, buildCashCondition(800, savings)),
+			Action:       ActionProduceMinelayer,
+		})
+
+	}
+
+	// Send idle minelayers to lay mines. Always present so minelayers
+	// produced by any path get utilized. With enemy intel, mines go
+	// toward the enemy; without, they form a defensive perimeter.
+	rules = append(rules, &Rule{
+		Name:         "lay-mines",
+		Priority:     300,
+		Category:     "minelayer",
+		Exclusive:    false,
+		ConditionSrc: `len(IdleMinelayers()) > 0`,
+		Action:       ActionLayMines,
+	})
 
 	if d.AirWeight > DoctrineModerate {
 		basicAirCap := lerp(1, 3, d.AirWeight)
@@ -1362,4 +1503,16 @@ func CompileDoctrine(d Doctrine) []*Rule {
 	})
 
 	return rules
+}
+
+// prefersInfantry returns true if the given role appears in the doctrine's
+// preferred infantry list. Used to gate prerequisite building rules on
+// specific specialist preferences.
+func prefersInfantry(d Doctrine, role string) bool {
+	for _, r := range d.PreferredInfantry {
+		if r == role {
+			return true
+		}
+	}
+	return false
 }

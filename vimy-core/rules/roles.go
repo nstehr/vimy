@@ -106,6 +106,11 @@ const (
 	Gunboat       = "pt"   // Allied Gunboat
 	Destroyer     = "dd"   // Allied Destroyer
 	Cruiser       = "ca"   // Allied Cruiser
+	Grenadier     = "e2"   // Grenadier (Soviet)
+	AttackDog     = "dog"  // Attack Dog
+	Spy           = "spy"  // Spy (Allied)
+	MADTank       = "qtnk" // MAD Tank (Soviet)
+	Minelayer     = "mnly" // Minelayer
 )
 
 // Building type constants — OpenRA internal names (not display names).
@@ -129,6 +134,7 @@ const (
 	MissileSilo      = "mslo" // Soviet Missile Silo (Nuke)
 	IronCurtain      = "iron" // Soviet Iron Curtain
 	GapGenerator     = "gap"  // Allied Gap Generator (creates shroud)
+	Kennel           = "kenn" // Soviet Kennel (dog production building)
 )
 
 // Defense type constants — OpenRA internal names.
@@ -146,14 +152,14 @@ const (
 var displayNames = map[string]string{
 	// Units
 	MCV: "MCV", Harvester: "Ore Harvester",
-	RifleInfantry: "Rifle Infantry", "e2": "Grenadier", RocketSoldier: "Rocket Soldier",
+	RifleInfantry: "Rifle Infantry", Grenadier: "Grenadier", RocketSoldier: "Rocket Soldier",
 	Engineer: "Engineer", Flamethrower: "Flamethrower", ShockTrooper: "Shock Trooper",
-	Tanya: "Tanya", Medic: "Medic", "dog": "Attack Dog", "spy": "Spy", "thf": "Thief",
+	Tanya: "Tanya", Medic: "Medic", AttackDog: "Attack Dog", Spy: "Spy", "thf": "Thief",
 	LightTank: "Light Tank", MediumTank: "Medium Tank",
 	HeavyTank: "Heavy Tank", MammothTank: "Mammoth Tank",
 	V2Launcher: "V2 Launcher", APC: "APC", FlakTruck: "Flak Truck",
 	DemoTruck: "Demo Truck", Ranger: "Ranger", Artillery: "Artillery",
-	TeslaTank: "Tesla Tank", "mnly": "Minelayer",
+	TeslaTank: "Tesla Tank", Minelayer: "Minelayer", MADTank: "MAD Tank",
 	BlackHawk: "Black Hawk", Longbow: "Longbow", MiG: "MiG", Yak: "Yak", Hind: "Hind",
 	"badr": "Badger Bomber", "u2": "Spy Plane", "camera": "Camera",
 	Submarine: "Submarine", MissileSub: "Missile Sub",
@@ -168,7 +174,7 @@ var displayNames = map[string]string{
 	RadarDome: "Radar Dome", Airfield: "Airfield", Helipad: "Helipad",
 	NavalYard: "Naval Yard", SubPen: "Sub Pen",
 	ServiceDepot: "Service Depot", MissileSilo: "Missile Silo",
-	IronCurtain: "Iron Curtain", GapGenerator: "Gap Generator",
+	IronCurtain: "Iron Curtain", GapGenerator: "Gap Generator", Kennel: "Kennel",
 	// Defenses
 	Pillbox: "Pillbox", CamoPillbox: "Camo Pillbox", Turret: "Gun Turret",
 	TeslaCoil: "Tesla Coil", AAGun: "AA Gun", SAMSite: "SAM Site",
@@ -245,6 +251,12 @@ var roles = map[string]role{
 	"advanced_power":    {queue: QueueBuilding, types: []string{AdvancedPower}},
 	"ore_silo":          {queue: QueueBuilding, types: []string{OreSilo}},
 	"harvester":         {queue: QueueVehicle, types: []string{Harvester}},
+	"grenadier":         {queue: QueueInfantry, types: []string{Grenadier}},
+	"attack_dog":        {queue: QueueInfantry, types: []string{AttackDog}},
+	"spy":               {queue: QueueInfantry, types: []string{Spy}},
+	"mad_tank":          {queue: QueueVehicle, types: []string{MADTank}},
+	"minelayer":         {queue: QueueVehicle, types: []string{Minelayer}},
+	"kennel":            {queue: QueueBuilding, types: []string{Kennel}},
 }
 
 // combatVehicleRoles determines production priority — first buildable role wins.
@@ -253,8 +265,10 @@ var roles = map[string]role{
 var combatVehicleRoles = []string{
 	"heavy_tank", "medium_tank", "tesla_tank", "light_tank",
 	"v2_launcher", "artillery", "ranger",
-	"flak_truck", "demo_truck",
+	"flak_truck", "demo_truck", "mad_tank",
 }
+// Note: minelayer is excluded from combatVehicleRoles — it has dedicated
+// production and mine-laying rules gated on GroundDefensePriority.
 
 // combatAircraftRoles: advanced (longbow/MiG) preferred over basic (blackhawk/yak).
 var combatAircraftRoles = []string{

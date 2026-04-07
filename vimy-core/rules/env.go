@@ -284,7 +284,7 @@ func (e RuleEnv) BuildingCentroid() (int, int) {
 // isInfantry returns true for infantry-class units.
 func isInfantry(u model.Unit) bool {
 	infantryTypes := []string{RifleInfantry, RocketSoldier, Engineer, Flamethrower,
-		ShockTrooper, Tanya, Medic}
+		ShockTrooper, Tanya, Medic, Grenadier, AttackDog, Spy}
 	for _, t := range infantryTypes {
 		if matchesType(u.Type, t) {
 			return true
@@ -489,7 +489,7 @@ func (e RuleEnv) IdleGroundUnits() []model.Unit {
 		if !u.Idle {
 			continue
 		}
-		if matchesType(u.Type, Harvester) || matchesType(u.Type, MCV) || matchesType(u.Type, Ranger) || matchesType(u.Type, Engineer) || matchesType(u.Type, APC) {
+		if matchesType(u.Type, Harvester) || matchesType(u.Type, MCV) || matchesType(u.Type, Ranger) || matchesType(u.Type, Engineer) || matchesType(u.Type, APC) || matchesType(u.Type, Minelayer) {
 			continue
 		}
 		if scoutID != 0 && u.ID == scoutID {
@@ -642,6 +642,26 @@ func (e RuleEnv) IdleScouts() []model.Unit {
 		}
 	}
 	return out
+}
+
+// IdleMinelayers returns idle minelayer units that haven't been given a
+// minefield order yet (tracked via memory to avoid re-issuing every tick).
+func (e RuleEnv) IdleMinelayers() []model.Unit {
+	assigned := getMinelayerAssignments(e.Memory)
+	var out []model.Unit
+	for _, u := range e.State.Units {
+		if u.Idle && matchesType(u.Type, Minelayer) && !assigned[u.ID] {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+func getMinelayerAssignments(memory map[string]any) map[int]bool {
+	if v, ok := memory["minelayerAssigned"].(map[int]bool); ok {
+		return v
+	}
+	return make(map[int]bool)
 }
 
 // designateScout assigns the first unassigned idle light tank as the scout.
@@ -1179,7 +1199,7 @@ type EnemyBaseIntel struct {
 // unit sightings might just be an attack force passing through.
 var knownBuildingTypes = map[string]bool{
 	// Production
-	ConstructionYard: true, SovietBarracks: true, AlliedBarracks: true, WarFactory: true, "kenn": true,
+	ConstructionYard: true, SovietBarracks: true, AlliedBarracks: true, WarFactory: true, Kennel: true,
 	Airfield: true, Helipad: true, NavalYard: true, SubPen: true,
 	// Economy
 	PowerPlant: true, AdvancedPower: true, Refinery: true, OreSilo: true,

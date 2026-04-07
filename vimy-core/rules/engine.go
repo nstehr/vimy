@@ -59,6 +59,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	updateIntel(env)
 	updateBuiltRoles(env)
 	updateSquads(env)
+	updateMinelayers(env)
 	designateScout(env)
 	logMilitaryDiagnostics(env)
 	logProductionDiagnostics(env)

@@ -504,6 +504,32 @@ func ActionProduceTechCenter(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
+func ActionProduceFlameTower(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("flame_tower")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing flame tower", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueDefense,
+		Item:  item,
+		Count: 1,
+	})
+}
+
+func ActionProduceTeslaCoil(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("tesla_coil")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing tesla coil", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueDefense,
+		Item:  item,
+		Count: 1,
+	})
+}
+
 func ActionProduceHeavyVehicle(env RuleEnv, conn *ipc.Connection) error {
 	for _, role := range []string{"heavy_tank", "medium_tank"} {
 		item := env.BuildableType(role)
@@ -1119,6 +1145,174 @@ func ActionProduceAPC(env RuleEnv, conn *ipc.Connection) error {
 		Item:  item,
 		Count: 1,
 	})
+}
+
+func ActionProduceGrenadier(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("grenadier")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing grenadier", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueInfantry,
+		Item:  item,
+		Count: 1,
+	})
+}
+
+func ActionProduceAttackDog(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("attack_dog")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing attack dog", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueInfantry,
+		Item:  item,
+		Count: 1,
+	})
+}
+
+func ActionProduceSpy(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("spy")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing spy", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueInfantry,
+		Item:  item,
+		Count: 1,
+	})
+}
+
+func ActionProduceMADTank(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("mad_tank")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing MAD tank", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueVehicle,
+		Item:  item,
+		Count: 1,
+	})
+}
+
+func ActionProduceMinelayer(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("minelayer")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing minelayer", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueVehicle,
+		Item:  item,
+		Count: 1,
+	})
+}
+
+func ActionProduceKennel(env RuleEnv, conn *ipc.Connection) error {
+	item := env.BuildableType("kennel")
+	if item == "" {
+		return nil
+	}
+	slog.Debug("producing kennel", "item", item)
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: QueueBuilding,
+		Item:  item,
+		Count: 1,
+	})
+}
+
+// ActionLayMines sends idle minelayers to lay mines. With enemy intel, mines
+// are placed ~25-40% of the way toward the nearest known enemy base. Without
+// intel, mines are placed in a defensive perimeter around the base.
+// Each minelayer is tracked in memory so we don't re-issue orders every tick.
+// The minelayer auto-rearms at the service depot when out of ammo (handled
+// by OpenRA's LayMines activity).
+func ActionLayMines(env RuleEnv, conn *ipc.Connection) error {
+	miners := env.IdleMinelayers()
+	if len(miners) == 0 {
+		return nil
+	}
+
+	centX, centY := env.BuildingCentroid()
+	assigned := getMinelayerAssignments(env.Memory)
+
+	base := env.NearestEnemyBase()
+
+	for i, m := range miners {
+		var tx, ty int
+
+		if base != nil {
+			// Mine toward the enemy — block the most likely attack path.
+			fraction := 0.25 + 0.05*float64(i)
+			if fraction > 0.40 {
+				fraction = 0.40
+			}
+			tx = centX + int(float64(base.X-centX)*fraction)
+			ty = centY + int(float64(base.Y-centY)*fraction)
+		} else {
+			// No intel — lay a defensive perimeter around the base.
+			// Place mines at ~15% of map diagonal from base centroid,
+			// cycling through compass directions for each minelayer.
+			mw := float64(env.State.MapWidth)
+			mh := float64(env.State.MapHeight)
+			perimeterDist := math.Sqrt(mw*mw+mh*mh) * 0.15
+			angle := float64(i) * (2 * math.Pi / 4) // N, E, S, W
+			tx = centX + int(perimeterDist*math.Cos(angle))
+			ty = centY + int(perimeterDist*math.Sin(angle))
+		}
+
+		// Clamp to map bounds.
+		tx = max(1, min(tx, env.State.MapWidth-2))
+		ty = max(1, min(ty, env.State.MapHeight-2))
+
+		// Lay a small 3x3 rectangular minefield centered on target.
+		const radius = 1
+		startX := max(0, tx-radius)
+		startY := max(0, ty-radius)
+		endX := min(env.State.MapWidth-1, tx+radius)
+		endY := min(env.State.MapHeight-1, ty+radius)
+
+		slog.Debug("laying minefield", "minelayer", m.ID, "start_x", startX, "start_y", startY, "end_x", endX, "end_y", endY)
+		if err := conn.Send(ipc.TypePlaceMinefield, ipc.PlaceMinefieldCommand{
+			ActorID: uint32(m.ID),
+			StartX:  startX,
+			StartY:  startY,
+			EndX:    endX,
+			EndY:    endY,
+		}); err != nil {
+			return err
+		}
+
+		assigned[m.ID] = true
+	}
+
+	env.Memory["minelayerAssigned"] = assigned
+	return nil
+}
+
+// updateMinelayers clears assignments for dead or idle-at-base minelayers so
+// they can be re-tasked. Called each tick from the engine.
+func updateMinelayers(env RuleEnv) {
+	assigned := getMinelayerAssignments(env.Memory)
+	if len(assigned) == 0 {
+		return
+	}
+
+	alive := make(map[int]bool)
+	for _, u := range env.State.Units {
+		alive[u.ID] = true
+	}
+
+	for id := range assigned {
+		if !alive[id] {
+			delete(assigned, id)
+		}
+	}
+	env.Memory["minelayerAssigned"] = assigned
 }
 
 func ActionLoadEngineerIntoAPC(env RuleEnv, conn *ipc.Connection) error {

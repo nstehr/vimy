@@ -60,6 +60,9 @@ namespace OpenRA.Mods.Vimy
 					case "support_power":
 						ExecuteSupportPower(dataJson, world, bot);
 						break;
+					case "place_minefield":
+						ExecutePlaceMinefield(dataJson, world, bot);
+						break;
 					default:
 						Log.Write("debug", $"CommandExecutor: unknown command type '{commandType}'");
 						break;
@@ -424,6 +427,37 @@ namespace OpenRA.Mods.Vimy
 			});
 
 			Log.Write("debug", $"CommandExecutor: support_power '{powerKey}' at ({x},{y})");
+		}
+
+		static void ExecutePlaceMinefield(string dataJson, World world, IBot bot)
+		{
+			using var doc = JsonDocument.Parse(dataJson);
+			var root = doc.RootElement;
+
+			var actorId = root.GetProperty("actor_id").GetUInt32();
+			var startX = root.GetProperty("start_x").GetInt32();
+			var startY = root.GetProperty("start_y").GetInt32();
+			var endX = root.GetProperty("end_x").GetInt32();
+			var endY = root.GetProperty("end_y").GetInt32();
+
+			var actor = world.GetActorById(actorId);
+			if (!IsValidOwnedActor(actor, bot))
+			{
+				Log.Write("debug", $"CommandExecutor: place_minefield — invalid actor {actorId}");
+				return;
+			}
+
+			var startCell = new CPos(startX, startY);
+			var endCell = new CPos(endX, endY);
+
+			bot.QueueOrder(new Order("PlaceMinefield", null,
+				Target.FromCell(world, endCell), false,
+				groupedActors: new[] { actor })
+			{
+				ExtraLocation = startCell
+			});
+
+			Log.Write("debug", $"CommandExecutor: place_minefield actor {actorId} from ({startX},{startY}) to ({endX},{endY})");
 		}
 
 		static ProductionQueue FindQueue(IBot bot, string queueType)
