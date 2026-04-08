@@ -281,7 +281,10 @@ The compiled rules panel shows the actual rules that the compiler produced from 
 ![Compiled Rules]({{ site.baseurl }}/assets/Screenshot%202026-03-26%20at%2010.27.04%E2%80%AFPM.png)
 
 ## Gameplay
-TODO
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/sJPzHaZ5gmM" frameborder="0" allowfullscreen></iframe>
+
+<iframe width="560" height="315" src="https://www.youtube.com/embed/k5TT9POmJbs" frameborder="0" allowfullscreen></iframe>
 
 ## Final Thoughts
 So far this system has been working very well, or at least well enough to produce interesting matches for me to watch as Vimy takes on the built in AI. One of the main pieces of work is the tweaking of the engine itself. To make sure it covers scenarios properly and has the right set of rules and the environment has the right set of functions to allow the rules to be expressive enough. From an RTS perspective, one of the main downsides is that we do give up some of the micro that is a key element of these types of games. We can model some of it into the rule engine (return to base when damaged, targeting rules for units and buildings) but unit level individual commands are not really feasible with this architecture. The upside is that we get a strategic agent that can adapt its strategy mid game and can leverage the LLM's reasoning capabilities without being hampered by latency or hallucinations.
