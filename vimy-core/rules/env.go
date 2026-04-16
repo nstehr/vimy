@@ -26,6 +26,14 @@ type RuleEnv struct {
 	Memory      map[string]any
 	Terrain     *model.TerrainGrid
 	Preferences UnitPreferences
+	TargetBias  TargetBias
+}
+
+func biasOr1(b float64) float64 {
+	if b == 0 {
+		return 1.0
+	}
+	return b
 }
 
 func (e RuleEnv) HasUnit(t string) bool      { return containsType(e.State.Units, t) }
@@ -262,6 +270,16 @@ func (e RuleEnv) ServiceDepotPos() (int, int, bool) {
 func (e RuleEnv) ServiceDepot() *model.Building {
 	for i := range e.State.Buildings {
 		if matchesType(e.State.Buildings[i].Type, ServiceDepot) {
+			return &e.State.Buildings[i]
+		}
+	}
+	return nil
+}
+
+// Airfield returns the first airfield or helipad building, or nil if none exists.
+func (e RuleEnv) Airfield() *model.Building {
+	for i := range e.State.Buildings {
+		if matchesType(e.State.Buildings[i].Type, Airfield) || matchesType(e.State.Buildings[i].Type, Helipad) {
 			return &e.State.Buildings[i]
 		}
 	}
@@ -579,10 +597,14 @@ func (e RuleEnv) IdleAPCs() []model.Unit {
 	return out
 }
 
+func isTransport(u model.Unit) bool {
+	return matchesType(u.Type, APC) || matchesType(u.Type, Ranger)
+}
+
 func (e RuleEnv) IdleLoadedAPCs() []model.Unit {
 	var out []model.Unit
 	for _, u := range e.State.Units {
-		if u.Idle && matchesType(u.Type, APC) && u.CargoCount > 0 {
+		if u.Idle && isTransport(u) && u.CargoCount > 0 {
 			out = append(out, u)
 		}
 	}
@@ -592,11 +614,21 @@ func (e RuleEnv) IdleLoadedAPCs() []model.Unit {
 func (e RuleEnv) IdleEmptyAPCs() []model.Unit {
 	var out []model.Unit
 	for _, u := range e.State.Units {
-		if u.Idle && matchesType(u.Type, APC) && u.CargoCount == 0 {
+		if u.Idle && isTransport(u) && u.CargoCount == 0 {
 			out = append(out, u)
 		}
 	}
 	return out
+}
+
+// CanBuildTransport returns true if the faction can build any transport (APC or Ranger).
+func (e RuleEnv) CanBuildTransport() bool {
+	return e.CanBuildRole("apc") || e.CanBuildRole("ranger")
+}
+
+// TransportCount returns the total number of APCs and Rangers.
+func (e RuleEnv) TransportCount() int {
+	return e.RoleCount("apc") + e.RoleCount("ranger")
 }
 
 func (e RuleEnv) IdleRangers() []model.Unit {
@@ -828,6 +860,10 @@ func (e RuleEnv) BestAirTarget() *model.Enemy {
 		if val == 0 {
 			val = airTargetValueDefault
 		}
+		switch base {
+		case TeslaCoil, Turret, Pillbox, CamoPillbox, FlameTower:
+			val *= biasOr1(e.TargetBias.AirGroundDef)
+		}
 		hpRatio := float64(en.HP) / float64(en.MaxHP)
 		hpBonus := 2.0 - hpRatio // 1.0 (full HP) to 2.0 (near-death)
 
@@ -897,6 +933,10 @@ func (e RuleEnv) BestGroundTarget() *model.Enemy {
 		val := groundTargetValue[base]
 		if val == 0 {
 			val = groundTargetValueDefault
+		}
+		switch base {
+		case AAGun, SAMSite:
+			val *= biasOr1(e.TargetBias.GroundAA)
 		}
 		hpRatio := float64(en.HP) / float64(en.MaxHP)
 		hpBonus := 2.0 - hpRatio // 1.0 (full HP) to 2.0 (near-death)

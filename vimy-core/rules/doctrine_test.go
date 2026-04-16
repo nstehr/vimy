@@ -144,4 +144,46 @@ func TestValidate(t *testing.T) {
 	if d2.NavalAttackGroupSize != 10 {
 		t.Errorf("NavalAttackGroupSize = %d, want 10 (clamped)", d2.NavalAttackGroupSize)
 	}
+
+	d7 := Doctrine{GroundTargetAAPriority: 1.5, AirTargetGroundDefPriority: -0.5}
+	d7.Validate()
+	if d7.GroundTargetAAPriority != 1.0 {
+		t.Errorf("GroundTargetAAPriority = %f, want 1.0 (clamped)", d7.GroundTargetAAPriority)
+	}
+	if d7.AirTargetGroundDefPriority != 0.0 {
+		t.Errorf("AirTargetGroundDefPriority = %f, want 0.0 (clamped)", d7.AirTargetGroundDefPriority)
+	}
+}
+
+func TestComputeTargetBias(t *testing.T) {
+	t.Run("zero priorities produce 1.0 multipliers", func(t *testing.T) {
+		b := ComputeTargetBias(Doctrine{})
+		if b.GroundAA != 1.0 {
+			t.Errorf("GroundAA = %f, want 1.0", b.GroundAA)
+		}
+		if b.AirGroundDef != 1.0 {
+			t.Errorf("AirGroundDef = %f, want 1.0", b.AirGroundDef)
+		}
+	})
+
+	t.Run("max priorities produce max multipliers", func(t *testing.T) {
+		b := ComputeTargetBias(Doctrine{
+			GroundTargetAAPriority:     1.0,
+			AirTargetGroundDefPriority: 1.0,
+		})
+		if b.GroundAA != 4.0 {
+			t.Errorf("GroundAA = %f, want 4.0", b.GroundAA)
+		}
+		if b.AirGroundDef != 3.0 {
+			t.Errorf("AirGroundDef = %f, want 3.0", b.AirGroundDef)
+		}
+	})
+
+	t.Run("mid priority produces mid multiplier", func(t *testing.T) {
+		b := ComputeTargetBias(Doctrine{GroundTargetAAPriority: 0.5})
+		// lerpf(1.0, 4.0, 0.5) = 2.5
+		if b.GroundAA != 2.5 {
+			t.Errorf("GroundAA = %f, want 2.5", b.GroundAA)
+		}
+	})
 }

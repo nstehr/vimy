@@ -5,6 +5,7 @@ const (
 	TypeHello     = "hello"
 	TypeAck       = "ack"
 	TypeGameState = "game_state"
+	TypeGameEnd   = "game_end"
 )
 
 type HelloMessage struct {
@@ -21,6 +22,10 @@ type TerrainData struct {
 	CellW int   `json:"cellW"`
 	CellH int   `json:"cellH"`
 	Grid  []int `json:"grid"`
+}
+
+type GameEndMessage struct {
+	Winner string `json:"winner"` // player name of the winner
 }
 
 type AckMessage struct {

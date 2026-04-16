@@ -67,7 +67,7 @@ func (c *doctrineCompiler) addCoreRules() {
 			Priority:     850,
 			Category:     "capture",
 			Exclusive:    false,
-			ConditionSrc: `CapturableCount() > 0 && len(IdleEngineers()) > 0 && (!CanBuildRole("apc") || EngineerNearCapturable())`,
+			ConditionSrc: `CapturableCount() > 0 && len(IdleEngineers()) > 0 && (!CanBuildTransport() || EngineerNearCapturable())`,
 			Action:       ActionCaptureBuilding,
 		})
 
@@ -85,7 +85,7 @@ func (c *doctrineCompiler) addCoreRules() {
 			Priority:     470,
 			Category:     CatProduceVehicle,
 			Exclusive:    true,
-			ConditionSrc: `CapturableCount() > 0 && RoleCount("engineer") > 0 && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("apc") && RoleCount("apc") < 1 && Cash() >= 800`,
+			ConditionSrc: `CapturableCount() > 0 && RoleCount("engineer") > 0 && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildTransport() && TransportCount() < 1 && Cash() >= 800`,
 			Action:       ActionProduceAPC,
 		})
 
@@ -118,12 +118,15 @@ func (c *doctrineCompiler) addCoreRules() {
 		assaultAPCCap := lerp(1, 3, c.d.TransportAssault)
 
 		// Produce APCs for assault (separate cap from capture APCs).
+		// Priority must exceed produce-vehicle (480) so combat tanks don't
+		// monopolize the Vehicle queue and starve APC production.
+		assaultAPCPri := lerp(475, 490, c.d.TransportAssault)
 		c.rules = append(c.rules, &Rule{
 			Name:         "produce-assault-apc",
-			Priority:     465,
+			Priority:     assaultAPCPri,
 			Category:     CatProduceVehicle,
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("apc") && RoleCount("apc") < %d && %s`,
+			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildTransport() && TransportCount() < %d && %s`,
 				assaultAPCCap, buildCashCondition(800, c.savings)),
 			Action: ActionProduceAPC,
 		})

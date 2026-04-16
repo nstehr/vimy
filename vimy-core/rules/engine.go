@@ -32,6 +32,7 @@ type Engine struct {
 	memMu   sync.Mutex // guards all reads/writes to Memory
 	Terrain *model.TerrainGrid
 	prefs   UnitPreferences
+	bias    TargetBias
 }
 
 // NewEngine compiles all rule conditions into expr bytecode and sorts by priority.
@@ -55,7 +56,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	e.memMu.Lock()
 	defer e.memMu.Unlock()
 
-	env := RuleEnv{State: gs, Faction: faction, Memory: e.Memory, Terrain: e.Terrain, Preferences: e.prefs}
+	env := RuleEnv{State: gs, Faction: faction, Memory: e.Memory, Terrain: e.Terrain, Preferences: e.prefs, TargetBias: e.bias}
 	updateIntel(env)
 	updateBuiltRoles(env)
 	updateSquads(env)
@@ -125,6 +126,21 @@ func (e *Engine) Swap(newRules []*Rule) error {
 	return nil
 }
 
+// Reset clears all accumulated state so the engine is ready for a new game.
+// The compiled rules and terrain are preserved; only per-game memory is wiped.
+func (e *Engine) Reset() {
+	e.memMu.Lock()
+	e.Memory = make(map[string]any)
+	e.memMu.Unlock()
+
+	e.mu.Lock()
+	e.prefs = UnitPreferences{}
+	e.bias = TargetBias{}
+	e.mu.Unlock()
+
+	slog.Info("engine reset")
+}
+
 // LockMemory acquires the memory mutex. Callers must pair with UnlockMemory.
 // Used by the strategist to safely read Memory from a background goroutine.
 func (e *Engine) LockMemory()   { e.memMu.Lock() }
@@ -161,6 +177,13 @@ func (e *Engine) SetTerrain(grid *model.TerrainGrid) {
 func (e *Engine) SetPreferences(p UnitPreferences) {
 	e.mu.Lock()
 	e.prefs = p
+	e.mu.Unlock()
+}
+
+// SetTargetBias stores doctrine-derived target scoring multipliers.
+func (e *Engine) SetTargetBias(b TargetBias) {
+	e.mu.Lock()
+	e.bias = b
 	e.mu.Unlock()
 }
 

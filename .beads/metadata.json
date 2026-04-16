@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "vimy",
+  "project_id": "b0a5618e-cbe3-4bf2-97db-2a46f52cc560"
+}

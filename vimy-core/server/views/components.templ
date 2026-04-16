@@ -294,6 +294,29 @@ templ enemyTypeRow(typeName string, seenCount int, visibleCount int) {
 	</div>
 }
 
+templ RecordPanel(wins int, losses int) {
+	<div id="record-panel" hx-get="/api/record/panel" hx-trigger="every 10s" hx-swap="outerHTML">
+		<div class="bg-gray-900 border border-gray-800 rounded-xl p-6">
+			<div class="flex items-center gap-6">
+				<div class="flex items-center gap-2">
+					<span class="text-emerald-400 text-3xl font-mono font-bold">{ fmt.Sprintf("%d", wins) }</span>
+					<span class="text-sm text-gray-500 uppercase">Wins</span>
+				</div>
+				<span class="text-gray-700 text-2xl">/</span>
+				<div class="flex items-center gap-2">
+					<span class="text-red-400 text-3xl font-mono font-bold">{ fmt.Sprintf("%d", losses) }</span>
+					<span class="text-sm text-gray-500 uppercase">Losses</span>
+				</div>
+				if wins + losses > 0 {
+					<div class="ml-auto text-sm text-gray-500">
+						<span class="font-mono text-gray-300">{ fmt.Sprintf("%.0f%%", float64(wins)/float64(wins+losses)*100) }</span> win rate
+					</div>
+				}
+			</div>
+		</div>
+	</div>
+}
+
 templ DirectiveForm(current string) {
 	<div id="directive-form" class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4">
 		<h2 class="text-lg font-semibold text-gray-200">Directive</h2>

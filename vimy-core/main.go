@@ -14,6 +14,7 @@ import (
 	"github.com/nstehr/vimy/vimy-core/ipc"
 	"github.com/nstehr/vimy/vimy-core/rules"
 	"github.com/nstehr/vimy/vimy-core/server"
+	"github.com/nstehr/vimy/vimy-core/store"
 )
 
 const banner = `
@@ -59,8 +60,15 @@ func main() {
 		strategist = agent.NewStrategist(engine, directive, 500)
 	}
 
+	dataStore, err := store.New("")
+	if err != nil {
+		slog.Error("failed to create store", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("record store loaded", "wins", dataStore.Wins(), "losses", dataStore.Losses())
+
 	// Start the HTTP dashboard.
-	srv := server.New(strategist)
+	srv := server.New(strategist, dataStore)
 	go func() {
 		slog.Info("starting dashboard", "addr", addr)
 		if err := srv.Start(addr); err != nil {
@@ -102,7 +110,7 @@ func main() {
 				}
 			}
 			slog.Info("new connection accepted")
-			go handleConn(ctx, conn, engine, strategist)
+			go handleConn(ctx, conn, engine, strategist, dataStore)
 		}
 	}()
 
@@ -110,10 +118,11 @@ func main() {
 	slog.Info("shutting down")
 }
 
-func handleConn(ctx context.Context, conn net.Conn, engine *rules.Engine, strategist *agent.Strategist) {
+func handleConn(ctx context.Context, conn net.Conn, engine *rules.Engine, strategist *agent.Strategist, dataStore *store.Store) {
 	c := ipc.NewConnection(conn, nil)
-	a := agent.New(c, engine, strategist, ctx)
+	a := agent.New(c, engine, strategist, dataStore, ctx)
 	c.RegisterHandler(ipc.TypeHello, a.HandleHello)
 	c.RegisterHandler(ipc.TypeGameState, a.HandleGameState)
+	c.RegisterHandler(ipc.TypeGameEnd, a.HandleGameEnd)
 	c.ReadLoop()
 }

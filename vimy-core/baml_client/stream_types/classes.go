@@ -129,29 +129,31 @@ func (c CombatStats) BamlTypeName() string {
 }
 
 type Doctrine struct {
-	Name                        *string  `json:"name"`
-	Rationale                   *string  `json:"rationale"`
-	Economy_priority            *float64 `json:"economy_priority"`
-	Aggression                  *float64 `json:"aggression"`
-	Ground_defense_priority     *float64 `json:"ground_defense_priority"`
-	Air_defense_priority        *float64 `json:"air_defense_priority"`
-	Tech_priority               *float64 `json:"tech_priority"`
-	Infantry_weight             *float64 `json:"infantry_weight"`
-	Vehicle_weight              *float64 `json:"vehicle_weight"`
-	Air_weight                  *float64 `json:"air_weight"`
-	Naval_weight                *float64 `json:"naval_weight"`
-	Ground_attack_group_size    *int64   `json:"ground_attack_group_size"`
-	Air_attack_group_size       *int64   `json:"air_attack_group_size"`
-	Naval_attack_group_size     *int64   `json:"naval_attack_group_size"`
-	Scout_priority              *float64 `json:"scout_priority"`
-	Specialized_infantry_weight *float64 `json:"specialized_infantry_weight"`
-	Superweapon_priority        *float64 `json:"superweapon_priority"`
-	Capture_priority            *float64 `json:"capture_priority"`
-	Transport_assault           *float64 `json:"transport_assault"`
-	Preferred_infantry          []string `json:"preferred_infantry"`
-	Preferred_vehicle           []string `json:"preferred_vehicle"`
-	Preferred_aircraft          []string `json:"preferred_aircraft"`
-	Preferred_naval             []string `json:"preferred_naval"`
+	Name                           *string  `json:"name"`
+	Rationale                      *string  `json:"rationale"`
+	Economy_priority               *float64 `json:"economy_priority"`
+	Aggression                     *float64 `json:"aggression"`
+	Ground_defense_priority        *float64 `json:"ground_defense_priority"`
+	Air_defense_priority           *float64 `json:"air_defense_priority"`
+	Tech_priority                  *float64 `json:"tech_priority"`
+	Infantry_weight                *float64 `json:"infantry_weight"`
+	Vehicle_weight                 *float64 `json:"vehicle_weight"`
+	Air_weight                     *float64 `json:"air_weight"`
+	Naval_weight                   *float64 `json:"naval_weight"`
+	Ground_attack_group_size       *int64   `json:"ground_attack_group_size"`
+	Air_attack_group_size          *int64   `json:"air_attack_group_size"`
+	Naval_attack_group_size        *int64   `json:"naval_attack_group_size"`
+	Scout_priority                 *float64 `json:"scout_priority"`
+	Specialized_infantry_weight    *float64 `json:"specialized_infantry_weight"`
+	Superweapon_priority           *float64 `json:"superweapon_priority"`
+	Capture_priority               *float64 `json:"capture_priority"`
+	Transport_assault              *float64 `json:"transport_assault"`
+	Preferred_infantry             []string `json:"preferred_infantry"`
+	Preferred_vehicle              []string `json:"preferred_vehicle"`
+	Preferred_aircraft             []string `json:"preferred_aircraft"`
+	Preferred_naval                []string `json:"preferred_naval"`
+	Ground_target_aa_priority      *float64 `json:"ground_target_aa_priority"`
+	Air_target_ground_def_priority *float64 `json:"air_target_ground_def_priority"`
 }
 
 func (c *Doctrine) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -237,6 +239,12 @@ func (c *Doctrine) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		case "preferred_naval":
 			c.Preferred_naval = baml.Decode(valueHolder).Interface().([]string)
 
+		case "ground_target_aa_priority":
+			c.Ground_target_aa_priority = baml.Decode(valueHolder).Interface().(*float64)
+
+		case "air_target_ground_def_priority":
+			c.Air_target_ground_def_priority = baml.Decode(valueHolder).Interface().(*float64)
+
 		default:
 
 			panic(fmt.Sprintf("unexpected field: %s in class Doctrine", key))
@@ -294,6 +302,10 @@ func (c Doctrine) Encode() (*cffi.HostValue, error) {
 	fields["preferred_aircraft"] = c.Preferred_aircraft
 
 	fields["preferred_naval"] = c.Preferred_naval
+
+	fields["ground_target_aa_priority"] = c.Ground_target_aa_priority
+
+	fields["air_target_ground_def_priority"] = c.Air_target_ground_def_priority
 
 	return baml.EncodeClass("Doctrine", fields, nil)
 }

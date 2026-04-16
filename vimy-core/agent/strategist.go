@@ -12,6 +12,13 @@ import (
 	"github.com/nstehr/vimy/vimy-core/rules"
 )
 
+// GameResult represents the outcome of a single game.
+type GameResult struct {
+	Player  string // our player name
+	Faction string
+	Won     bool
+}
+
 // DoctrineRecord is a timestamped doctrine output from the LLM.
 type DoctrineRecord struct {
 	Tick          int
@@ -58,6 +65,9 @@ type Strategist struct {
 	// totalLosses accumulates deaths across the entire game.
 	prevFreshIDs map[string]map[int]bool
 	totalLosses  map[string]int
+
+	// Win/loss record — persists across resets within a session.
+	record []GameResult
 }
 
 // NewStrategist creates a strategist. If directive is empty, defaults to "balanced".
@@ -75,6 +85,42 @@ func NewStrategist(engine *rules.Engine, directive string, interval int) *Strate
 		cooldown:  100,
 		ready:     make(chan struct{}, 1),
 	}
+}
+
+// Reset clears all accumulated state so the strategist is ready for a new game.
+// The engine reference and directive are preserved.
+func (s *Strategist) Reset() {
+	s.mu.Lock()
+	s.latest = nil
+	s.prevSnap = nil
+	s.pending = nil
+	s.history = nil
+	s.prevFreshIDs = nil
+	s.totalLosses = nil
+	s.lastTick = 0
+	s.mu.Unlock()
+	slog.Info("strategist reset")
+}
+
+// RecordGame appends a game result to the session record.
+func (s *Strategist) RecordGame(result GameResult) {
+	s.mu.Lock()
+	s.record = append(s.record, result)
+	s.mu.Unlock()
+	outcome := "LOSS"
+	if result.Won {
+		outcome = "WIN"
+	}
+	slog.Info("game recorded", "outcome", outcome, "player", result.Player, "faction", result.Faction)
+}
+
+// GetRecord returns a copy of the session win/loss record.
+func (s *Strategist) GetRecord() []GameResult {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]GameResult, len(s.record))
+	copy(out, s.record)
+	return out
 }
 
 // SetFaction sets the faction string (called from HandleHello).
@@ -353,6 +399,8 @@ func (s *Strategist) evaluate(ctx context.Context) {
 		Aircraft: doctrine.PreferredAircraft,
 		Naval:    doctrine.PreferredNaval,
 	})
+
+	s.engine.SetTargetBias(rules.ComputeTargetBias(doctrine))
 
 	compiled := rules.CompileDoctrine(doctrine)
 	if err := s.engine.Swap(compiled); err != nil {

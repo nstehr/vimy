@@ -51,6 +51,14 @@ func (c *doctrineCompiler) addBuildingRules() {
 
 	if c.d.VehicleWeight > DoctrineEnabled {
 		warFactoryPriority := lerp(580, 680, c.d.VehicleWeight)
+		// Transport assault doctrines need a war factory ASAP for APCs.
+		// Boost priority so the war factory doesn't lose to barracks in the
+		// exclusive "economy" category.
+		if c.d.TransportAssault > DoctrineModerate {
+			taBoost := lerp(0, 40, c.d.TransportAssault)
+			warFactoryPriority = max(warFactoryPriority, lerp(600, 700, c.d.TransportAssault))
+			warFactoryPriority += taBoost
+		}
 		// Scale cash threshold inversely with vehicle weight: low-vehicle
 		// doctrines need a bigger buffer so the 2000-credit building doesn't
 		// starve air/naval production during construction. Ceiling capped at
@@ -58,6 +66,11 @@ func (c *doctrineCompiler) addBuildingRules() {
 		// doctrines to accumulate enough cash since infantry production drained
 		// funds below the threshold.
 		wfCashThreshold := lerp(2500, 2000, c.d.VehicleWeight)
+		// Transport assault needs a cheaper threshold since the whole strategy
+		// depends on getting APCs out quickly.
+		if c.d.TransportAssault > DoctrineModerate {
+			wfCashThreshold = min(wfCashThreshold, lerp(2200, 2000, c.d.TransportAssault))
+		}
 		c.rules = append(c.rules, &Rule{
 			Name:         "build-war-factory",
 			Priority:     warFactoryPriority,

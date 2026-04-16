@@ -1,8 +1,14 @@
 package views
 
-templ Dashboard(currentDirective string) {
+templ Dashboard(currentDirective string, wins int, losses int) {
 	@Layout("Vimy - Doctrine Dashboard") {
 		<div class="space-y-8">
+			<!-- Record Panel -->
+			<div>
+				<h2 class="text-lg font-semibold text-gray-200 mb-4">Record</h2>
+				@RecordPanel(wins, losses)
+			</div>
+
 			<!-- Directive Panel -->
 			@DirectiveForm(currentDirective)
 

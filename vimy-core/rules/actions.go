@@ -1137,9 +1137,12 @@ func ActionProduceGunboat(env RuleEnv, conn *ipc.Connection) error {
 func ActionProduceAPC(env RuleEnv, conn *ipc.Connection) error {
 	item := env.BuildableType("apc")
 	if item == "" {
+		item = env.BuildableType("ranger")
+	}
+	if item == "" {
 		return nil
 	}
-	slog.Debug("producing APC", "item", item)
+	slog.Debug("producing transport", "item", item)
 	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
 		Queue: QueueVehicle,
 		Item:  item,
@@ -1787,13 +1790,24 @@ func RetreatDamagedUnits(hpThreshold float64) ActionFunc {
 		}
 
 		depot := env.ServiceDepot()
+		airfield := env.Airfield()
 		centX, centY := env.BuildingCentroid()
 
 		for _, u := range units {
 			if isInfantry(u) {
 				continue // infantry can't heal — no benefit to retreating
 			}
-			if depot != nil && !isAircraft(u) && !isNaval(u) {
+			if isAircraft(u) && airfield != nil {
+				// Send aircraft to airfield/helipad for repair.
+				slog.Debug("retreating damaged aircraft to airfield", "id", u.ID, "type", u.Type,
+					"hp_ratio", float64(u.HP)/float64(u.MaxHP), "airfield", airfield.ID)
+				if err := conn.Send(ipc.TypeRepairUnit, ipc.RepairUnitCommand{
+					ActorID:          uint32(u.ID),
+					RepairBuildingID: uint32(airfield.ID),
+				}); err != nil {
+					return err
+				}
+			} else if depot != nil && !isAircraft(u) && !isNaval(u) {
 				// Send repair order — unit will enter the depot pad and heal.
 				slog.Debug("retreating damaged unit to depot", "id", u.ID, "type", u.Type,
 					"hp_ratio", float64(u.HP)/float64(u.MaxHP), "depot", depot.ID)
@@ -1804,7 +1818,7 @@ func RetreatDamagedUnits(hpThreshold float64) ActionFunc {
 					return err
 				}
 			} else {
-				// Fallback: move to centroid (aircraft, naval, or no depot).
+				// Fallback: move to centroid (naval or no repair building).
 				slog.Debug("retreating damaged unit to centroid", "id", u.ID, "type", u.Type,
 					"hp_ratio", float64(u.HP)/float64(u.MaxHP), "dest_x", centX, "dest_y", centY)
 				if err := conn.Send(ipc.TypeMove, ipc.MoveCommand{

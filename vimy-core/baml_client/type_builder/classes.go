@@ -203,6 +203,14 @@ func (t *DoctrineClassView) PropertyPreferred_naval() (ClassPropertyView, error)
 	return t.inner.Property("preferred_naval")
 }
 
+func (t *DoctrineClassView) PropertyGround_target_aa_priority() (ClassPropertyView, error) {
+	return t.inner.Property("ground_target_aa_priority")
+}
+
+func (t *DoctrineClassView) PropertyAir_target_ground_def_priority() (ClassPropertyView, error) {
+	return t.inner.Property("air_target_ground_def_priority")
+}
+
 func (t *TypeBuilder) Doctrine() (*DoctrineClassView, error) {
 	bld, err := t.inner.Class("Doctrine")
 	if err != nil {

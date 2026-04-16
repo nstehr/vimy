@@ -20,7 +20,7 @@ namespace OpenRA.Mods.Vimy
 		public override object Create(ActorInitializer init) { return new VimyBotModule(init, this); }
 	}
 
-	public class VimyBotModule : ConditionalTrait<VimyBotModuleInfo>, IBotTick, IBotEnabled, INotifyActorDisposing
+	public class VimyBotModule : ConditionalTrait<VimyBotModuleInfo>, IBotTick, IBotEnabled, INotifyWinStateChanged, INotifyActorDisposing
 	{
 		readonly World world;
 		Socket socket;
@@ -148,6 +148,8 @@ namespace OpenRA.Mods.Vimy
 						case "support_power":
 						case "enter_transport":
 						case "unload":
+						case "repair_unit":
+						case "place_minefield":
 							CommandExecutor.Execute(envelope.Value.Type, envelope.Value.Data, world, bot);
 							break;
 						default:
@@ -233,6 +235,60 @@ namespace OpenRA.Mods.Vimy
 			}
 
 			return Encoding.UTF8.GetString(payload);
+		}
+
+		void INotifyWinStateChanged.OnPlayerWon(Player winner)
+		{
+			SendGameEnd(winner.PlayerName);
+		}
+
+		void INotifyWinStateChanged.OnPlayerLost(Player loser)
+		{
+			// Find the winner. WinState.Won may not be set yet when OnPlayerLost
+			// fires, so fall back to the first non-spectator player who isn't the loser.
+			var winner = "";
+			foreach (var player in world.Players)
+			{
+				if (player.WinState == WinState.Won)
+				{
+					winner = player.PlayerName;
+					break;
+				}
+			}
+
+			if (string.IsNullOrEmpty(winner))
+			{
+				foreach (var player in world.Players)
+				{
+					if (!player.NonCombatant && player != loser)
+					{
+						winner = player.PlayerName;
+						break;
+					}
+				}
+			}
+
+			SendGameEnd(winner);
+		}
+
+		void SendGameEnd(string winner)
+		{
+			if (!connected)
+				return;
+
+			try
+			{
+				Log.Write("debug", $"Game over detected, winner: {winner}");
+				SendEnvelope("game_end", $"{{\"winner\":\"{winner}\"}}");
+
+				// Read the ack before disconnecting so the sidecar can process it.
+				if (socket != null && socket.Poll(2000000, SelectMode.SelectRead))
+					ReadEnvelope();
+			}
+			catch (Exception ex)
+			{
+				Log.Write("debug", $"Error sending game_end: {ex.Message}");
+			}
 		}
 
 		void Disconnect()

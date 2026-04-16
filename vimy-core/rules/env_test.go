@@ -409,6 +409,106 @@ func TestBestGroundTarget(t *testing.T) {
 	})
 }
 
+func TestBestGroundTarget_AABoosted(t *testing.T) {
+	base := model.Building{X: 0, Y: 0}
+
+	t.Run("AA beats power plant with bias", func(t *testing.T) {
+		// Without bias: AA=2, powr=2 → tie (both same distance).
+		// With GroundAA=3.0: AA=2*3=6, powr=2 → AA wins.
+		env := RuleEnv{
+			State: model.GameState{
+				Buildings: []model.Building{base},
+				Enemies: []model.Enemy{
+					{ID: 1, Type: "powr", X: 10, Y: 0, HP: 100, MaxHP: 100},
+					{ID: 2, Type: "agun", X: 10, Y: 0, HP: 100, MaxHP: 100},
+				},
+			},
+			TargetBias: TargetBias{GroundAA: 3.0},
+		}
+		got := env.BestGroundTarget()
+		if got == nil || got.ID != 2 {
+			t.Errorf("expected agun (ID=2) with AA bias, got %+v", got)
+		}
+	})
+
+	t.Run("SAM site boosted with bias", func(t *testing.T) {
+		env := RuleEnv{
+			State: model.GameState{
+				Buildings: []model.Building{base},
+				Enemies: []model.Enemy{
+					{ID: 1, Type: "powr", X: 10, Y: 0, HP: 100, MaxHP: 100},
+					{ID: 2, Type: "sam", X: 10, Y: 0, HP: 100, MaxHP: 100},
+				},
+			},
+			TargetBias: TargetBias{GroundAA: 3.0},
+		}
+		got := env.BestGroundTarget()
+		if got == nil || got.ID != 2 {
+			t.Errorf("expected sam (ID=2) with AA bias, got %+v", got)
+		}
+	})
+
+	t.Run("no bias preserves default behavior", func(t *testing.T) {
+		// Without bias, tesla (10) beats AA (2) at same distance.
+		env := RuleEnv{
+			State: model.GameState{
+				Buildings: []model.Building{base},
+				Enemies: []model.Enemy{
+					{ID: 1, Type: "agun", X: 10, Y: 0, HP: 100, MaxHP: 100},
+					{ID: 2, Type: "tsla", X: 10, Y: 0, HP: 200, MaxHP: 200},
+				},
+			},
+		}
+		got := env.BestGroundTarget()
+		if got == nil || got.ID != 2 {
+			t.Errorf("expected tsla (ID=2) without bias, got %+v", got)
+		}
+	})
+}
+
+func TestBestAirTarget_GroundDefBoosted(t *testing.T) {
+	base := model.Building{X: 0, Y: 0}
+
+	t.Run("pillbox boosted over refinery with bias", func(t *testing.T) {
+		// Without bias: pbox=7, proc=4 → pbox wins anyway, but by less.
+		// With AirGroundDef=3.0: pbox=7*3=21 vs proc=4 → much stronger preference.
+		// Test against construction yard (6) at closer range.
+		// pbox at dist=20: score = 7*3.0 * 1.0 / sqrt(20) ≈ 4.70
+		// fact at dist=5:  score = 6 * 1.0 / sqrt(5) ≈ 2.68
+		env := RuleEnv{
+			State: model.GameState{
+				Buildings: []model.Building{base},
+				Enemies: []model.Enemy{
+					{ID: 1, Type: "fact", X: 5, Y: 0, HP: 100, MaxHP: 100},
+					{ID: 2, Type: "pbox", X: 20, Y: 0, HP: 100, MaxHP: 100},
+				},
+			},
+			TargetBias: TargetBias{AirGroundDef: 3.0},
+		}
+		got := env.BestAirTarget()
+		if got == nil || got.ID != 2 {
+			t.Errorf("expected pbox (ID=2) with ground def bias, got %+v", got)
+		}
+	})
+
+	t.Run("tesla boosted with bias", func(t *testing.T) {
+		env := RuleEnv{
+			State: model.GameState{
+				Buildings: []model.Building{base},
+				Enemies: []model.Enemy{
+					{ID: 1, Type: "mslo", X: 10, Y: 0, HP: 200, MaxHP: 200}, // val=9
+					{ID: 2, Type: "tsla", X: 10, Y: 0, HP: 200, MaxHP: 200}, // val=10, boosted to 30
+				},
+			},
+			TargetBias: TargetBias{AirGroundDef: 3.0},
+		}
+		got := env.BestAirTarget()
+		if got == nil || got.ID != 2 {
+			t.Errorf("expected tsla (ID=2) with ground def bias, got %+v", got)
+		}
+	})
+}
+
 func TestBestCapturable_SkipsWater(t *testing.T) {
 	grid := &model.TerrainGrid{
 		Cols: 4, Rows: 4, CellW: 100, CellH: 100,

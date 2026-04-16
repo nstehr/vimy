@@ -9,17 +9,19 @@ import (
 	"github.com/nstehr/vimy/vimy-core/agent"
 	"github.com/nstehr/vimy/vimy-core/rules"
 	"github.com/nstehr/vimy/vimy-core/server/views"
+	"github.com/nstehr/vimy/vimy-core/store"
 )
 
 // Server serves the doctrine dashboard over HTTP.
 type Server struct {
 	strategist *agent.Strategist
+	store      *store.Store
 	mux        *http.ServeMux
 }
 
-// New creates a dashboard server backed by the given strategist.
-func New(strategist *agent.Strategist) *Server {
-	s := &Server{strategist: strategist}
+// New creates a dashboard server backed by the given strategist and store.
+func New(strategist *agent.Strategist, store *store.Store) *Server {
+	s := &Server{strategist: strategist, store: store}
 	s.mux = http.NewServeMux()
 	s.routes()
 	return s
@@ -31,13 +33,29 @@ func (s *Server) Start(addr string) error {
 }
 
 func (s *Server) routes() {
-	s.mux.Handle("GET /", templ.Handler(views.Dashboard(s.currentDirective())))
+	s.mux.Handle("GET /", templ.Handler(views.Dashboard(s.currentDirective(), s.wins(), s.losses())))
 	s.mux.HandleFunc("GET /api/directive", s.handleGetDirective)
 	s.mux.HandleFunc("PUT /api/directive", s.handleSetDirective)
 	s.mux.HandleFunc("GET /api/doctrine/current", s.handleCurrentDoctrine)
 	s.mux.HandleFunc("GET /api/doctrine/history", s.handleDoctrineHistory)
 	s.mux.HandleFunc("GET /api/rules", s.handleRules)
 	s.mux.HandleFunc("GET /api/battlefield", s.handleBattlefield)
+	s.mux.HandleFunc("GET /api/record", s.handleRecord)
+	s.mux.HandleFunc("GET /api/record/panel", s.handleRecordPanel)
+}
+
+func (s *Server) wins() int {
+	if s.store == nil {
+		return 0
+	}
+	return s.store.Wins()
+}
+
+func (s *Server) losses() int {
+	if s.store == nil {
+		return 0
+	}
+	return s.store.Losses()
 }
 
 func (s *Server) currentDirective() string {
@@ -98,6 +116,24 @@ func (s *Server) handleBattlefield(w http.ResponseWriter, r *http.Request) {
 		status = s.strategist.GetBattlefieldStatus()
 	}
 	views.BattlefieldPanel(status).Render(r.Context(), w)
+}
+
+func (s *Server) handleRecordPanel(w http.ResponseWriter, r *http.Request) {
+	views.RecordPanel(s.wins(), s.losses()).Render(r.Context(), w)
+}
+
+func (s *Server) handleRecord(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if s.store == nil {
+		json.NewEncoder(w).Encode(map[string]any{"wins": 0, "losses": 0, "games": []store.GameRecord{}})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"wins":   s.store.Wins(),
+		"losses": s.store.Losses(),
+		"games":  s.store.Games(),
+	})
 }
 
 type historyPoint struct {

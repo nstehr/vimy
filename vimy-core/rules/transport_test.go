@@ -369,8 +369,8 @@ func TestCompileDoctrineTransportAssault(t *testing.T) {
 		lowRules := CompileDoctrine(low)
 		for _, r := range lowRules {
 			if r.Name == "produce-assault-apc" {
-				if !strings.Contains(r.ConditionSrc, `RoleCount("apc") < 1`) {
-					t.Errorf("low TransportAssault: expected APC cap 1, got condition: %s", r.ConditionSrc)
+				if !strings.Contains(r.ConditionSrc, `TransportCount() < 1`) {
+					t.Errorf("low TransportAssault: expected transport cap 1, got condition: %s", r.ConditionSrc)
 				}
 			}
 		}
@@ -381,8 +381,8 @@ func TestCompileDoctrineTransportAssault(t *testing.T) {
 		highRules := CompileDoctrine(high)
 		for _, r := range highRules {
 			if r.Name == "produce-assault-apc" {
-				if !strings.Contains(r.ConditionSrc, `RoleCount("apc") < 3`) {
-					t.Errorf("high TransportAssault: expected APC cap 3, got condition: %s", r.ConditionSrc)
+				if !strings.Contains(r.ConditionSrc, `TransportCount() < 3`) {
+					t.Errorf("high TransportAssault: expected transport cap 3, got condition: %s", r.ConditionSrc)
 				}
 			}
 		}

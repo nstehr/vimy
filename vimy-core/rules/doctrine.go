@@ -28,6 +28,8 @@ type Doctrine struct {
 	PreferredAircraft          []string `json:"preferred_aircraft,omitempty"`
 	PreferredNaval             []string `json:"preferred_naval,omitempty"`
 	TransportAssault           float64  `json:"transport_assault,omitempty"`
+	GroundTargetAAPriority     float64  `json:"ground_target_aa_priority"`
+	AirTargetGroundDefPriority float64  `json:"air_target_ground_def_priority"`
 }
 
 // DefaultDoctrine is used when no LLM strategist is configured.
@@ -67,6 +69,8 @@ func (d *Doctrine) Validate() {
 	d.SuperweaponPriority = clamp(d.SuperweaponPriority, 0, 1)
 	d.CapturePriority = clamp(d.CapturePriority, 0, 1)
 	d.TransportAssault = clamp(d.TransportAssault, 0, 1)
+	d.GroundTargetAAPriority = clamp(d.GroundTargetAAPriority, 0, 1)
+	d.AirTargetGroundDefPriority = clamp(d.AirTargetGroundDefPriority, 0, 1)
 	d.GroundAttackGroupSize = clampInt(d.GroundAttackGroupSize, 3, 15)
 	d.AirAttackGroupSize = clampInt(d.AirAttackGroupSize, 1, 8)
 	d.NavalAttackGroupSize = clampInt(d.NavalAttackGroupSize, 2, 10)
@@ -89,6 +93,22 @@ func lerp(min, max int, t float64) int {
 
 func lerpf(min, max, t float64) float64 {
 	return min + (max-min)*t
+}
+
+// TargetBias holds doctrine-derived multipliers for target scoring.
+// Zero values are treated as 1.0 (no adjustment), so the zero-value
+// TargetBias preserves existing behavior for all callers and tests.
+type TargetBias struct {
+	GroundAA     float64 // boost AA targets in BestGroundTarget
+	AirGroundDef float64 // boost ground defense targets in BestAirTarget
+}
+
+// ComputeTargetBias converts 0-1 doctrine weights into score multipliers.
+func ComputeTargetBias(d Doctrine) TargetBias {
+	return TargetBias{
+		GroundAA:     lerpf(1.0, 4.0, d.GroundTargetAAPriority),
+		AirGroundDef: lerpf(1.0, 3.0, d.AirTargetGroundDefPriority),
+	}
 }
 
 func clamp(v, min, max float64) float64 {
