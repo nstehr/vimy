@@ -1,11 +1,14 @@
 package views
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 	"github.com/nstehr/vimy/vimy-core/agent"
 	"github.com/nstehr/vimy/vimy-core/rules"
+	"github.com/nstehr/vimy/vimy-core/store"
 )
 
 templ WeightBar(label string, value float64) {
@@ -236,6 +239,7 @@ templ BattlefieldPanel(status *agent.BattlefieldStatus) {
 							@lossCounter("Infantry", status.InfantryLost)
 							@lossCounter("Vehicles", status.VehiclesLost)
 							@lossCounter("Aircraft", status.AircraftLost)
+							@lossCounter("Naval", status.NavalLost)
 						</div>
 					</div>
 
@@ -315,6 +319,223 @@ templ RecordPanel(wins int, losses int) {
 			</div>
 		</div>
 	</div>
+}
+
+func qualityBadgeClass(tag string) string {
+	switch tag {
+	case "exemplary":
+		return "text-xs font-medium text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full"
+	case "cautionary":
+		return "text-xs font-medium text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded-full"
+	case "mixed":
+		return "text-xs font-medium text-gray-400 bg-gray-400/10 px-2 py-0.5 rounded-full"
+	default:
+		return "text-xs font-medium text-gray-500 bg-gray-800 px-2 py-0.5 rounded-full"
+	}
+}
+
+func outcomeClass(won bool) string {
+	if won {
+		return "text-emerald-400 font-medium"
+	}
+	return "text-red-400 font-medium"
+}
+
+func outcomeLabel(won bool) string {
+	if won {
+		return "WIN"
+	}
+	return "LOSS"
+}
+
+func relativeAge(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+}
+
+templ LibrarianPanel(snap *agent.LibrarianSnapshot) {
+	<div id="librarian-panel" class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4" hx-get="/api/memory/librarian" hx-trigger="every 30s" hx-swap="outerHTML">
+		if snap == nil {
+			<p class="text-sm text-gray-500">Librarian has not run for this game yet. It fires on the first doctrine evaluation once the game starts; if the candidate memory set is empty, no snapshot is produced.</p>
+		} else {
+			<div class="flex items-center gap-3 text-xs text-gray-500">
+				<span>{ snap.OurFaction } vs { snap.OpponentFaction }</span>
+				<span>·</span>
+				<span>{ relativeAge(snap.GeneratedAt) }</span>
+				<span>·</span>
+				<span>candidates: { fmt.Sprintf("%d exemplars / %d cautionaries / %d lessons", snap.CandidateExemplars, snap.CandidateCautionaries, snap.CandidateLessons) }</span>
+			</div>
+
+			if snap.Directive != "" {
+				<div class="text-xs text-gray-500">
+					Directive: <span class="text-gray-300 italic">"{ snap.Directive }"</span>
+				</div>
+			}
+
+			if snap.AlignmentNote != "" {
+				<div class="bg-gray-950 border-l-2 border-emerald-500/50 rounded-r p-3">
+					<p class="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-1">Alignment Note</p>
+					<p class="text-sm text-gray-300 leading-relaxed">{ snap.AlignmentNote }</p>
+				</div>
+			}
+
+			if len(snap.Exemplars) > 0 {
+				<div class="space-y-2">
+					<h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Kept Exemplars ({ fmt.Sprintf("%d", len(snap.Exemplars)) })</h3>
+					<ul class="space-y-2">
+						for _, e := range snap.Exemplars {
+							<li class="border-l-2 border-emerald-500/30 pl-3 py-1">
+								<p class="text-sm text-gray-300">{ e.Context }</p>
+								<p class="text-xs text-gray-500 font-mono mt-0.5">{ e.DoctrineSummary }</p>
+								if e.WhyRelevant != "" {
+									<p class="text-sm text-gray-400 mt-1"><span class="text-emerald-400">Why:</span> { e.WhyRelevant }</p>
+								}
+								if e.WhatToEmulate != "" {
+									<p class="text-sm text-gray-400"><span class="text-emerald-400">Emulate:</span> { e.WhatToEmulate }</p>
+								}
+							</li>
+						}
+					</ul>
+				</div>
+			}
+
+			if len(snap.Cautionaries) > 0 {
+				<div class="space-y-2">
+					<h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Cautionary Constraints ({ fmt.Sprintf("%d", len(snap.Cautionaries)) })</h3>
+					<ul class="space-y-2">
+						for _, c := range snap.Cautionaries {
+							<li class="border-l-2 border-amber-500/50 pl-3 py-1">
+								<p class="text-sm text-gray-300">{ c.Context }</p>
+								<p class="text-xs text-gray-500 font-mono mt-0.5">{ c.FailedPattern }</p>
+								if c.WhyRelevant != "" {
+									<p class="text-sm text-gray-400 mt-1"><span class="text-amber-400">Why:</span> { c.WhyRelevant }</p>
+								}
+								if c.WhatToAvoid != "" {
+									<p class="text-sm text-gray-400"><span class="text-amber-400">Avoid:</span> { c.WhatToAvoid }</p>
+								}
+							</li>
+						}
+					</ul>
+				</div>
+			}
+
+			if len(snap.Lessons) > 0 {
+				<div class="space-y-2">
+					<h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Kept Lessons ({ fmt.Sprintf("%d", len(snap.Lessons)) })</h3>
+					<ul class="space-y-1">
+						for _, l := range snap.Lessons {
+							<li class="text-sm text-gray-300 border-l-2 border-gray-700 pl-3 py-0.5">
+								<span class="text-gray-500">When</span> { l.Trigger } <span class="text-gray-500">→</span> { l.Guidance }
+							</li>
+						}
+					</ul>
+				</div>
+			}
+
+			if len(snap.Exemplars) == 0 && len(snap.Cautionaries) == 0 && len(snap.Lessons) == 0 {
+				<p class="text-sm text-gray-500 italic">Librarian filtered all candidate memory out. See alignment note above.</p>
+			}
+		}
+	</div>
+}
+
+templ MemoryPanel(lessons []store.GlobalLesson, games []store.GameSummary) {
+	<div id="memory-panel" class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-6" hx-get="/api/memory/panel" hx-trigger="every 30s" hx-swap="outerHTML">
+		<!-- Lessons -->
+		<div class="space-y-3">
+			<h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Top Lessons</h3>
+			if len(lessons) == 0 {
+				<p class="text-sm text-gray-500">No lessons recorded yet. Lessons accumulate after each game's retrospective completes.</p>
+			} else {
+				<ul class="space-y-2">
+					for _, l := range lessons {
+						<li class="border-l-2 border-emerald-500/50 pl-3 py-1">
+							<div class="flex items-start justify-between gap-3">
+								<div class="flex-1 min-w-0">
+									<p class="text-sm text-gray-300"><span class="text-emerald-400">When</span> { l.Trigger }</p>
+									<p class="text-sm text-gray-400 mt-0.5">→ { l.Guidance }</p>
+								</div>
+								<span class="shrink-0 text-xs font-mono text-gray-500">{ fmt.Sprintf("%.2f", l.Confidence) }</span>
+							</div>
+							if l.AppliesFaction != "" {
+								<p class="text-xs text-gray-600 mt-1">
+									{ l.AppliesFaction }
+									if l.AppliesVs != "" && l.AppliesVs != "unknown" {
+										<span> vs { l.AppliesVs }</span>
+									}
+								</p>
+							}
+						</li>
+					}
+				</ul>
+			}
+		</div>
+
+		<!-- Recent Games -->
+		<div class="space-y-3">
+			<h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Recent Games</h3>
+			if len(games) == 0 {
+				<p class="text-sm text-gray-500">No archived games yet.</p>
+			} else {
+				<ul class="space-y-2">
+					for _, g := range games {
+						<li class="bg-gray-950 border border-gray-800 rounded-lg p-3">
+							<div class="flex items-start justify-between gap-3">
+								<div class="flex-1 min-w-0">
+									<div class="flex items-center gap-2 text-sm">
+										<span class={ outcomeClass(g.Won) }>{ outcomeLabel(g.Won) }</span>
+										<span class="text-gray-500">·</span>
+										<span class="text-gray-300">{ g.OurFaction }</span>
+										if g.OpponentFaction != "" && g.OpponentFaction != "unknown" {
+											<span class="text-gray-600">vs</span>
+											<span class="text-gray-300">{ g.OpponentFaction }</span>
+										}
+										if g.QualityTag != "" {
+											<span class={ qualityBadgeClass(g.QualityTag) }>{ g.QualityTag }</span>
+										}
+									</div>
+									<p class="text-xs text-gray-500 mt-1">
+										{ relativeAge(g.PlayedAt) }
+										if g.DurationTicks > 0 {
+											<span> · { fmt.Sprintf("%d ticks", g.DurationTicks) }</span>
+										}
+									</p>
+									if summary := extractReviewSummary(g.ReviewJSON); summary != "" {
+										<p class="text-sm text-gray-400 mt-2 line-clamp-2">{ summary }</p>
+									}
+								</div>
+							</div>
+						</li>
+					}
+				</ul>
+			}
+		</div>
+	</div>
+}
+
+// extractReviewSummary pulls the summary field out of a JSON-encoded
+// GameReview. A minimal struct avoids pulling the BAML types into the views
+// package. Returns "" if the JSON is empty or unparseable.
+func extractReviewSummary(reviewJSON string) string {
+	if reviewJSON == "" {
+		return ""
+	}
+	var r struct {
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(reviewJSON), &r); err != nil {
+		return ""
+	}
+	return r.Summary
 }
 
 templ DirectiveForm(current string) {

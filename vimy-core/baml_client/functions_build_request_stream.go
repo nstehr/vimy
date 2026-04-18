@@ -26,7 +26,7 @@ type build_request_stream struct{}
 var StreamRequest = &build_request_stream{}
 
 // Build streaming HTTP request for GenerateDoctrine (returns baml.HTTPRequest)
-func (*build_request_stream) GenerateDoctrine(directive string, situation types.GameSituation, faction string, opts ...CallOptionFunc) (baml.HTTPRequest, error) {
+func (*build_request_stream) GenerateDoctrine(directive string, situation types.GameSituation, faction string, memory *types.MemoryContext, opts ...CallOptionFunc) (baml.HTTPRequest, error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -42,7 +42,7 @@ func (*build_request_stream) GenerateDoctrine(directive string, situation types.
 	}
 
 	args := baml.BamlFunctionArguments{
-		Kwargs: map[string]any{"directive": directive, "situation": situation, "faction": faction, "stream": true},
+		Kwargs: map[string]any{"directive": directive, "situation": situation, "faction": faction, "memory": memory, "stream": true},
 		Env:    getEnvVars(callOpts.env),
 	}
 
@@ -69,4 +69,96 @@ func (*build_request_stream) GenerateDoctrine(directive string, situation types.
 	}
 
 	return bamlRuntime.BuildRequest(context.Background(), "GenerateDoctrine", encoded)
+}
+
+// Build streaming HTTP request for ReviewGame (returns baml.HTTPRequest)
+func (*build_request_stream) ReviewGame(our_faction string, opponent_faction string, won bool, duration_ticks int64, doctrine_history []types.DoctrineHistoryEntry, events []types.GameEvent, final_combat_stats types.CombatStats, opts ...CallOptionFunc) (baml.HTTPRequest, error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	// Resolve client option to clientRegistry (client takes precedence)
+	if callOpts.client != nil {
+		if callOpts.clientRegistry == nil {
+			callOpts.clientRegistry = baml.NewClientRegistry()
+		}
+		callOpts.clientRegistry.SetPrimaryClient(*callOpts.client)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"our_faction": our_faction, "opponent_faction": opponent_faction, "won": won, "duration_ticks": duration_ticks, "doctrine_history": doctrine_history, "events": events, "final_combat_stats": final_combat_stats, "stream": true},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	if callOpts.tags != nil {
+		args.Tags = callOpts.tags
+	}
+
+	encoded, err := args.Encode()
+	if err != nil {
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: ReviewGame: %w", err)
+		panic(wrapped_err)
+	}
+
+	return bamlRuntime.BuildRequest(context.Background(), "ReviewGame", encoded)
+}
+
+// Build streaming HTTP request for SelectRelevantMemory (returns baml.HTTPRequest)
+func (*build_request_stream) SelectRelevantMemory(directive string, our_faction string, opponent_faction string, candidates types.MemoryCandidates, opts ...CallOptionFunc) (baml.HTTPRequest, error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	// Resolve client option to clientRegistry (client takes precedence)
+	if callOpts.client != nil {
+		if callOpts.clientRegistry == nil {
+			callOpts.clientRegistry = baml.NewClientRegistry()
+		}
+		callOpts.clientRegistry.SetPrimaryClient(*callOpts.client)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"directive": directive, "our_faction": our_faction, "opponent_faction": opponent_faction, "candidates": candidates, "stream": true},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	if callOpts.tags != nil {
+		args.Tags = callOpts.tags
+	}
+
+	encoded, err := args.Encode()
+	if err != nil {
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: SelectRelevantMemory: %w", err)
+		panic(wrapped_err)
+	}
+
+	return bamlRuntime.BuildRequest(context.Background(), "SelectRelevantMemory", encoded)
 }

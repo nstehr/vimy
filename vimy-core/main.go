@@ -67,6 +67,10 @@ func main() {
 	}
 	slog.Info("record store loaded", "wins", dataStore.Wins(), "losses", dataStore.Losses())
 
+	if strategist != nil {
+		strategist.SetStore(dataStore)
+	}
+
 	// Start the HTTP dashboard.
 	srv := server.New(strategist, dataStore)
 	go func() {

@@ -8,8 +8,10 @@ import (
 
 	baml_client "github.com/nstehr/vimy/vimy-core/baml_client"
 	"github.com/nstehr/vimy/vimy-core/baml_client/types"
+	"github.com/nstehr/vimy/vimy-core/ipc"
 	"github.com/nstehr/vimy/vimy-core/model"
 	"github.com/nstehr/vimy/vimy-core/rules"
+	"github.com/nstehr/vimy/vimy-core/store"
 )
 
 // GameResult represents the outcome of a single game.
@@ -38,6 +40,7 @@ type BattlefieldStatus struct {
 	InfantryLost       int
 	VehiclesLost       int
 	AircraftLost       int
+	NavalLost          int
 	EnemyBuildings     []TypeCount // currently visible
 	EnemyBuildingsSeen []TypeCount // cumulative historical
 	EnemyUnits         []TypeCount // currently visible
@@ -50,8 +53,9 @@ type Strategist struct {
 	mu        sync.Mutex
 	latest    *model.GameState
 	engine    *rules.Engine
-	faction   string
-	directive string // initial doctrine seed from --doctrine flag
+	faction         string
+	opponentFaction string // set from HelloMessage.Opponents; "unknown" if absent
+	directive       string // initial doctrine seed from --doctrine flag
 	interval  int    // re-evaluate every N ticks
 	lastTick  int    // tick of last evaluation
 	ready     chan struct{}
@@ -68,6 +72,24 @@ type Strategist struct {
 
 	// Win/loss record — persists across resets within a session.
 	record []GameResult
+
+	// Cross-game persistence. Nil-safe: archival is skipped when store is nil.
+	store *store.Store
+
+	// Memory retrieval is cached for the duration of a game — one SQLite
+	// query on the first evaluate(), reused for subsequent re-evaluations.
+	// Cleared on Reset.
+	memoryCache     *types.MemoryContext
+	memoryAttempted bool
+	librarian       *LibrarianSnapshot // last librarian output, for dashboard inspection
+}
+
+// SetStore wires in persistent storage for post-game archival and memory
+// retrieval. Safe to call nil to disable.
+func (s *Strategist) SetStore(st *store.Store) {
+	s.mu.Lock()
+	s.store = st
+	s.mu.Unlock()
 }
 
 // NewStrategist creates a strategist. If directive is empty, defaults to "balanced".
@@ -98,6 +120,10 @@ func (s *Strategist) Reset() {
 	s.prevFreshIDs = nil
 	s.totalLosses = nil
 	s.lastTick = 0
+	s.memoryCache = nil
+	s.memoryAttempted = false
+	s.librarian = nil
+	s.opponentFaction = ""
 	s.mu.Unlock()
 	slog.Info("strategist reset")
 }
@@ -128,6 +154,30 @@ func (s *Strategist) SetFaction(f string) {
 	s.mu.Lock()
 	s.faction = f
 	s.mu.Unlock()
+}
+
+// SetOpponents records opponent factions for memory retrieval. v1 picks the
+// first non-allied opponent's faction; multi-opponent games degrade gracefully
+// to that first entry. An empty list leaves opponentFaction as "unknown".
+func (s *Strategist) SetOpponents(opponents []ipc.OpponentInfo) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(opponents) == 0 {
+		s.opponentFaction = "unknown"
+		return
+	}
+	s.opponentFaction = opponents[0].Faction
+}
+
+// GetOpponentFaction returns the recorded opponent faction, or "unknown" if
+// none was set.
+func (s *Strategist) GetOpponentFaction() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.opponentFaction == "" {
+		return "unknown"
+	}
+	return s.opponentFaction
 }
 
 // GetDirective returns the current directive string.
@@ -191,6 +241,7 @@ func (s *Strategist) GetBattlefieldStatus() *BattlefieldStatus {
 		InfantryLost: losses["infantry"],
 		VehiclesLost: losses["vehicle"],
 		AircraftLost: losses["aircraft"],
+		NavalLost:    losses["naval"],
 	}
 
 	// Current enemy composition from game state.
@@ -235,6 +286,7 @@ func (s *Strategist) UpdateState(gs model.GameState) {
 		"infantry": make(map[int]bool),
 		"vehicle":  make(map[int]bool),
 		"aircraft": make(map[int]bool),
+		"naval":    make(map[int]bool),
 	}
 	for _, u := range gs.Units {
 		d := unitDomain(u)
@@ -352,7 +404,8 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	hasEnemyIntel := len(enemyBases) > 0
 	s.engine.UnlockMemory()
 
-	bamlDoctrine, err := baml_client.GenerateDoctrine(ctx, s.directive, situation, faction)
+	memoryCtx := s.ensureMemory(ctx, gs.MapWidth, gs.MapHeight)
+	bamlDoctrine, err := baml_client.GenerateDoctrine(ctx, s.directive, situation, faction, memoryCtx)
 	if err != nil {
 		slog.Error("strategist LLM call failed", "error", err)
 		return
@@ -606,6 +659,7 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 			Infantry_lost: int64(totalLosses["infantry"]),
 			Vehicles_lost: int64(totalLosses["vehicle"]),
 			Aircraft_lost: int64(totalLosses["aircraft"]),
+			Naval_lost:    int64(totalLosses["naval"]),
 		}
 	}
 

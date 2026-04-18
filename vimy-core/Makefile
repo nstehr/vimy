@@ -5,6 +5,8 @@ export
 
 generate:
 	PATH="$(HOME)/go/bin:$(PATH)" baml-cli generate
+	cd store && PATH="$(HOME)/go/bin:$(PATH)" sqlc generate
+	PATH="$(HOME)/go/bin:$(PATH)" templ generate
 
 build:
 	go build -o bin/vimy .

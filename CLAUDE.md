@@ -52,13 +52,23 @@ bd close <id>         # Complete work
 
 ## Build & Test
 
-_Add your build and test commands here_
+The Go sidecar lives in `vimy-core/`. Regenerate BAML + sqlc code after touching
+`baml_src/*.baml`, `store/migrations/*.sql`, or `store/queries.sql`:
 
 ```bash
-# Example:
-# npm install
-# npm test
+cd vimy-core && make generate
 ```
+
+One-time tooling setup:
+
+```bash
+go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest       # required by make generate
+go install github.com/pressly/goose/v3/cmd/goose@latest   # optional, for manual migrations
+```
+
+Authoring a schema change: add `vimy-core/store/migrations/NNNN_<name>.sql`
+with `-- +goose Up` / `-- +goose Down` sections, then run `make generate`.
+Migrations are embedded into the binary and applied automatically on startup.
 
 ## Architecture Overview
 

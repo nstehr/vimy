@@ -1,11 +1,11 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 
-	"github.com/a-h/templ"
 	"github.com/nstehr/vimy/vimy-core/agent"
 	"github.com/nstehr/vimy/vimy-core/rules"
 	"github.com/nstehr/vimy/vimy-core/server/views"
@@ -33,7 +33,7 @@ func (s *Server) Start(addr string) error {
 }
 
 func (s *Server) routes() {
-	s.mux.Handle("GET /", templ.Handler(views.Dashboard(s.currentDirective(), s.wins(), s.losses())))
+	s.mux.HandleFunc("GET /{$}", s.handleDashboard)
 	s.mux.HandleFunc("GET /api/directive", s.handleGetDirective)
 	s.mux.HandleFunc("PUT /api/directive", s.handleSetDirective)
 	s.mux.HandleFunc("GET /api/doctrine/current", s.handleCurrentDoctrine)
@@ -42,6 +42,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/battlefield", s.handleBattlefield)
 	s.mux.HandleFunc("GET /api/record", s.handleRecord)
 	s.mux.HandleFunc("GET /api/record/panel", s.handleRecordPanel)
+	s.mux.HandleFunc("GET /api/memory/panel", s.handleMemoryPanel)
+	s.mux.HandleFunc("GET /api/memory/librarian", s.handleLibrarianPanel)
 }
 
 func (s *Server) wins() int {
@@ -120,6 +122,46 @@ func (s *Server) handleBattlefield(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRecordPanel(w http.ResponseWriter, r *http.Request) {
 	views.RecordPanel(s.wins(), s.losses()).Render(r.Context(), w)
+}
+
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	lessons, games := s.memorySnapshot(r.Context())
+	var librarian *agent.LibrarianSnapshot
+	if s.strategist != nil {
+		librarian = s.strategist.GetLibrarianSnapshot()
+	}
+	views.Dashboard(s.currentDirective(), s.wins(), s.losses(), lessons, games, librarian).
+		Render(r.Context(), w)
+}
+
+func (s *Server) handleMemoryPanel(w http.ResponseWriter, r *http.Request) {
+	lessons, games := s.memorySnapshot(r.Context())
+	views.MemoryPanel(lessons, games).Render(r.Context(), w)
+}
+
+func (s *Server) handleLibrarianPanel(w http.ResponseWriter, r *http.Request) {
+	var snap *agent.LibrarianSnapshot
+	if s.strategist != nil {
+		snap = s.strategist.GetLibrarianSnapshot()
+	}
+	views.LibrarianPanel(snap).Render(r.Context(), w)
+}
+
+func (s *Server) memorySnapshot(ctx context.Context) ([]store.GlobalLesson, []store.GameSummary) {
+	if s.store == nil {
+		return nil, nil
+	}
+	lessons, err := s.store.TopLessons(ctx, 8)
+	if err != nil {
+		slog.Warn("TopLessons failed", "error", err)
+		lessons = nil
+	}
+	games, err := s.store.RecentGames(ctx, 10)
+	if err != nil {
+		slog.Warn("RecentGames failed", "error", err)
+		games = nil
+	}
+	return lessons, games
 }
 
 func (s *Server) handleRecord(w http.ResponseWriter, r *http.Request) {

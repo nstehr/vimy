@@ -43,7 +43,7 @@ func (s *StreamValue[TStream, TFinal]) Stream() *TStream {
 }
 
 // / Streaming version of GenerateDoctrine
-func (*stream) GenerateDoctrine(ctx context.Context, directive string, situation types.GameSituation, faction string, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Doctrine, types.Doctrine], error) {
+func (*stream) GenerateDoctrine(ctx context.Context, directive string, situation types.GameSituation, faction string, memory *types.MemoryContext, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Doctrine, types.Doctrine], error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -51,7 +51,7 @@ func (*stream) GenerateDoctrine(ctx context.Context, directive string, situation
 	}
 
 	args := baml.BamlFunctionArguments{
-		Kwargs: map[string]any{"directive": directive, "situation": situation, "faction": faction},
+		Kwargs: map[string]any{"directive": directive, "situation": situation, "faction": faction, "memory": memory},
 		Env:    getEnvVars(callOpts.env),
 	}
 
@@ -104,6 +104,154 @@ func (*stream) GenerateDoctrine(ctx context.Context, directive string, situation
 			} else {
 				data := (result.StreamData).(stream_types.Doctrine)
 				channel <- StreamValue[stream_types.Doctrine, types.Doctrine]{
+					IsFinal:   false,
+					as_stream: &data,
+				}
+			}
+		}
+
+		// when internal_channel is closed, close the output too
+		close(channel)
+	}()
+	return channel, nil
+}
+
+// / Streaming version of ReviewGame
+func (*stream) ReviewGame(ctx context.Context, our_faction string, opponent_faction string, won bool, duration_ticks int64, doctrine_history []types.DoctrineHistoryEntry, events []types.GameEvent, final_combat_stats types.CombatStats, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.GameReview, types.GameReview], error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"our_faction": our_faction, "opponent_faction": opponent_faction, "won": won, "duration_ticks": duration_ticks, "doctrine_history": doctrine_history, "events": events, "final_combat_stats": final_combat_stats},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	if callOpts.tags != nil {
+		args.Tags = callOpts.tags
+	}
+
+	encoded, err := args.Encode()
+	if err != nil {
+		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
+		// and include the type of the args you're passing in.
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: ReviewGame: %w", err)
+		panic(wrapped_err)
+	}
+
+	internal_channel, err := bamlRuntime.CallFunctionStream(ctx, "ReviewGame", encoded, callOpts.onTick)
+	if err != nil {
+		return nil, err
+	}
+
+	channel := make(chan StreamValue[stream_types.GameReview, types.GameReview])
+	go func() {
+		for result := range internal_channel {
+			if result.Error != nil {
+				channel <- StreamValue[stream_types.GameReview, types.GameReview]{
+					IsError: true,
+					Error:   result.Error,
+				}
+				close(channel)
+				return
+			}
+			if result.HasData {
+				data := (result.Data).(types.GameReview)
+				channel <- StreamValue[stream_types.GameReview, types.GameReview]{
+					IsFinal:  true,
+					as_final: &data,
+				}
+			} else {
+				data := (result.StreamData).(stream_types.GameReview)
+				channel <- StreamValue[stream_types.GameReview, types.GameReview]{
+					IsFinal:   false,
+					as_stream: &data,
+				}
+			}
+		}
+
+		// when internal_channel is closed, close the output too
+		close(channel)
+	}()
+	return channel, nil
+}
+
+// / Streaming version of SelectRelevantMemory
+func (*stream) SelectRelevantMemory(ctx context.Context, directive string, our_faction string, opponent_faction string, candidates types.MemoryCandidates, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.RelevantMemory, types.RelevantMemory], error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"directive": directive, "our_faction": our_faction, "opponent_faction": opponent_faction, "candidates": candidates},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	if callOpts.tags != nil {
+		args.Tags = callOpts.tags
+	}
+
+	encoded, err := args.Encode()
+	if err != nil {
+		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
+		// and include the type of the args you're passing in.
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: SelectRelevantMemory: %w", err)
+		panic(wrapped_err)
+	}
+
+	internal_channel, err := bamlRuntime.CallFunctionStream(ctx, "SelectRelevantMemory", encoded, callOpts.onTick)
+	if err != nil {
+		return nil, err
+	}
+
+	channel := make(chan StreamValue[stream_types.RelevantMemory, types.RelevantMemory])
+	go func() {
+		for result := range internal_channel {
+			if result.Error != nil {
+				channel <- StreamValue[stream_types.RelevantMemory, types.RelevantMemory]{
+					IsError: true,
+					Error:   result.Error,
+				}
+				close(channel)
+				return
+			}
+			if result.HasData {
+				data := (result.Data).(types.RelevantMemory)
+				channel <- StreamValue[stream_types.RelevantMemory, types.RelevantMemory]{
+					IsFinal:  true,
+					as_final: &data,
+				}
+			} else {
+				data := (result.StreamData).(stream_types.RelevantMemory)
+				channel <- StreamValue[stream_types.RelevantMemory, types.RelevantMemory]{
 					IsFinal:   false,
 					as_stream: &data,
 				}

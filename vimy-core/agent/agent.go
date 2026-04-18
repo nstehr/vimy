@@ -37,7 +37,14 @@ func (a *Agent) HandleHello(env ipc.Envelope) (*ipc.Envelope, error) {
 
 	a.Player = hello.Player
 	a.Faction = hello.Faction
-	slog.Info("player identified", "player", a.Player, "faction", a.Faction)
+	opponentSummary := make([]string, 0, len(hello.Opponents))
+	for _, o := range hello.Opponents {
+		opponentSummary = append(opponentSummary, o.Player+":"+o.Faction)
+	}
+	slog.Info("player identified",
+		"player", a.Player,
+		"faction", a.Faction,
+		"opponents", opponentSummary)
 
 	if hello.Terrain != nil {
 		grid := &model.TerrainGrid{
@@ -57,6 +64,7 @@ func (a *Agent) HandleHello(env ipc.Envelope) (*ipc.Envelope, error) {
 
 	if a.Strategist != nil {
 		a.Strategist.SetFaction(hello.Faction)
+		a.Strategist.SetOpponents(hello.Opponents)
 		go a.Strategist.Start(a.ctx)
 	}
 
@@ -85,10 +93,20 @@ func (a *Agent) HandleGameEnd(env ipc.Envelope) (*ipc.Envelope, error) {
 			Faction: a.Faction,
 			Won:     won,
 		})
+
+		// Snapshot history under the strategist lock BEFORE Reset wipes it.
+		// The retrospective LLM call + archival run asynchronously and the
+		// game record is inserted only when the review completes (or fails).
+		snap := a.Strategist.snapshotForReview(won)
+		a.Strategist.runRetrospective(a.ctx, snap)
+
 		a.Strategist.Reset()
 
-		if a.Store != nil {
-			a.Store.RecordGame(store.GameRecord{Faction: a.Faction, Won: won})
+		// Fallback: if no retrospective will run (no strategist store wired
+		// or no doctrine history), still persist a minimal win/loss row so
+		// the dashboard counters stay correct.
+		if snap == nil && a.Store != nil {
+			_ = a.Store.RecordGame(store.GameRecord{Faction: a.Faction, Won: won})
 		}
 	}
 

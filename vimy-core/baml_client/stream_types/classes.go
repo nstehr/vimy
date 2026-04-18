@@ -74,10 +74,245 @@ func (c ActiveProduction) BamlTypeName() string {
 	return "ActiveProduction"
 }
 
+type CandidateCautionary struct {
+	Id             *int64  `json:"id"`
+	Context        *string `json:"context"`
+	Failed_pattern *string `json:"failed_pattern"`
+	Failure_reason *string `json:"failure_reason"`
+}
+
+func (c *CandidateCautionary) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "CandidateCautionary" {
+		panic(fmt.Sprintf("expected CandidateCautionary, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "id":
+			c.Id = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "context":
+			c.Context = baml.Decode(valueHolder).Interface().(*string)
+
+		case "failed_pattern":
+			c.Failed_pattern = baml.Decode(valueHolder).Interface().(*string)
+
+		case "failure_reason":
+			c.Failure_reason = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class CandidateCautionary", key))
+
+		}
+	}
+
+}
+
+func (c CandidateCautionary) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["id"] = c.Id
+
+	fields["context"] = c.Context
+
+	fields["failed_pattern"] = c.Failed_pattern
+
+	fields["failure_reason"] = c.Failure_reason
+
+	return baml.EncodeClass("CandidateCautionary", fields, nil)
+}
+
+func (c CandidateCautionary) BamlTypeName() string {
+	return "CandidateCautionary"
+}
+
+type CandidateExemplar struct {
+	Id               *int64  `json:"id"`
+	Context          *string `json:"context"`
+	Rationale        *string `json:"rationale"`
+	Doctrine_summary *string `json:"doctrine_summary"`
+}
+
+func (c *CandidateExemplar) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "CandidateExemplar" {
+		panic(fmt.Sprintf("expected CandidateExemplar, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "id":
+			c.Id = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "context":
+			c.Context = baml.Decode(valueHolder).Interface().(*string)
+
+		case "rationale":
+			c.Rationale = baml.Decode(valueHolder).Interface().(*string)
+
+		case "doctrine_summary":
+			c.Doctrine_summary = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class CandidateExemplar", key))
+
+		}
+	}
+
+}
+
+func (c CandidateExemplar) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["id"] = c.Id
+
+	fields["context"] = c.Context
+
+	fields["rationale"] = c.Rationale
+
+	fields["doctrine_summary"] = c.Doctrine_summary
+
+	return baml.EncodeClass("CandidateExemplar", fields, nil)
+}
+
+func (c CandidateExemplar) BamlTypeName() string {
+	return "CandidateExemplar"
+}
+
+type CandidateLesson struct {
+	Id         *int64   `json:"id"`
+	Trigger    *string  `json:"trigger"`
+	Guidance   *string  `json:"guidance"`
+	Confidence *float64 `json:"confidence"`
+}
+
+func (c *CandidateLesson) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "CandidateLesson" {
+		panic(fmt.Sprintf("expected CandidateLesson, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "id":
+			c.Id = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "trigger":
+			c.Trigger = baml.Decode(valueHolder).Interface().(*string)
+
+		case "guidance":
+			c.Guidance = baml.Decode(valueHolder).Interface().(*string)
+
+		case "confidence":
+			c.Confidence = baml.Decode(valueHolder).Interface().(*float64)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class CandidateLesson", key))
+
+		}
+	}
+
+}
+
+func (c CandidateLesson) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["id"] = c.Id
+
+	fields["trigger"] = c.Trigger
+
+	fields["guidance"] = c.Guidance
+
+	fields["confidence"] = c.Confidence
+
+	return baml.EncodeClass("CandidateLesson", fields, nil)
+}
+
+func (c CandidateLesson) BamlTypeName() string {
+	return "CandidateLesson"
+}
+
+type CautionaryPattern struct {
+	Context        *string `json:"context"`
+	Failed_pattern *string `json:"failed_pattern"`
+	Failure_reason *string `json:"failure_reason"`
+}
+
+func (c *CautionaryPattern) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "CautionaryPattern" {
+		panic(fmt.Sprintf("expected CautionaryPattern, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "context":
+			c.Context = baml.Decode(valueHolder).Interface().(*string)
+
+		case "failed_pattern":
+			c.Failed_pattern = baml.Decode(valueHolder).Interface().(*string)
+
+		case "failure_reason":
+			c.Failure_reason = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class CautionaryPattern", key))
+
+		}
+	}
+
+}
+
+func (c CautionaryPattern) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["context"] = c.Context
+
+	fields["failed_pattern"] = c.Failed_pattern
+
+	fields["failure_reason"] = c.Failure_reason
+
+	return baml.EncodeClass("CautionaryPattern", fields, nil)
+}
+
+func (c CautionaryPattern) BamlTypeName() string {
+	return "CautionaryPattern"
+}
+
 type CombatStats struct {
 	Infantry_lost *int64 `json:"infantry_lost"`
 	Vehicles_lost *int64 `json:"vehicles_lost"`
 	Aircraft_lost *int64 `json:"aircraft_lost"`
+	Naval_lost    *int64 `json:"naval_lost"`
 }
 
 func (c *CombatStats) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -103,6 +338,9 @@ func (c *CombatStats) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) 
 		case "aircraft_lost":
 			c.Aircraft_lost = baml.Decode(valueHolder).Interface().(*int64)
 
+		case "naval_lost":
+			c.Naval_lost = baml.Decode(valueHolder).Interface().(*int64)
+
 		default:
 
 			panic(fmt.Sprintf("unexpected field: %s in class CombatStats", key))
@@ -120,6 +358,8 @@ func (c CombatStats) Encode() (*cffi.HostValue, error) {
 	fields["vehicles_lost"] = c.Vehicles_lost
 
 	fields["aircraft_lost"] = c.Aircraft_lost
+
+	fields["naval_lost"] = c.Naval_lost
 
 	return baml.EncodeClass("CombatStats", fields, nil)
 }
@@ -314,6 +554,108 @@ func (c Doctrine) BamlTypeName() string {
 	return "Doctrine"
 }
 
+type DoctrineHistoryEntry struct {
+	Tick     *int64    `json:"tick"`
+	Doctrine *Doctrine `json:"doctrine"`
+}
+
+func (c *DoctrineHistoryEntry) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "DoctrineHistoryEntry" {
+		panic(fmt.Sprintf("expected DoctrineHistoryEntry, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "tick":
+			c.Tick = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "doctrine":
+			c.Doctrine = baml.Decode(valueHolder).Interface().(*Doctrine)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class DoctrineHistoryEntry", key))
+
+		}
+	}
+
+}
+
+func (c DoctrineHistoryEntry) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["tick"] = c.Tick
+
+	fields["doctrine"] = c.Doctrine
+
+	return baml.EncodeClass("DoctrineHistoryEntry", fields, nil)
+}
+
+func (c DoctrineHistoryEntry) BamlTypeName() string {
+	return "DoctrineHistoryEntry"
+}
+
+type DoctrineRating struct {
+	Name      *string `json:"name"`
+	Rating    *string `json:"rating"`
+	Reasoning *string `json:"reasoning"`
+}
+
+func (c *DoctrineRating) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "DoctrineRating" {
+		panic(fmt.Sprintf("expected DoctrineRating, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "name":
+			c.Name = baml.Decode(valueHolder).Interface().(*string)
+
+		case "rating":
+			c.Rating = baml.Decode(valueHolder).Interface().(*string)
+
+		case "reasoning":
+			c.Reasoning = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class DoctrineRating", key))
+
+		}
+	}
+
+}
+
+func (c DoctrineRating) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["name"] = c.Name
+
+	fields["rating"] = c.Rating
+
+	fields["reasoning"] = c.Reasoning
+
+	return baml.EncodeClass("DoctrineRating", fields, nil)
+}
+
+func (c DoctrineRating) BamlTypeName() string {
+	return "DoctrineRating"
+}
+
 type EnemyBase struct {
 	Owner          *string `json:"owner"`
 	X              *int64  `json:"x"`
@@ -426,6 +768,72 @@ func (c GameEvent) Encode() (*cffi.HostValue, error) {
 
 func (c GameEvent) BamlTypeName() string {
 	return "GameEvent"
+}
+
+type GameReview struct {
+	Summary          *string          `json:"summary"`
+	Quality_tag      *string          `json:"quality_tag"`
+	Turning_points   []TurningPoint   `json:"turning_points"`
+	Doctrine_ratings []DoctrineRating `json:"doctrine_ratings"`
+	Lessons          []RetroLesson    `json:"lessons"`
+}
+
+func (c *GameReview) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "GameReview" {
+		panic(fmt.Sprintf("expected GameReview, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "summary":
+			c.Summary = baml.Decode(valueHolder).Interface().(*string)
+
+		case "quality_tag":
+			c.Quality_tag = baml.Decode(valueHolder).Interface().(*string)
+
+		case "turning_points":
+			c.Turning_points = baml.Decode(valueHolder).Interface().([]TurningPoint)
+
+		case "doctrine_ratings":
+			c.Doctrine_ratings = baml.Decode(valueHolder).Interface().([]DoctrineRating)
+
+		case "lessons":
+			c.Lessons = baml.Decode(valueHolder).Interface().([]RetroLesson)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class GameReview", key))
+
+		}
+	}
+
+}
+
+func (c GameReview) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["summary"] = c.Summary
+
+	fields["quality_tag"] = c.Quality_tag
+
+	fields["turning_points"] = c.Turning_points
+
+	fields["doctrine_ratings"] = c.Doctrine_ratings
+
+	fields["lessons"] = c.Lessons
+
+	return baml.EncodeClass("GameReview", fields, nil)
+}
+
+func (c GameReview) BamlTypeName() string {
+	return "GameReview"
 }
 
 type GameSituation struct {
@@ -602,6 +1010,216 @@ func (c GameSituation) BamlTypeName() string {
 	return "GameSituation"
 }
 
+type MemoryCandidates struct {
+	Exemplars    []CandidateExemplar   `json:"exemplars"`
+	Cautionaries []CandidateCautionary `json:"cautionaries"`
+	Lessons      []CandidateLesson     `json:"lessons"`
+}
+
+func (c *MemoryCandidates) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "MemoryCandidates" {
+		panic(fmt.Sprintf("expected MemoryCandidates, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "exemplars":
+			c.Exemplars = baml.Decode(valueHolder).Interface().([]CandidateExemplar)
+
+		case "cautionaries":
+			c.Cautionaries = baml.Decode(valueHolder).Interface().([]CandidateCautionary)
+
+		case "lessons":
+			c.Lessons = baml.Decode(valueHolder).Interface().([]CandidateLesson)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class MemoryCandidates", key))
+
+		}
+	}
+
+}
+
+func (c MemoryCandidates) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["exemplars"] = c.Exemplars
+
+	fields["cautionaries"] = c.Cautionaries
+
+	fields["lessons"] = c.Lessons
+
+	return baml.EncodeClass("MemoryCandidates", fields, nil)
+}
+
+func (c MemoryCandidates) BamlTypeName() string {
+	return "MemoryCandidates"
+}
+
+type MemoryContext struct {
+	Exemplar_doctrines  []PastDoctrineExample `json:"exemplar_doctrines"`
+	Cautionary_patterns []CautionaryPattern   `json:"cautionary_patterns"`
+	Lessons             []MemoryLesson        `json:"lessons"`
+}
+
+func (c *MemoryContext) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "MemoryContext" {
+		panic(fmt.Sprintf("expected MemoryContext, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "exemplar_doctrines":
+			c.Exemplar_doctrines = baml.Decode(valueHolder).Interface().([]PastDoctrineExample)
+
+		case "cautionary_patterns":
+			c.Cautionary_patterns = baml.Decode(valueHolder).Interface().([]CautionaryPattern)
+
+		case "lessons":
+			c.Lessons = baml.Decode(valueHolder).Interface().([]MemoryLesson)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class MemoryContext", key))
+
+		}
+	}
+
+}
+
+func (c MemoryContext) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["exemplar_doctrines"] = c.Exemplar_doctrines
+
+	fields["cautionary_patterns"] = c.Cautionary_patterns
+
+	fields["lessons"] = c.Lessons
+
+	return baml.EncodeClass("MemoryContext", fields, nil)
+}
+
+func (c MemoryContext) BamlTypeName() string {
+	return "MemoryContext"
+}
+
+type MemoryLesson struct {
+	Trigger  *string `json:"trigger"`
+	Guidance *string `json:"guidance"`
+}
+
+func (c *MemoryLesson) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "MemoryLesson" {
+		panic(fmt.Sprintf("expected MemoryLesson, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "trigger":
+			c.Trigger = baml.Decode(valueHolder).Interface().(*string)
+
+		case "guidance":
+			c.Guidance = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class MemoryLesson", key))
+
+		}
+	}
+
+}
+
+func (c MemoryLesson) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["trigger"] = c.Trigger
+
+	fields["guidance"] = c.Guidance
+
+	return baml.EncodeClass("MemoryLesson", fields, nil)
+}
+
+func (c MemoryLesson) BamlTypeName() string {
+	return "MemoryLesson"
+}
+
+type PastDoctrineExample struct {
+	Context          *string `json:"context"`
+	Rationale        *string `json:"rationale"`
+	Doctrine_summary *string `json:"doctrine_summary"`
+}
+
+func (c *PastDoctrineExample) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "PastDoctrineExample" {
+		panic(fmt.Sprintf("expected PastDoctrineExample, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "context":
+			c.Context = baml.Decode(valueHolder).Interface().(*string)
+
+		case "rationale":
+			c.Rationale = baml.Decode(valueHolder).Interface().(*string)
+
+		case "doctrine_summary":
+			c.Doctrine_summary = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class PastDoctrineExample", key))
+
+		}
+	}
+
+}
+
+func (c PastDoctrineExample) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["context"] = c.Context
+
+	fields["rationale"] = c.Rationale
+
+	fields["doctrine_summary"] = c.Doctrine_summary
+
+	return baml.EncodeClass("PastDoctrineExample", fields, nil)
+}
+
+func (c PastDoctrineExample) BamlTypeName() string {
+	return "PastDoctrineExample"
+}
+
 type PowerStatus struct {
 	Drained  *int64  `json:"drained"`
 	Provided *int64  `json:"provided"`
@@ -654,6 +1272,228 @@ func (c PowerStatus) Encode() (*cffi.HostValue, error) {
 
 func (c PowerStatus) BamlTypeName() string {
 	return "PowerStatus"
+}
+
+type RelevantMemory struct {
+	Alignment_note *string              `json:"alignment_note"`
+	Exemplars      []SelectedExemplar   `json:"exemplars"`
+	Cautionaries   []SelectedCautionary `json:"cautionaries"`
+	Lesson_ids     []int64              `json:"lesson_ids"`
+}
+
+func (c *RelevantMemory) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "RelevantMemory" {
+		panic(fmt.Sprintf("expected RelevantMemory, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "alignment_note":
+			c.Alignment_note = baml.Decode(valueHolder).Interface().(*string)
+
+		case "exemplars":
+			c.Exemplars = baml.Decode(valueHolder).Interface().([]SelectedExemplar)
+
+		case "cautionaries":
+			c.Cautionaries = baml.Decode(valueHolder).Interface().([]SelectedCautionary)
+
+		case "lesson_ids":
+			c.Lesson_ids = baml.Decode(valueHolder).Interface().([]int64)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class RelevantMemory", key))
+
+		}
+	}
+
+}
+
+func (c RelevantMemory) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["alignment_note"] = c.Alignment_note
+
+	fields["exemplars"] = c.Exemplars
+
+	fields["cautionaries"] = c.Cautionaries
+
+	fields["lesson_ids"] = c.Lesson_ids
+
+	return baml.EncodeClass("RelevantMemory", fields, nil)
+}
+
+func (c RelevantMemory) BamlTypeName() string {
+	return "RelevantMemory"
+}
+
+type RetroLesson struct {
+	Trigger_text  *string  `json:"trigger_text"`
+	Guidance_text *string  `json:"guidance_text"`
+	Confidence    *float64 `json:"confidence"`
+}
+
+func (c *RetroLesson) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "RetroLesson" {
+		panic(fmt.Sprintf("expected RetroLesson, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "trigger_text":
+			c.Trigger_text = baml.Decode(valueHolder).Interface().(*string)
+
+		case "guidance_text":
+			c.Guidance_text = baml.Decode(valueHolder).Interface().(*string)
+
+		case "confidence":
+			c.Confidence = baml.Decode(valueHolder).Interface().(*float64)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class RetroLesson", key))
+
+		}
+	}
+
+}
+
+func (c RetroLesson) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["trigger_text"] = c.Trigger_text
+
+	fields["guidance_text"] = c.Guidance_text
+
+	fields["confidence"] = c.Confidence
+
+	return baml.EncodeClass("RetroLesson", fields, nil)
+}
+
+func (c RetroLesson) BamlTypeName() string {
+	return "RetroLesson"
+}
+
+type SelectedCautionary struct {
+	Id            *int64  `json:"id"`
+	Why_relevant  *string `json:"why_relevant"`
+	What_to_avoid *string `json:"what_to_avoid"`
+}
+
+func (c *SelectedCautionary) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "SelectedCautionary" {
+		panic(fmt.Sprintf("expected SelectedCautionary, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "id":
+			c.Id = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "why_relevant":
+			c.Why_relevant = baml.Decode(valueHolder).Interface().(*string)
+
+		case "what_to_avoid":
+			c.What_to_avoid = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class SelectedCautionary", key))
+
+		}
+	}
+
+}
+
+func (c SelectedCautionary) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["id"] = c.Id
+
+	fields["why_relevant"] = c.Why_relevant
+
+	fields["what_to_avoid"] = c.What_to_avoid
+
+	return baml.EncodeClass("SelectedCautionary", fields, nil)
+}
+
+func (c SelectedCautionary) BamlTypeName() string {
+	return "SelectedCautionary"
+}
+
+type SelectedExemplar struct {
+	Id              *int64  `json:"id"`
+	Why_relevant    *string `json:"why_relevant"`
+	What_to_emulate *string `json:"what_to_emulate"`
+}
+
+func (c *SelectedExemplar) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "SelectedExemplar" {
+		panic(fmt.Sprintf("expected SelectedExemplar, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "id":
+			c.Id = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "why_relevant":
+			c.Why_relevant = baml.Decode(valueHolder).Interface().(*string)
+
+		case "what_to_emulate":
+			c.What_to_emulate = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class SelectedExemplar", key))
+
+		}
+	}
+
+}
+
+func (c SelectedExemplar) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["id"] = c.Id
+
+	fields["why_relevant"] = c.Why_relevant
+
+	fields["what_to_emulate"] = c.What_to_emulate
+
+	return baml.EncodeClass("SelectedExemplar", fields, nil)
+}
+
+func (c SelectedExemplar) BamlTypeName() string {
+	return "SelectedExemplar"
 }
 
 type SquadInfo struct {
@@ -810,6 +1650,60 @@ func (c SupportPowerStatus) Encode() (*cffi.HostValue, error) {
 
 func (c SupportPowerStatus) BamlTypeName() string {
 	return "SupportPowerStatus"
+}
+
+type TurningPoint struct {
+	Tick                      *int64  `json:"tick"`
+	What_happened             *string `json:"what_happened"`
+	What_should_have_happened *string `json:"what_should_have_happened"`
+}
+
+func (c *TurningPoint) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "TurningPoint" {
+		panic(fmt.Sprintf("expected TurningPoint, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "tick":
+			c.Tick = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "what_happened":
+			c.What_happened = baml.Decode(valueHolder).Interface().(*string)
+
+		case "what_should_have_happened":
+			c.What_should_have_happened = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class TurningPoint", key))
+
+		}
+	}
+
+}
+
+func (c TurningPoint) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["tick"] = c.Tick
+
+	fields["what_happened"] = c.What_happened
+
+	fields["what_should_have_happened"] = c.What_should_have_happened
+
+	return baml.EncodeClass("TurningPoint", fields, nil)
+}
+
+func (c TurningPoint) BamlTypeName() string {
+	return "TurningPoint"
 }
 
 type TypeCount struct {

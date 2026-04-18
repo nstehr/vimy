@@ -1,6 +1,11 @@
 package views
 
-templ Dashboard(currentDirective string, wins int, losses int) {
+import (
+	"github.com/nstehr/vimy/vimy-core/agent"
+	"github.com/nstehr/vimy/vimy-core/store"
+)
+
+templ Dashboard(currentDirective string, wins int, losses int, lessons []store.GlobalLesson, games []store.GameSummary, librarian *agent.LibrarianSnapshot) {
 	@Layout("Vimy - Doctrine Dashboard") {
 		<div class="space-y-8">
 			<!-- Record Panel -->
@@ -28,6 +33,18 @@ templ Dashboard(currentDirective string, wins int, losses int) {
 			<div>
 				<h2 class="text-lg font-semibold text-gray-200 mb-4">Compiled Rules</h2>
 				@RulesPanel(nil)
+			</div>
+
+			<!-- Active Memory (librarian filter for this game) -->
+			<div>
+				<h2 class="text-lg font-semibold text-gray-200 mb-4">Active Memory <span class="text-sm font-normal text-gray-500">— librarian selection for this game</span></h2>
+				@LibrarianPanel(librarian)
+			</div>
+
+			<!-- Memory Library (all archived) -->
+			<div>
+				<h2 class="text-lg font-semibold text-gray-200 mb-4">Memory Library <span class="text-sm font-normal text-gray-500">— full archive</span></h2>
+				@MemoryPanel(lessons, games)
 			</div>
 
 			<!-- Doctrine Evolution Chart -->

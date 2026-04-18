@@ -49,6 +49,7 @@ class CombatStats {
   infantry_lost int @description("Total infantry killed this game")
   vehicles_lost int @description("Total vehicles lost this game")
   aircraft_lost int @description("Total aircraft lost this game")
+  naval_lost int @description("Total naval units lost this game")
 }
 
 class GameSituation {
@@ -105,7 +106,30 @@ class Doctrine {
   air_target_ground_def_priority float @description("0.0-1.0: how aggressively air forces should target enemy ground defenses (pillboxes, turrets, tesla coils, flame towers) to clear the path for your ground troops. Set high when relying on infantry/vehicle pushes. 0 = default targeting, 1 = ground defenses become top air priority")
 }
 
-function GenerateDoctrine(directive: string, situation: GameSituation, faction: string) -> Doctrine {
+class PastDoctrineExample {
+  context string @description("Brief matchup summary, e.g. 'vs allies on small map, won — rating: strong'")
+  rationale string @description("The doctrine's original rationale text")
+  doctrine_summary string @description("1-2 line tight summary of key fields, e.g. 'aggression=0.8, vehicle=0.7, scout=0.6'")
+}
+
+class CautionaryPattern {
+  context string @description("Matchup and outcome, e.g. 'vs england, lost'")
+  failed_pattern string @description("Terse description of the doctrine SHAPE that failed, e.g. 'aggression=0.85 + infantry=0.75 + low ground_def'")
+  failure_reason string @description("Why this pattern failed — the reviewer's judgment. NOT the original rationale (which would seduce the reader into repeating the mistake).")
+}
+
+class MemoryLesson {
+  trigger string
+  guidance string
+}
+
+class MemoryContext {
+  exemplar_doctrines PastDoctrineExample[]
+  cautionary_patterns CautionaryPattern[]
+  lessons MemoryLesson[]
+}
+
+function GenerateDoctrine(directive: string, situation: GameSituation, faction: string, memory: MemoryContext | null) -> Doctrine {
   client CustomGPT5Mini
   prompt #"
     You are a military strategist AI for Command & Conquer: Red Alert, a classic real-time strategy game.
@@ -173,7 +197,65 @@ function GenerateDoctrine(directive: string, situation: GameSituation, faction: 
     {% endif %}
 
     {% if situation.combat_stats %}
-    Combat Stats (lifetime): Lost {{ situation.combat_stats.infantry_lost }} infantry, {{ situation.combat_stats.vehicles_lost }} vehicles, {{ situation.combat_stats.aircraft_lost }} aircraft
+    Combat Stats (lifetime): Lost {{ situation.combat_stats.infantry_lost }} infantry, {{ situation.combat_stats.vehicles_lost }} vehicles, {{ situation.combat_stats.aircraft_lost }} aircraft, {{ situation.combat_stats.naval_lost }} naval
+    {% endif %}
+
+    {% if memory %}
+    {% if memory.lessons %}
+    LESSONS FROM PRIOR GAMES (advisory — current battlefield overrides):
+    {% for l in memory.lessons %}
+    - When {{ l.trigger }}: {{ l.guidance }}
+    {% endfor %}
+    {% endif %}
+
+    {% if memory.exemplar_doctrines %}
+    EXAMPLES OF DOCTRINES THAT WORKED IN SIMILAR MATCHUPS:
+    {% for d in memory.exemplar_doctrines %}
+    - ({{ d.context }}) {{ d.doctrine_summary }}
+      Rationale: {{ d.rationale }}
+    {% endfor %}
+    {% endif %}
+
+    {% if memory.cautionary_patterns %}
+    PATTERNS THAT FAILED IN SIMILAR MATCHUPS — HARD CONSTRAINTS, NOT ADVICE:
+    {% for c in memory.cautionary_patterns %}
+    - {{ c.context }}: {{ c.failed_pattern }}
+      Why it failed: {{ c.failure_reason }}
+    {% endfor %}
+
+    ENFORCEMENT RULES for cautionary patterns (these override the permissive
+    tone elsewhere in this prompt):
+
+    1. A cautionary pattern is a PROHIBITION, not a warning. If it mentions
+       a tactic or doctrine shape, the fields implementing that tactic must
+       be zeroed or strongly de-emphasized in your output — UNLESS the
+       current directive explicitly names that tactic as required.
+
+    2. Partial reproduction is still reproduction. Adding your directive's
+       intent ON TOP of the failed shape does NOT satisfy the constraint.
+       "The swarm I was told to do, PLUS the APC-engineer raiding from the
+       cautionary" is still reproducing the cautionary. You must REPLACE
+       the failed tactic, not blend it in.
+
+    3. Concrete field mappings (apply when a cautionary warns against the
+       corresponding tactic AND the current directive does not require it):
+       - Transport/APC-drop tactics warned against → transport_assault = 0,
+         capture_priority < 0.2, do NOT list "apc" in preferred_vehicle.
+       - Engineer-capture tactics warned against → capture_priority = 0,
+         do NOT list "engineer" as preferred_infantry[0].
+       - Air-heavy openings warned against → air_weight < 0.15.
+       - Turtle/base-camping warned against → aggression > 0.6,
+         ground_defense_priority < 0.5.
+
+    4. If you find yourself wanting to include a tactic that's under a
+       cautionary, and the directive does NOT require it, the correct
+       response is to leave that field at its neutral default (0 or its
+       baseline) and compensate with tactics the directive DOES mention.
+    {% endif %}
+
+    Treat EXEMPLAR examples as advisory. Treat CAUTIONARY patterns as hard
+    constraints per the rules above. Current battlefield conditions override
+    exemplar patterns.
     {% endif %}
 
     CRITICAL ADAPTATION RULES:

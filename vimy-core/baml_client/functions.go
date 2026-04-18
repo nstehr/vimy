@@ -21,7 +21,7 @@ import (
 	"github.com/nstehr/vimy/vimy-core/baml_client/types"
 )
 
-func GenerateDoctrine(ctx context.Context, directive string, situation types.GameSituation, faction string, opts ...CallOptionFunc) (types.Doctrine, error) {
+func GenerateDoctrine(ctx context.Context, directive string, situation types.GameSituation, faction string, memory *types.MemoryContext, opts ...CallOptionFunc) (types.Doctrine, error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -37,7 +37,7 @@ func GenerateDoctrine(ctx context.Context, directive string, situation types.Gam
 	}
 
 	args := baml.BamlFunctionArguments{
-		Kwargs: map[string]any{"directive": directive, "situation": situation, "faction": faction},
+		Kwargs: map[string]any{"directive": directive, "situation": situation, "faction": faction, "memory": memory},
 		Env:    getEnvVars(callOpts.env),
 	}
 
@@ -92,5 +92,153 @@ func GenerateDoctrine(ctx context.Context, directive string, situation types.Gam
 		}
 
 		return types.Doctrine{}, fmt.Errorf("No data returned from stream")
+	}
+}
+
+func ReviewGame(ctx context.Context, our_faction string, opponent_faction string, won bool, duration_ticks int64, doctrine_history []types.DoctrineHistoryEntry, events []types.GameEvent, final_combat_stats types.CombatStats, opts ...CallOptionFunc) (types.GameReview, error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	// Resolve client option to clientRegistry (client takes precedence)
+	if callOpts.client != nil {
+		if callOpts.clientRegistry == nil {
+			callOpts.clientRegistry = baml.NewClientRegistry()
+		}
+		callOpts.clientRegistry.SetPrimaryClient(*callOpts.client)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"our_faction": our_faction, "opponent_faction": opponent_faction, "won": won, "duration_ticks": duration_ticks, "doctrine_history": doctrine_history, "events": events, "final_combat_stats": final_combat_stats},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	if callOpts.tags != nil {
+		args.Tags = callOpts.tags
+	}
+
+	encoded, err := args.Encode()
+	if err != nil {
+		panic(err)
+	}
+
+	if callOpts.onTick == nil {
+		result, err := bamlRuntime.CallFunction(ctx, "ReviewGame", encoded, callOpts.onTick)
+		if err != nil {
+			return types.GameReview{}, err
+		}
+
+		if result.Error != nil {
+			return types.GameReview{}, result.Error
+		}
+
+		casted := (result.Data).(types.GameReview)
+
+		return casted, nil
+	} else {
+		channel, err := bamlRuntime.CallFunctionStream(ctx, "ReviewGame", encoded, callOpts.onTick)
+		if err != nil {
+			return types.GameReview{}, err
+		}
+
+		for result := range channel {
+			if result.Error != nil {
+				return types.GameReview{}, result.Error
+			}
+
+			if result.HasData {
+				return result.Data.(types.GameReview), nil
+			}
+		}
+
+		return types.GameReview{}, fmt.Errorf("No data returned from stream")
+	}
+}
+
+func SelectRelevantMemory(ctx context.Context, directive string, our_faction string, opponent_faction string, candidates types.MemoryCandidates, opts ...CallOptionFunc) (types.RelevantMemory, error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	// Resolve client option to clientRegistry (client takes precedence)
+	if callOpts.client != nil {
+		if callOpts.clientRegistry == nil {
+			callOpts.clientRegistry = baml.NewClientRegistry()
+		}
+		callOpts.clientRegistry.SetPrimaryClient(*callOpts.client)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"directive": directive, "our_faction": our_faction, "opponent_faction": opponent_faction, "candidates": candidates},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	if callOpts.tags != nil {
+		args.Tags = callOpts.tags
+	}
+
+	encoded, err := args.Encode()
+	if err != nil {
+		panic(err)
+	}
+
+	if callOpts.onTick == nil {
+		result, err := bamlRuntime.CallFunction(ctx, "SelectRelevantMemory", encoded, callOpts.onTick)
+		if err != nil {
+			return types.RelevantMemory{}, err
+		}
+
+		if result.Error != nil {
+			return types.RelevantMemory{}, result.Error
+		}
+
+		casted := (result.Data).(types.RelevantMemory)
+
+		return casted, nil
+	} else {
+		channel, err := bamlRuntime.CallFunctionStream(ctx, "SelectRelevantMemory", encoded, callOpts.onTick)
+		if err != nil {
+			return types.RelevantMemory{}, err
+		}
+
+		for result := range channel {
+			if result.Error != nil {
+				return types.RelevantMemory{}, result.Error
+			}
+
+			if result.HasData {
+				return result.Data.(types.RelevantMemory), nil
+			}
+		}
+
+		return types.RelevantMemory{}, fmt.Errorf("No data returned from stream")
 	}
 }

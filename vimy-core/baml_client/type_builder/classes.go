@@ -55,6 +55,178 @@ func (t *ActiveProductionClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }
 
+type CandidateCautionaryClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *CandidateCautionaryClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *CandidateCautionaryClassView) PropertyId() (ClassPropertyView, error) {
+	return t.inner.Property("id")
+}
+
+func (t *CandidateCautionaryClassView) PropertyContext() (ClassPropertyView, error) {
+	return t.inner.Property("context")
+}
+
+func (t *CandidateCautionaryClassView) PropertyFailed_pattern() (ClassPropertyView, error) {
+	return t.inner.Property("failed_pattern")
+}
+
+func (t *CandidateCautionaryClassView) PropertyFailure_reason() (ClassPropertyView, error) {
+	return t.inner.Property("failure_reason")
+}
+
+func (t *TypeBuilder) CandidateCautionary() (*CandidateCautionaryClassView, error) {
+	bld, err := t.inner.Class("CandidateCautionary")
+	if err != nil {
+		return nil, err
+	}
+	return &CandidateCautionaryClassView{inner: bld}, nil
+}
+
+func (t *CandidateCautionaryClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type CandidateExemplarClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *CandidateExemplarClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *CandidateExemplarClassView) PropertyId() (ClassPropertyView, error) {
+	return t.inner.Property("id")
+}
+
+func (t *CandidateExemplarClassView) PropertyContext() (ClassPropertyView, error) {
+	return t.inner.Property("context")
+}
+
+func (t *CandidateExemplarClassView) PropertyRationale() (ClassPropertyView, error) {
+	return t.inner.Property("rationale")
+}
+
+func (t *CandidateExemplarClassView) PropertyDoctrine_summary() (ClassPropertyView, error) {
+	return t.inner.Property("doctrine_summary")
+}
+
+func (t *TypeBuilder) CandidateExemplar() (*CandidateExemplarClassView, error) {
+	bld, err := t.inner.Class("CandidateExemplar")
+	if err != nil {
+		return nil, err
+	}
+	return &CandidateExemplarClassView{inner: bld}, nil
+}
+
+func (t *CandidateExemplarClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type CandidateLessonClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *CandidateLessonClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *CandidateLessonClassView) PropertyId() (ClassPropertyView, error) {
+	return t.inner.Property("id")
+}
+
+func (t *CandidateLessonClassView) PropertyTrigger() (ClassPropertyView, error) {
+	return t.inner.Property("trigger")
+}
+
+func (t *CandidateLessonClassView) PropertyGuidance() (ClassPropertyView, error) {
+	return t.inner.Property("guidance")
+}
+
+func (t *CandidateLessonClassView) PropertyConfidence() (ClassPropertyView, error) {
+	return t.inner.Property("confidence")
+}
+
+func (t *TypeBuilder) CandidateLesson() (*CandidateLessonClassView, error) {
+	bld, err := t.inner.Class("CandidateLesson")
+	if err != nil {
+		return nil, err
+	}
+	return &CandidateLessonClassView{inner: bld}, nil
+}
+
+func (t *CandidateLessonClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type CautionaryPatternClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *CautionaryPatternClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *CautionaryPatternClassView) PropertyContext() (ClassPropertyView, error) {
+	return t.inner.Property("context")
+}
+
+func (t *CautionaryPatternClassView) PropertyFailed_pattern() (ClassPropertyView, error) {
+	return t.inner.Property("failed_pattern")
+}
+
+func (t *CautionaryPatternClassView) PropertyFailure_reason() (ClassPropertyView, error) {
+	return t.inner.Property("failure_reason")
+}
+
+func (t *TypeBuilder) CautionaryPattern() (*CautionaryPatternClassView, error) {
+	bld, err := t.inner.Class("CautionaryPattern")
+	if err != nil {
+		return nil, err
+	}
+	return &CautionaryPatternClassView{inner: bld}, nil
+}
+
+func (t *CautionaryPatternClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
 type CombatStatsClassView struct {
 	inner baml.ClassBuilder
 }
@@ -81,6 +253,10 @@ func (t *CombatStatsClassView) PropertyVehicles_lost() (ClassPropertyView, error
 
 func (t *CombatStatsClassView) PropertyAircraft_lost() (ClassPropertyView, error) {
 	return t.inner.Property("aircraft_lost")
+}
+
+func (t *CombatStatsClassView) PropertyNaval_lost() (ClassPropertyView, error) {
+	return t.inner.Property("naval_lost")
 }
 
 func (t *TypeBuilder) CombatStats() (*CombatStatsClassView, error) {
@@ -223,6 +399,82 @@ func (t *DoctrineClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }
 
+type DoctrineHistoryEntryClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *DoctrineHistoryEntryClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *DoctrineHistoryEntryClassView) PropertyTick() (ClassPropertyView, error) {
+	return t.inner.Property("tick")
+}
+
+func (t *DoctrineHistoryEntryClassView) PropertyDoctrine() (ClassPropertyView, error) {
+	return t.inner.Property("doctrine")
+}
+
+func (t *TypeBuilder) DoctrineHistoryEntry() (*DoctrineHistoryEntryClassView, error) {
+	bld, err := t.inner.Class("DoctrineHistoryEntry")
+	if err != nil {
+		return nil, err
+	}
+	return &DoctrineHistoryEntryClassView{inner: bld}, nil
+}
+
+func (t *DoctrineHistoryEntryClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type DoctrineRatingClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *DoctrineRatingClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *DoctrineRatingClassView) PropertyName() (ClassPropertyView, error) {
+	return t.inner.Property("name")
+}
+
+func (t *DoctrineRatingClassView) PropertyRating() (ClassPropertyView, error) {
+	return t.inner.Property("rating")
+}
+
+func (t *DoctrineRatingClassView) PropertyReasoning() (ClassPropertyView, error) {
+	return t.inner.Property("reasoning")
+}
+
+func (t *TypeBuilder) DoctrineRating() (*DoctrineRatingClassView, error) {
+	bld, err := t.inner.Class("DoctrineRating")
+	if err != nil {
+		return nil, err
+	}
+	return &DoctrineRatingClassView{inner: bld}, nil
+}
+
+func (t *DoctrineRatingClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
 type EnemyBaseClassView struct {
 	inner baml.ClassBuilder
 }
@@ -304,6 +556,54 @@ func (t *TypeBuilder) GameEvent() (*GameEventClassView, error) {
 }
 
 func (t *GameEventClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type GameReviewClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *GameReviewClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *GameReviewClassView) PropertySummary() (ClassPropertyView, error) {
+	return t.inner.Property("summary")
+}
+
+func (t *GameReviewClassView) PropertyQuality_tag() (ClassPropertyView, error) {
+	return t.inner.Property("quality_tag")
+}
+
+func (t *GameReviewClassView) PropertyTurning_points() (ClassPropertyView, error) {
+	return t.inner.Property("turning_points")
+}
+
+func (t *GameReviewClassView) PropertyDoctrine_ratings() (ClassPropertyView, error) {
+	return t.inner.Property("doctrine_ratings")
+}
+
+func (t *GameReviewClassView) PropertyLessons() (ClassPropertyView, error) {
+	return t.inner.Property("lessons")
+}
+
+func (t *TypeBuilder) GameReview() (*GameReviewClassView, error) {
+	bld, err := t.inner.Class("GameReview")
+	if err != nil {
+		return nil, err
+	}
+	return &GameReviewClassView{inner: bld}, nil
+}
+
+func (t *GameReviewClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }
 
@@ -427,6 +727,162 @@ func (t *GameSituationClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }
 
+type MemoryCandidatesClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *MemoryCandidatesClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *MemoryCandidatesClassView) PropertyExemplars() (ClassPropertyView, error) {
+	return t.inner.Property("exemplars")
+}
+
+func (t *MemoryCandidatesClassView) PropertyCautionaries() (ClassPropertyView, error) {
+	return t.inner.Property("cautionaries")
+}
+
+func (t *MemoryCandidatesClassView) PropertyLessons() (ClassPropertyView, error) {
+	return t.inner.Property("lessons")
+}
+
+func (t *TypeBuilder) MemoryCandidates() (*MemoryCandidatesClassView, error) {
+	bld, err := t.inner.Class("MemoryCandidates")
+	if err != nil {
+		return nil, err
+	}
+	return &MemoryCandidatesClassView{inner: bld}, nil
+}
+
+func (t *MemoryCandidatesClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type MemoryContextClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *MemoryContextClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *MemoryContextClassView) PropertyExemplar_doctrines() (ClassPropertyView, error) {
+	return t.inner.Property("exemplar_doctrines")
+}
+
+func (t *MemoryContextClassView) PropertyCautionary_patterns() (ClassPropertyView, error) {
+	return t.inner.Property("cautionary_patterns")
+}
+
+func (t *MemoryContextClassView) PropertyLessons() (ClassPropertyView, error) {
+	return t.inner.Property("lessons")
+}
+
+func (t *TypeBuilder) MemoryContext() (*MemoryContextClassView, error) {
+	bld, err := t.inner.Class("MemoryContext")
+	if err != nil {
+		return nil, err
+	}
+	return &MemoryContextClassView{inner: bld}, nil
+}
+
+func (t *MemoryContextClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type MemoryLessonClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *MemoryLessonClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *MemoryLessonClassView) PropertyTrigger() (ClassPropertyView, error) {
+	return t.inner.Property("trigger")
+}
+
+func (t *MemoryLessonClassView) PropertyGuidance() (ClassPropertyView, error) {
+	return t.inner.Property("guidance")
+}
+
+func (t *TypeBuilder) MemoryLesson() (*MemoryLessonClassView, error) {
+	bld, err := t.inner.Class("MemoryLesson")
+	if err != nil {
+		return nil, err
+	}
+	return &MemoryLessonClassView{inner: bld}, nil
+}
+
+func (t *MemoryLessonClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type PastDoctrineExampleClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *PastDoctrineExampleClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *PastDoctrineExampleClassView) PropertyContext() (ClassPropertyView, error) {
+	return t.inner.Property("context")
+}
+
+func (t *PastDoctrineExampleClassView) PropertyRationale() (ClassPropertyView, error) {
+	return t.inner.Property("rationale")
+}
+
+func (t *PastDoctrineExampleClassView) PropertyDoctrine_summary() (ClassPropertyView, error) {
+	return t.inner.Property("doctrine_summary")
+}
+
+func (t *TypeBuilder) PastDoctrineExample() (*PastDoctrineExampleClassView, error) {
+	bld, err := t.inner.Class("PastDoctrineExample")
+	if err != nil {
+		return nil, err
+	}
+	return &PastDoctrineExampleClassView{inner: bld}, nil
+}
+
+func (t *PastDoctrineExampleClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
 type PowerStatusClassView struct {
 	inner baml.ClassBuilder
 }
@@ -464,6 +920,170 @@ func (t *TypeBuilder) PowerStatus() (*PowerStatusClassView, error) {
 }
 
 func (t *PowerStatusClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type RelevantMemoryClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *RelevantMemoryClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *RelevantMemoryClassView) PropertyAlignment_note() (ClassPropertyView, error) {
+	return t.inner.Property("alignment_note")
+}
+
+func (t *RelevantMemoryClassView) PropertyExemplars() (ClassPropertyView, error) {
+	return t.inner.Property("exemplars")
+}
+
+func (t *RelevantMemoryClassView) PropertyCautionaries() (ClassPropertyView, error) {
+	return t.inner.Property("cautionaries")
+}
+
+func (t *RelevantMemoryClassView) PropertyLesson_ids() (ClassPropertyView, error) {
+	return t.inner.Property("lesson_ids")
+}
+
+func (t *TypeBuilder) RelevantMemory() (*RelevantMemoryClassView, error) {
+	bld, err := t.inner.Class("RelevantMemory")
+	if err != nil {
+		return nil, err
+	}
+	return &RelevantMemoryClassView{inner: bld}, nil
+}
+
+func (t *RelevantMemoryClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type RetroLessonClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *RetroLessonClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *RetroLessonClassView) PropertyTrigger_text() (ClassPropertyView, error) {
+	return t.inner.Property("trigger_text")
+}
+
+func (t *RetroLessonClassView) PropertyGuidance_text() (ClassPropertyView, error) {
+	return t.inner.Property("guidance_text")
+}
+
+func (t *RetroLessonClassView) PropertyConfidence() (ClassPropertyView, error) {
+	return t.inner.Property("confidence")
+}
+
+func (t *TypeBuilder) RetroLesson() (*RetroLessonClassView, error) {
+	bld, err := t.inner.Class("RetroLesson")
+	if err != nil {
+		return nil, err
+	}
+	return &RetroLessonClassView{inner: bld}, nil
+}
+
+func (t *RetroLessonClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type SelectedCautionaryClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *SelectedCautionaryClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *SelectedCautionaryClassView) PropertyId() (ClassPropertyView, error) {
+	return t.inner.Property("id")
+}
+
+func (t *SelectedCautionaryClassView) PropertyWhy_relevant() (ClassPropertyView, error) {
+	return t.inner.Property("why_relevant")
+}
+
+func (t *SelectedCautionaryClassView) PropertyWhat_to_avoid() (ClassPropertyView, error) {
+	return t.inner.Property("what_to_avoid")
+}
+
+func (t *TypeBuilder) SelectedCautionary() (*SelectedCautionaryClassView, error) {
+	bld, err := t.inner.Class("SelectedCautionary")
+	if err != nil {
+		return nil, err
+	}
+	return &SelectedCautionaryClassView{inner: bld}, nil
+}
+
+func (t *SelectedCautionaryClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type SelectedExemplarClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *SelectedExemplarClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *SelectedExemplarClassView) PropertyId() (ClassPropertyView, error) {
+	return t.inner.Property("id")
+}
+
+func (t *SelectedExemplarClassView) PropertyWhy_relevant() (ClassPropertyView, error) {
+	return t.inner.Property("why_relevant")
+}
+
+func (t *SelectedExemplarClassView) PropertyWhat_to_emulate() (ClassPropertyView, error) {
+	return t.inner.Property("what_to_emulate")
+}
+
+func (t *TypeBuilder) SelectedExemplar() (*SelectedExemplarClassView, error) {
+	bld, err := t.inner.Class("SelectedExemplar")
+	if err != nil {
+		return nil, err
+	}
+	return &SelectedExemplarClassView{inner: bld}, nil
+}
+
+func (t *SelectedExemplarClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }
 
@@ -580,6 +1200,46 @@ func (t *TypeBuilder) SupportPowerStatus() (*SupportPowerStatusClassView, error)
 }
 
 func (t *SupportPowerStatusClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type TurningPointClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *TurningPointClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *TurningPointClassView) PropertyTick() (ClassPropertyView, error) {
+	return t.inner.Property("tick")
+}
+
+func (t *TurningPointClassView) PropertyWhat_happened() (ClassPropertyView, error) {
+	return t.inner.Property("what_happened")
+}
+
+func (t *TurningPointClassView) PropertyWhat_should_have_happened() (ClassPropertyView, error) {
+	return t.inner.Property("what_should_have_happened")
+}
+
+func (t *TypeBuilder) TurningPoint() (*TurningPointClassView, error) {
+	bld, err := t.inner.Class("TurningPoint")
+	if err != nil {
+		return nil, err
+	}
+	return &TurningPointClassView{inner: bld}, nil
+}
+
+func (t *TurningPointClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }
 

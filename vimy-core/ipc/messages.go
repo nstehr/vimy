@@ -8,10 +8,16 @@ const (
 	TypeGameEnd   = "game_end"
 )
 
+type OpponentInfo struct {
+	Player  string `json:"player"`
+	Faction string `json:"faction"`
+}
+
 type HelloMessage struct {
-	Player  string       `json:"player"`
-	Faction string       `json:"faction"`
-	Terrain *TerrainData `json:"terrain,omitempty"`
+	Player    string         `json:"player"`
+	Faction   string         `json:"faction"`
+	Opponents []OpponentInfo `json:"opponents,omitempty"`
+	Terrain   *TerrainData   `json:"terrain,omitempty"`
 }
 
 // TerrainData carries the coarse terrain grid from the C# mod.

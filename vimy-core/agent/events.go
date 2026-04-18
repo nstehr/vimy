@@ -100,6 +100,11 @@ var aircraftTypes = map[string]bool{
 	rules.Longbow: true, rules.BlackHawk: true, rules.MiG: true, rules.Yak: true,
 }
 
+var navalTypes = map[string]bool{
+	rules.Submarine: true, rules.MissileSub: true,
+	rules.Gunboat: true, rules.Destroyer: true, rules.Cruiser: true,
+}
+
 // Enemy threat classification — what counters each domain.
 var antiInfantryThreats = map[string]bool{
 	rules.FlameTower:   true,
@@ -213,7 +218,7 @@ func isCombatUnit(u model.Unit) bool {
 	return t != rules.Harvester && t != rules.MCV
 }
 
-// unitDomain returns "infantry", "vehicle", "aircraft", or "" for the unit.
+// unitDomain returns "infantry", "vehicle", "aircraft", "naval", or "" for the unit.
 func unitDomain(u model.Unit) string {
 	t := baseType(u.Type)
 	if infantryTypes[t] {
@@ -224,6 +229,9 @@ func unitDomain(u model.Unit) string {
 	}
 	if aircraftTypes[t] {
 		return "aircraft"
+	}
+	if navalTypes[t] {
+		return "naval"
 	}
 	return ""
 }

@@ -3,6 +3,7 @@ using System.IO;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Traits;
 
@@ -27,6 +28,7 @@ namespace OpenRA.Mods.Vimy
 		NetworkStream stream;
 		int ticksSinceLastState;
 		bool connected;
+		bool helloSent;
 		string playerName;
 
 		public VimyBotModule(ActorInitializer init, VimyBotModuleInfo info)
@@ -56,7 +58,9 @@ namespace OpenRA.Mods.Vimy
 				connected = true;
 				Log.Write("debug", $"Connected to sidecar at {Info.PipePath}");
 
-				SendHello(bot);
+				// Hello is deferred to the first BotTick — at BotEnabled time
+				// world.Players may not be fully populated yet, which would
+				// produce an empty opponents array.
 			}
 			catch (Exception ex)
 			{
@@ -68,10 +72,36 @@ namespace OpenRA.Mods.Vimy
 		void SendHello(IBot bot)
 		{
 			var faction = bot.Player.Faction.InternalName;
-			var terrainJson = TerrainGridSerializer.Serialize(world);
-			var data = $"{{\"player\":\"{bot.Player.PlayerName}\",\"faction\":\"{faction}\",\"terrain\":{terrainJson}}}";
-			SendEnvelope("hello", data);
-			Log.Write("debug", $"Sent hello for player {bot.Player.PlayerName}, faction {faction} (terrain grid included)");
+
+			Log.Write("debug", $"VimyBotModule SendHello: world.Players.Length={world.Players.Length}");
+
+			var opponents = new JsonArray();
+			foreach (var p in world.Players)
+			{
+				var rel = bot.Player.RelationshipWith(p);
+				Log.Write("debug", $"VimyBotModule hello iter: player={p.PlayerName} faction={p.Faction.InternalName} nonCombatant={p.NonCombatant} rel={rel} self={(p == bot.Player)}");
+
+				if (p == bot.Player || p.NonCombatant)
+					continue;
+				if (rel == PlayerRelationship.Ally)
+					continue;
+				opponents.Add(new JsonObject
+				{
+					["player"] = p.PlayerName,
+					["faction"] = p.Faction.InternalName,
+				});
+			}
+
+			var payload = new JsonObject
+			{
+				["player"] = bot.Player.PlayerName,
+				["faction"] = faction,
+				["opponents"] = opponents,
+				["terrain"] = JsonNode.Parse(TerrainGridSerializer.Serialize(world)),
+			};
+
+			SendEnvelope("hello", payload.ToJsonString());
+			Log.Write("debug", $"Sent hello for player {bot.Player.PlayerName}, faction {faction}, opponents={opponents.Count}");
 		}
 
 		void IBotTick.BotTick(IBot bot)
@@ -84,6 +114,14 @@ namespace OpenRA.Mods.Vimy
 					TryConnect(bot);
 
 				return;
+			}
+
+			// Send hello on the first tick after a successful connect — by
+			// now world.Players is fully populated.
+			if (!helloSent)
+			{
+				SendHello(bot);
+				helloSent = true;
 			}
 
 			// Read any inbound messages from sidecar
