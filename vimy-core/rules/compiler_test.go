@@ -136,10 +136,14 @@ func TestCompileDoctrineEconomyOnly(t *testing.T) {
 			"build-missile-silo", "build-iron-curtain",
 			"fire-nuke", "fire-iron-curtain",
 			"fire-spy-plane", "fire-spy-plane-update", "fire-paratroopers", "fire-parabombs",
-			"capture-building", "produce-engineer", "produce-apc",
-			"load-engineer-into-apc", "deliver-apc-to-target":
+			"produce-engineer", "produce-apc":
 			t.Errorf("unexpected military rule %q when all unit weights=0", r.Name)
 		}
+		// capture-building, load-engineer-into-apc, deliver-apc-to-target are
+		// always emitted now (vimy-7e1) — their internal conditions gate
+		// firing on CapturableCount/RoleCount, so emitting them when
+		// CapturePriority=0 is harmless and prevents orphaning engineers
+		// that survive a CapturePriority drop between doctrines.
 	}
 }
 
@@ -946,8 +950,13 @@ func TestCompileDoctrineCaptureRules(t *testing.T) {
 		"deliver-apc-to-target",
 	}
 
-	// CapturePriority=0 → no capture rules
-	t.Run("absent when CapturePriority=0", func(t *testing.T) {
+	// CapturePriority=0 → only PRODUCTION rules absent. Direction rules
+	// (capture-building, load-engineer-into-apc, deliver-apc-to-target) are
+	// always emitted to handle orphaned engineers/APCs that survive a
+	// capture_priority drop between doctrines (vimy-7e1).
+	productionOnly := []string{"produce-engineer", "produce-apc"}
+	directionOnly := []string{"capture-building", "load-engineer-into-apc", "deliver-apc-to-target"}
+	t.Run("production absent, direction present when CapturePriority=0", func(t *testing.T) {
 		d := DefaultDoctrine()
 		d.CapturePriority = 0
 		rules := CompileDoctrine(d)
@@ -956,9 +965,14 @@ func TestCompileDoctrineCaptureRules(t *testing.T) {
 		for _, r := range rules {
 			found[r.Name] = true
 		}
-		for _, name := range captureRuleNames {
+		for _, name := range productionOnly {
 			if found[name] {
-				t.Errorf("unexpected capture rule %q when CapturePriority=0", name)
+				t.Errorf("unexpected production capture rule %q when CapturePriority=0", name)
+			}
+		}
+		for _, name := range directionOnly {
+			if !found[name] {
+				t.Errorf("expected direction capture rule %q to be present when CapturePriority=0 (always emitted to handle orphans)", name)
 			}
 		}
 	})
@@ -1025,6 +1039,524 @@ func TestCompileDoctrineCaptureRules(t *testing.T) {
 			}
 		}
 	})
+
+	// Conservative capture (below DoctrineSignificant): keep the
+	// CapturableCount() > 0 gates so low-priority doctrines don't waste queues.
+	t.Run("conservative capture keeps visibility gates", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.CapturePriority = 0.2 // below DoctrineSignificant (0.3)
+		byName := map[string]*Rule{}
+		for _, r := range CompileDoctrine(d) {
+			byName[r.Name] = r
+		}
+		for _, name := range []string{"produce-engineer", "produce-apc", "deliver-apc-to-target"} {
+			r := byName[name]
+			if r == nil {
+				t.Fatalf("expected %q rule", name)
+			}
+			if !strings.Contains(r.ConditionSrc, `CapturableCount() > 0`) {
+				t.Errorf("%s: expected CapturableCount() > 0 gate, got: %s", name, r.ConditionSrc)
+			}
+		}
+	})
+
+	// Aggressive capture (>= DoctrineSignificant): drop the visibility gate so
+	// engineers/APCs build proactively and loaded APCs double as scouts.
+	t.Run("aggressive capture drops visibility gates", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.CapturePriority = 0.5
+		byName := map[string]*Rule{}
+		for _, r := range CompileDoctrine(d) {
+			byName[r.Name] = r
+		}
+		for _, name := range []string{"produce-engineer", "produce-apc", "deliver-apc-to-target"} {
+			r := byName[name]
+			if r == nil {
+				t.Fatalf("expected %q rule", name)
+			}
+			if strings.Contains(r.ConditionSrc, `CapturableCount() > 0`) {
+				t.Errorf("%s: expected no CapturableCount() > 0 gate at aggressive priority, got: %s", name, r.ConditionSrc)
+			}
+		}
+	})
+
+	// load-engineer-into-apc must exclude engineers within capture range, else
+	// a just-unloaded engineer gets re-loaded before capture-building fires.
+	t.Run("load-engineer guards against re-load race", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.CapturePriority = 0.5
+		for _, r := range CompileDoctrine(d) {
+			if r.Name == "load-engineer-into-apc" {
+				if !strings.Contains(r.ConditionSrc, `!EngineerNearCapturable()`) {
+					t.Errorf("load-engineer-into-apc missing !EngineerNearCapturable() guard: %s", r.ConditionSrc)
+				}
+				return
+			}
+		}
+		t.Fatal("load-engineer-into-apc rule not present")
+	})
+}
+
+func TestBuildRadarPriorityRelativeToMilitary(t *testing.T) {
+	// Vehicle doctrine: war factory must beat radar in the "economy"
+	// exclusive category so APC production isn't delayed by radar.
+	t.Run("vehicle doctrine: war factory beats radar", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.VehicleWeight = 0.5
+		d.Aggression = 0.5
+		d.CapturePriority = 0.5
+		byName := compileToMap(d)
+		radar := byName["build-radar"]
+		wf := byName["build-war-factory"]
+		if radar == nil || wf == nil {
+			t.Fatalf("expected both rules; got radar=%v wf=%v", radar, wf)
+		}
+		if wf.Priority <= radar.Priority {
+			t.Errorf("war-factory priority (%d) must be > radar priority (%d)", wf.Priority, radar.Priority)
+		}
+	})
+
+	t.Run("air doctrine: airfield beats radar", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.AirWeight = 0.5
+		byName := compileToMap(d)
+		radar := byName["build-radar"]
+		af := byName["build-airfield"]
+		if radar == nil || af == nil {
+			t.Fatalf("expected both rules; got radar=%v airfield=%v", radar, af)
+		}
+		if af.Priority <= radar.Priority {
+			t.Errorf("airfield priority (%d) must be > radar priority (%d)", af.Priority, radar.Priority)
+		}
+	})
+
+	// Pure-tech doctrine: no military building rules. Radar should still
+	// compile, barracks-prereq should still beat radar so firing order
+	// (barracks → radar) matches today's behavior.
+	t.Run("pure-tech doctrine: barracks-prereq beats radar, radar present", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.InfantryWeight = 0
+		d.VehicleWeight = 0
+		d.AirWeight = 0
+		d.NavalWeight = 0
+		d.TechPriority = 0.5
+		d.GroundDefensePriority = 0
+		byName := compileToMap(d)
+		radar := byName["build-radar"]
+		prereq := byName["build-barracks-prereq"]
+		if radar == nil {
+			t.Fatal("pure-tech doctrine must still compile build-radar")
+		}
+		if prereq == nil {
+			t.Fatal("pure-tech doctrine must compile build-barracks-prereq")
+		}
+		if prereq.Priority <= radar.Priority {
+			t.Errorf("barracks-prereq priority (%d) must be > radar priority (%d) so barracks still fires first", prereq.Priority, radar.Priority)
+		}
+	})
+}
+
+// build-radar priority must bump when the doctrine's primary preferred
+// vehicle requires radar (V2, heavy tank, etc.) but must stay low when the
+// primary pref is APC or another non-radar-gated unit. Without the narrow
+// gate on PreferredVehicle[0], APC-rush doctrines that list medium_tank
+// as a secondary pref would get radar built before the war factory and
+// regress to the original pre-drop behavior.
+func TestBuildRadarPriorityScalesWithPrimaryVehiclePref(t *testing.T) {
+	t.Run("V2 primary: radar bumps to 710", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.VehicleWeight = 0.5
+		d.PreferredVehicle = []string{"v2_launcher", "heavy_tank", "medium_tank"}
+		byName := compileToMap(d)
+		radar := byName["build-radar"]
+		if radar == nil {
+			t.Fatal("build-radar rule missing")
+		}
+		if radar.Priority != 710 {
+			t.Errorf("expected radar priority 710 for V2-primary doctrine, got %d", radar.Priority)
+		}
+	})
+
+	t.Run("APC primary with tank secondaries: radar stays at 570", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.VehicleWeight = 0.4
+		d.CapturePriority = 0.6
+		d.TransportAssault = 0.8
+		d.PreferredVehicle = []string{"apc", "medium_tank", "heavy_tank", "tesla_tank"}
+		byName := compileToMap(d)
+		radar := byName["build-radar"]
+		if radar == nil {
+			t.Fatal("build-radar rule missing")
+		}
+		if radar.Priority != 570 {
+			t.Errorf("expected radar priority 570 for APC-primary doctrine (prevents APC-rush regression), got %d", radar.Priority)
+		}
+	})
+
+	t.Run("V2 primary: radar slots between second-refinery and war factory", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.VehicleWeight = 0.5
+		d.EconomyPriority = 0.7
+		d.PreferredVehicle = []string{"v2_launcher"}
+		byName := compileToMap(d)
+		radar := byName["build-radar"]
+		wf := byName["build-war-factory"]
+		secondRef := byName["build-second-refinery"]
+		if radar.Priority <= secondRef.Priority {
+			t.Errorf("V2 doctrine: radar (%d) must outrank second-refinery (%d)", radar.Priority, secondRef.Priority)
+		}
+		if radar.Priority >= wf.Priority {
+			t.Errorf("V2 doctrine: radar (%d) must stay below war-factory (%d) so WF builds first", radar.Priority, wf.Priority)
+		}
+	})
+}
+
+// produce-vehicle's cash gate must scale with VehicleWeight so the tech
+// center reserve doesn't fully lock out tank production when the doctrine
+// explicitly prioritized vehicles. Observed live (VehicleWeight=0.55,
+// TechPriority=0.6): 0 produce-vehicle fires over a 17k-tick game because
+// the combined reserves pushed the effective threshold above 3000 cash.
+func TestProduceVehicleCashGate_ScalesWithVehicleWeight(t *testing.T) {
+	t.Run("high vehicle + tech: cash gate reduced from tech reserve", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.VehicleWeight = 0.55
+		d.TechPriority = 0.6
+		d.EconomyPriority = 0.7
+		byName := compileToMap(d)
+		veh := byName["produce-vehicle"]
+		if veh == nil {
+			t.Fatal("produce-vehicle rule missing")
+		}
+		// At VehicleWeight=0.55 the scale is (1-0.55)=0.45. Tech-center
+		// reserve of 1500 scales to ~675 instead of 1500. Effective high
+		// threshold ≈ 800+675=1475 instead of 800+1500=2300.
+		if !strings.Contains(veh.ConditionSrc, "Cash() >= 800") {
+			t.Errorf("expected base cash gate in condition: %s", veh.ConditionSrc)
+		}
+		if strings.Contains(veh.ConditionSrc, "Cash() >= 2300") {
+			t.Errorf("expected scaled tech-center reserve, still see full 1500 reserve: %s", veh.ConditionSrc)
+		}
+	})
+
+	t.Run("low vehicle: full reserves preserved", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.VehicleWeight = 0.2 // below DoctrineHigh — no scaling
+		d.TechPriority = 0.5  // TechPriority > DoctrineHigh so tech reserve is active
+		byName := compileToMap(d)
+		veh := byName["produce-vehicle"]
+		if veh == nil {
+			t.Fatal("produce-vehicle rule missing")
+		}
+		// Should preserve full 1500 tech reserve → Cash() >= 2300 clause present.
+		if !strings.Contains(veh.ConditionSrc, "Cash() >= 2300") {
+			t.Errorf("expected full tech reserve (2300 clause) for low-vehicle doctrine, got: %s", veh.ConditionSrc)
+		}
+	})
+}
+
+// produce-extra-harvester must outrank combat-vehicle rules in the exclusive
+// CatProduceVehicle queue — otherwise aggressive doctrines (high
+// CapturePriority / TransportAssault) starve income expansion behind APCs and
+// flak trucks and the base runs on its single starter harvester forever.
+// Cash gate must also be bare (no c.savings stack) since harvesters generate
+// the income those reserves exist to protect.
+// produce-attack-dog must outrank rifles/specialists/rocket-soldiers/engineers
+// in the exclusive CatProduceInfantry queue. Otherwise the first dog never
+// gets built, no scout gets designated, and scout-with-scouts never fires —
+// leaving Soviet-faction doctrines with no non-APC scouting at all.
+func TestAttackDogPriorityBeatsRifles(t *testing.T) {
+	d := DefaultDoctrine()
+	d.InfantryWeight = 0.6
+	d.CapturePriority = 0.6
+	d.ScoutPriority = 0.9
+	d.TechPriority = 0.4 // enough for rocket-soldier to compile
+
+	byName := compileToMap(d)
+	dog := byName["produce-attack-dog"]
+	rifle := byName["produce-infantry"]
+	if dog == nil {
+		t.Fatal("produce-attack-dog rule missing with InfantryWeight=0.6")
+	}
+	if rifle == nil {
+		t.Fatal("produce-infantry rule missing with InfantryWeight=0.6")
+	}
+	if dog.Priority <= rifle.Priority {
+		t.Errorf("produce-attack-dog (%d) must outrank produce-infantry (%d) so first dog actually gets built", dog.Priority, rifle.Priority)
+	}
+	// Also above any other infantry production we commonly compile.
+	for _, name := range []string{"produce-rocket-soldier", "produce-specialist-infantry", "produce-engineer"} {
+		r := byName[name]
+		if r == nil {
+			continue
+		}
+		if dog.Priority <= r.Priority {
+			t.Errorf("produce-attack-dog (%d) must outrank %s (%d)", dog.Priority, name, r.Priority)
+		}
+	}
+}
+
+// When the doctrine prefers v2_launcher / artillery, build-war-factory must
+// outrank build-second-refinery in the exclusive "economy" queue. Otherwise
+// the second refinery wins and cheaper buildings snipe the economy queue
+// until cash for the war factory is never met, delaying the siege pipeline
+// by 5+ minutes. Observed live: V2-doctrine got war factory at tick 7550
+// of a 13k-tick game, zero siege vehicles produced.
+func TestWarFactoryPriorityWhenSiegePreferred(t *testing.T) {
+	d := DefaultDoctrine()
+	d.VehicleWeight = 0.6
+	d.EconomyPriority = 0.75 // pushes second-refinery priority to 665
+	d.PreferredVehicle = []string{"v2_launcher", "heavy_tank"}
+	byName := compileToMap(d)
+	wf := byName["build-war-factory"]
+	secondRef := byName["build-second-refinery"]
+	if wf == nil || secondRef == nil {
+		t.Fatalf("expected both rules; wf=%v secondRef=%v", wf, secondRef)
+	}
+	if wf.Priority <= secondRef.Priority {
+		t.Errorf("war-factory (%d) must outrank second-refinery (%d) when siege is preferred", wf.Priority, secondRef.Priority)
+	}
+}
+
+// When the doctrine explicitly prefers v2_launcher or artillery,
+// produce-siege-vehicle must outrank produce-vehicle and produce-flak-truck
+// so the preferred siege unit actually gets built. Without this bump, a
+// 53-minute stand-off-bombardment doctrine produced 1 siege vehicle.
+func TestSiegeVehiclePriorityWhenPreferred(t *testing.T) {
+	t.Run("preferred siege bumps priority above vehicle+flak", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.VehicleWeight = 0.6
+		d.TechPriority = 0.5
+		d.AirDefensePriority = 0.5 // enables flak-truck rule
+		d.PreferredVehicle = []string{"v2_launcher", "heavy_tank"}
+		byName := compileToMap(d)
+		siege := byName["produce-siege-vehicle"]
+		veh := byName["produce-vehicle"]
+		flak := byName["produce-flak-truck"]
+		if siege == nil || veh == nil {
+			t.Fatalf("expected siege+vehicle rules; siege=%v vehicle=%v", siege, veh)
+		}
+		if siege.Priority <= veh.Priority {
+			t.Errorf("preferred siege (%d) must outrank produce-vehicle (%d)", siege.Priority, veh.Priority)
+		}
+		if flak != nil && siege.Priority <= flak.Priority {
+			t.Errorf("preferred siege (%d) must outrank produce-flak-truck (%d)", siege.Priority, flak.Priority)
+		}
+	})
+
+	t.Run("preferred siege: cash gate scales with VehicleWeight", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.VehicleWeight = 0.6
+		d.TechPriority = 0.5 // tech-center reserve active
+		d.PreferredVehicle = []string{"v2_launcher"}
+		byName := compileToMap(d)
+		siege := byName["produce-siege-vehicle"]
+		if siege == nil {
+			t.Fatal("produce-siege-vehicle missing")
+		}
+		// At VW=0.6, scale = 0.4, tech reserve 1500 → 600; siege gate
+		// should NOT show a full 2400 clause (base 900 + full 1500).
+		if strings.Contains(siege.ConditionSrc, "Cash() >= 2400") {
+			t.Errorf("expected siege cash gate scaled, still see full 2400: %s", siege.ConditionSrc)
+		}
+		if !strings.Contains(siege.ConditionSrc, "Cash() >= 900") {
+			t.Errorf("expected base 900 threshold in siege condition: %s", siege.ConditionSrc)
+		}
+	})
+
+	t.Run("not preferred: siege stays default (below produce-vehicle)", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.VehicleWeight = 0.6
+		d.TechPriority = 0.5
+		d.PreferredVehicle = []string{"heavy_tank"} // no siege pref
+		byName := compileToMap(d)
+		siege := byName["produce-siege-vehicle"]
+		veh := byName["produce-vehicle"]
+		if siege == nil || veh == nil {
+			t.Fatalf("expected siege+vehicle rules; siege=%v vehicle=%v", siege, veh)
+		}
+		if siege.Priority >= veh.Priority {
+			t.Errorf("non-preferred siege (%d) should stay below produce-vehicle (%d) so tanks dominate", siege.Priority, veh.Priority)
+		}
+	})
+}
+
+func TestExtraHarvesterPriorityAndCashGate(t *testing.T) {
+	d := DefaultDoctrine()
+	d.EconomyPriority = 0.7     // > DoctrineDominant so rule compiles
+	d.CapturePriority = 0.8     // produce-apc + savings active
+	d.TransportAssault = 0.8    // produce-assault-apc active
+	d.VehicleWeight = 0.45      // produce-vehicle active
+	d.AirDefensePriority = 0.5  // produce-flak-truck active
+
+	byName := compileToMap(d)
+	harv := byName["produce-extra-harvester"]
+	if harv == nil {
+		t.Fatalf("produce-extra-harvester rule missing with EconomyPriority=0.7")
+	}
+	// Must be strictly above every competing vehicle-queue rule.
+	competitors := []string{"produce-vehicle", "produce-assault-apc", "produce-apc", "produce-flak-truck"}
+	for _, name := range competitors {
+		r := byName[name]
+		if r == nil {
+			continue
+		}
+		if harv.Priority <= r.Priority {
+			t.Errorf("produce-extra-harvester (%d) must outrank %s (%d) so income expansion isn't starved", harv.Priority, name, r.Priority)
+		}
+	}
+	// Cash gate must be bare Cash() >= 1400 (no reserve stacking). Harvesters
+	// generate the income those reserves protect — gating income on them is
+	// backwards. Accept either "Cash() >= 1400" or "Cash() >= 1400 " (trailing
+	// whitespace variants) but fail if an arithmetic operator follows 1400.
+	if !strings.Contains(harv.ConditionSrc, "Cash() >= 1400") {
+		t.Fatalf("expected 'Cash() >= 1400' in condition, got: %s", harv.ConditionSrc)
+	}
+	idx := strings.Index(harv.ConditionSrc, "Cash() >= 1400")
+	tail := strings.TrimSpace(harv.ConditionSrc[idx+len("Cash() >= 1400"):])
+	if strings.HasPrefix(tail, "+") {
+		t.Errorf("cash gate is stacking a reserve: %s", harv.ConditionSrc)
+	}
+}
+
+func TestInfantrySavingsRushAware(t *testing.T) {
+	// The infantry-specific war-factory reserve ("infantry can't spend if
+	// war factory isn't built yet, period") is the unconditional clause
+	// HasRole("war_factory") || Cash() >= infantryCost+2000. Aggressive
+	// doctrines drop it; conservative doctrines keep it.
+	//
+	// Counting occurrences of `HasRole("war_factory")` in the condition
+	// distinguishes the two cases: c.savings contributes one clause with
+	// `HasRole("war_factory") || !HasRole("radar")` (radar-conditional,
+	// present in both). The infantry-specific reserve adds a second,
+	// unconditional `HasRole("war_factory")` — the one that hurts rush.
+	t.Run("aggressive doctrine: only the radar-conditional war-factory clause", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.VehicleWeight = 0.3
+		d.Aggression = 0.5 // >= DoctrineSignificant
+		d.InfantryWeight = 0.5
+		byName := compileToMap(d)
+		inf := byName["produce-infantry"]
+		if inf == nil {
+			t.Fatal("expected produce-infantry rule")
+		}
+		n := strings.Count(inf.ConditionSrc, `HasRole("war_factory")`)
+		if n != 1 {
+			t.Errorf("aggressive: expected 1 war-factory clause (radar-conditional only), got %d in: %s", n, inf.ConditionSrc)
+		}
+		// Verify the one that remains IS the radar-conditional one.
+		if !strings.Contains(inf.ConditionSrc, `HasRole("war_factory") || !HasRole("radar")`) {
+			t.Errorf("aggressive: expected radar-conditional clause preserved, got: %s", inf.ConditionSrc)
+		}
+	})
+
+	t.Run("conservative doctrine: both clauses present", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.VehicleWeight = 0.3
+		d.Aggression = 0.2 // < DoctrineSignificant
+		d.InfantryWeight = 0.5
+		byName := compileToMap(d)
+		inf := byName["produce-infantry"]
+		if inf == nil {
+			t.Fatal("expected produce-infantry rule")
+		}
+		n := strings.Count(inf.ConditionSrc, `HasRole("war_factory")`)
+		if n != 2 {
+			t.Errorf("conservative: expected 2 war-factory clauses (radar-conditional + infantry-specific), got %d in: %s", n, inf.ConditionSrc)
+		}
+	})
+}
+
+func TestCaptureDefenseInfantryFloor(t *testing.T) {
+	// Pure engineer-rush doctrine: InfantryWeight = 0 means produce-infantry
+	// is NOT compiled, so engineers are the only infantry. Engineers can't
+	// shoot. The defense floor rule gives the base 3 rifles to defend with
+	// regardless of InfantryWeight.
+	t.Run("pure engineer-rush compiles defense floor", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.InfantryWeight = 0
+		d.CapturePriority = 0.5
+		byName := compileToMap(d)
+		if _, ok := byName["produce-infantry"]; ok {
+			t.Fatal("precondition broken: produce-infantry should not compile at InfantryWeight=0")
+		}
+		floor := byName["produce-capture-defense-infantry"]
+		if floor == nil {
+			t.Fatal("expected produce-capture-defense-infantry for rush doctrine")
+		}
+		eng := byName["produce-engineer"]
+		if eng == nil {
+			t.Fatal("expected produce-engineer for capture doctrine")
+		}
+		if floor.Priority >= eng.Priority {
+			t.Errorf("defense floor priority (%d) must be below produce-engineer (%d) so engineers win when they can build", floor.Priority, eng.Priority)
+		}
+	})
+
+	// Non-capture doctrines must NOT get the defense floor — it's specifically
+	// a rush-safety net.
+	t.Run("absent when CapturePriority is 0", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.CapturePriority = 0
+		byName := compileToMap(d)
+		if _, ok := byName["produce-capture-defense-infantry"]; ok {
+			t.Error("defense floor should not compile for non-capture doctrines")
+		}
+	})
+
+	// Infantry-heavy doctrine: produce-infantry (500) supersedes the floor (440).
+	// The floor still compiles but never fires in practice.
+	t.Run("infantry-heavy: produce-infantry outranks defense floor", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.InfantryWeight = 0.7
+		d.CapturePriority = 0.5
+		byName := compileToMap(d)
+		floor := byName["produce-capture-defense-infantry"]
+		inf := byName["produce-infantry"]
+		if floor == nil || inf == nil {
+			t.Fatalf("expected both rules; floor=%v inf=%v", floor, inf)
+		}
+		if inf.Priority <= floor.Priority {
+			t.Errorf("produce-infantry priority (%d) must be > defense-floor priority (%d) so it takes the queue when compiled", inf.Priority, floor.Priority)
+		}
+	})
+}
+
+func TestDeliverAssaultAPCIntelGate(t *testing.T) {
+	// Aggressive TransportAssault drops the HasEnemyIntel() gate so
+	// combat-loaded APCs can explore when no building has been sighted.
+	t.Run("aggressive: no intel gate", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.TransportAssault = 0.5
+		r := compileToMap(d)["deliver-assault-apc"]
+		if r == nil {
+			t.Fatal("expected deliver-assault-apc")
+		}
+		if strings.Contains(r.ConditionSrc, "HasEnemyIntel()") {
+			t.Errorf("aggressive TransportAssault: intel gate should be dropped, got: %s", r.ConditionSrc)
+		}
+	})
+
+	// Low TransportAssault keeps the gate so combat APCs don't wander
+	// randomly when the doctrine isn't committed to an assault plan.
+	t.Run("low: intel gate preserved", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.TransportAssault = 0.15
+		r := compileToMap(d)["deliver-assault-apc"]
+		if r == nil {
+			t.Fatal("expected deliver-assault-apc")
+		}
+		if !strings.Contains(r.ConditionSrc, "HasEnemyIntel()") {
+			t.Errorf("low TransportAssault: intel gate should be preserved, got: %s", r.ConditionSrc)
+		}
+	})
+}
+
+func compileToMap(d Doctrine) map[string]*Rule {
+	out := map[string]*Rule{}
+	for _, r := range CompileDoctrine(d) {
+		out[r.Name] = r
+	}
+	return out
 }
 
 func TestCompileDoctrineEngineerPriority(t *testing.T) {

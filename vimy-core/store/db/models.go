@@ -15,6 +15,7 @@ type ArchivedDoctrine struct {
 	DoctrineJson string         `json:"doctrine_json"`
 	Rating       sql.NullString `json:"rating"`
 	RatingReason sql.NullString `json:"rating_reason"`
+	RuleSetJson  sql.NullString `json:"rule_set_json"`
 }
 
 type Game struct {
@@ -39,4 +40,13 @@ type Lesson struct {
 	Confidence     float64        `json:"confidence"`
 	AppliesFaction string         `json:"applies_faction"`
 	AppliesVs      sql.NullString `json:"applies_vs"`
+}
+
+type RuleFiring struct {
+	ID         int64  `json:"id"`
+	DoctrineID int64  `json:"doctrine_id"`
+	RuleName   string `json:"rule_name"`
+	FireCount  int64  `json:"fire_count"`
+	FirstTick  int64  `json:"first_tick"`
+	LastTick   int64  `json:"last_tick"`
 }

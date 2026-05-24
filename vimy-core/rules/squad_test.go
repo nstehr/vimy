@@ -118,6 +118,55 @@ func TestUnassignedIdleGround(t *testing.T) {
 	}
 }
 
+// Dogs are bite-only (anti-infantry); offensive squads and emergency-defense
+// AttackMove dispatch should skip them so they don't get sent to attack
+// vehicles they can't damage. Dogs remain usable as designated scouts and as
+// in-place base auto-defense (game handles auto-fire when infantry is in range).
+func TestIdleGroundUnits_ExcludesDogs(t *testing.T) {
+	env := RuleEnv{
+		State: model.GameState{
+			Units: []model.Unit{
+				{ID: 1, Type: "1tnk", Idle: true},
+				{ID: 2, Type: "dog", Idle: true}, // should be excluded
+				{ID: 3, Type: "e1", Idle: true},
+			},
+		},
+		Memory: map[string]any{},
+	}
+	idle := env.IdleGroundUnits()
+	for _, u := range idle {
+		if u.Type == "dog" {
+			t.Errorf("expected attack dog to be excluded from IdleGroundUnits, got id=%d", u.ID)
+		}
+	}
+	if len(idle) != 2 {
+		t.Errorf("expected 2 ground units (tank + rifle), got %d", len(idle))
+	}
+}
+
+func TestNearBaseGroundUnits_ExcludesDogs(t *testing.T) {
+	env := RuleEnv{
+		State: model.GameState{
+			MapWidth:  100,
+			MapHeight: 100,
+			Buildings: []model.Building{
+				{ID: 100, Type: "fact", X: 50, Y: 50},
+			},
+			Units: []model.Unit{
+				{ID: 1, Type: "1tnk", X: 50, Y: 50},
+				{ID: 2, Type: "dog", X: 50, Y: 50}, // should be excluded despite proximity
+			},
+		},
+		Memory: map[string]any{},
+	}
+	nearby := env.NearBaseGroundUnits()
+	for _, u := range nearby {
+		if u.Type == "dog" {
+			t.Errorf("expected attack dog to be excluded from NearBaseGroundUnits, got id=%d", u.ID)
+		}
+	}
+}
+
 func TestFormSquadAction(t *testing.T) {
 	memory := make(map[string]any)
 	env := RuleEnv{

@@ -362,6 +362,79 @@ func relativeAge(t time.Time) string {
 	}
 }
 
+templ RuleFiringPanel(snap agent.RuleTraceSnapshot) {
+	<div id="rule-firing-panel" class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4" hx-get="/api/rules/firings" hx-trigger="every 10s" hx-swap="outerHTML">
+		if !snap.Enabled {
+			<p class="text-sm text-gray-500">Rule firing trace is disabled. Restart the sidecar with <code class="text-emerald-400">--trace-rules</code> to record per-rule firing counters per doctrine window and see them here.</p>
+		} else {
+			{{
+				totalFired := 0
+				for _, s := range snap.Stats {
+					totalFired += s.FireCount
+				}
+				firedSet := make(map[string]bool, len(snap.Stats))
+				for name := range snap.Stats {
+					firedSet[name] = true
+				}
+				var neverFired []string
+				for _, name := range snap.RuleSet {
+					if !firedSet[name] {
+						neverFired = append(neverFired, name)
+					}
+				}
+				sort.Strings(neverFired)
+				type firedRow struct {
+					Name      string
+					FireCount int
+					FirstTick int
+					LastTick  int
+				}
+				fired := make([]firedRow, 0, len(snap.Stats))
+				for name, s := range snap.Stats {
+					fired = append(fired, firedRow{name, s.FireCount, s.FirstTick, s.LastTick})
+				}
+				sort.Slice(fired, func(i, j int) bool { return fired[i].FireCount > fired[j].FireCount })
+			}}
+
+			<div class="flex items-center gap-4 text-xs text-gray-500">
+				<span><span class="text-gray-300 font-mono">{ fmt.Sprintf("%d", len(snap.RuleSet)) }</span> rules available</span>
+				<span>·</span>
+				<span><span class="text-emerald-400 font-mono">{ fmt.Sprintf("%d", len(snap.Stats)) }</span> fired</span>
+				<span>·</span>
+				<span><span class="text-gray-300 font-mono">{ fmt.Sprintf("%d", totalFired) }</span> total firings (current window)</span>
+			</div>
+
+			if len(fired) > 0 {
+				<div class="space-y-1">
+					<h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Firings (by count, DESC)</h3>
+					<div class="max-h-80 overflow-y-auto pr-2 space-y-0.5">
+						for _, r := range fired {
+							<div class="flex items-center gap-3 text-sm py-0.5">
+								<span class="text-gray-300 font-mono text-xs w-56 truncate" title={ r.Name }>{ r.Name }</span>
+								<span class="text-emerald-400 font-mono text-xs w-10 text-right">{ fmt.Sprintf("%d", r.FireCount) }</span>
+								<span class="text-gray-500 text-xs">ticks { fmt.Sprintf("%d–%d", r.FirstTick, r.LastTick) }</span>
+							</div>
+						}
+					</div>
+				</div>
+			}
+
+			if len(neverFired) > 0 {
+				<div class="space-y-1">
+					<h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Available but never fired ({ fmt.Sprintf("%d", len(neverFired)) })</h3>
+					<div class="max-h-48 overflow-y-auto pr-2">
+						<div class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500 font-mono">
+							for _, name := range neverFired {
+								<span>{ name }</span>
+							}
+						</div>
+					</div>
+				</div>
+			}
+		}
+	</div>
+}
+
 templ LibrarianPanel(snap *agent.LibrarianSnapshot) {
 	<div id="librarian-panel" class="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4" hx-get="/api/memory/librarian" hx-trigger="every 30s" hx-swap="outerHTML">
 		if snap == nil {

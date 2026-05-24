@@ -53,30 +53,96 @@ func (c *doctrineCompiler) addCoreRules() {
 		Action:       ActionCancelStuckAircraft,
 	})
 
+	// Nudge a unit off the war-factory exit when a vehicle is built but
+	// stuck at 100%. Observed live (vimy-zh8): a completed tank couldn't
+	// emerge because a parked unit blocked the rally tile, and the whole
+	// Vehicle queue hung for the rest of the game.
+	c.rules = append(c.rules, &Rule{
+		Name:         "unblock-war-factory-egress",
+		Priority:     892,
+		Category:     "vehicle_maintenance",
+		Exclusive:    true,
+		ConditionSrc: `HasRole("war_factory") && QueueReady("Vehicle")`,
+		Action:       ActionUnblockWarFactoryEgress,
+	})
+
 	// Engineer capture sequence: produce engineer → produce APC → load → deliver → capture.
 	// The capture-on-foot rule is a fallback for when no APC can be built (no war factory
 	// or APC not in buildable list). Without this gate, engineers walk on foot immediately
 	// and never wait for the APC.
 	// Gated by CapturePriority so pure-defense doctrines don't waste the Infantry queue.
 
+	// Direction rules (capture-building, load, deliver) are emitted whenever
+	// engineers or transports already exist, even if CapturePriority is low.
+	// Game 16 (vimy-7e1): LLM raised capture_priority briefly to spawn an
+	// engineer, then dropped it back to 0 the next eval. Without these
+	// outer-gate-free direction rules, the engineer was orphaned with no
+	// rule to load/deliver/capture it. Production rules below still gate
+	// on CapturePriority so we don't proactively spawn engineers when the
+	// doctrine doesn't want them.
+	hasCaptureUnitsSrc := `(RoleCount("engineer") > 0 || TransportCount() > 0)`
+
+	c.rules = append(c.rules, &Rule{
+		Name:         "capture-building",
+		Priority:     850,
+		Category:     "capture",
+		Exclusive:    false,
+		ConditionSrc: `CapturableCount() > 0 && len(IdleEngineers()) > 0 && (!CanBuildTransport() || EngineerNearCapturable())`,
+		Action:       ActionCaptureBuilding,
+	})
+
+	c.rules = append(c.rules, &Rule{
+		Name:         "load-engineer-into-apc",
+		Priority:     845,
+		Category:     "capture",
+		Exclusive:    false,
+		// Don't re-load an engineer that's already within capture range of a
+		// target — otherwise capture-building (priority 850) loses the race
+		// to this rule (priority 845) on the tick after unload.
+		ConditionSrc: fmt.Sprintf(`%s && len(IdleEngineers()) > 0 && len(IdleEmptyAPCs()) > 0 && !EngineerNearCapturable()`, hasCaptureUnitsSrc),
+		Action:       ActionLoadEngineerIntoAPC,
+	})
+
+	// Aggressive capture doctrines drop the visibility gate so a loaded
+	// APC can dispatch as a scout even before a capturable is revealed.
+	// Conservative and orphan-case (capture rules outliving their doctrine)
+	// both keep the visibility gate so engineers don't roam aimlessly.
+	deliverSrc := `CapturableCount() > 0 && len(IdleEngineerLoadedAPCs()) > 0`
+	if c.d.CapturePriority >= DoctrineSignificant {
+		deliverSrc = `len(IdleEngineerLoadedAPCs()) > 0`
+	}
+	c.rules = append(c.rules, &Rule{
+		Name:         "deliver-apc-to-target",
+		Priority:     847,
+		Category:     "capture",
+		Exclusive:    false,
+		ConditionSrc: deliverSrc,
+		Action:       ActionUnloadAPCNearTarget,
+	})
+
 	if c.d.CapturePriority > DoctrineEnabled {
 		engineerCap := lerp(1, 3, c.d.CapturePriority)
 
-		c.rules = append(c.rules, &Rule{
-			Name:         "capture-building",
-			Priority:     850,
-			Category:     "capture",
-			Exclusive:    false,
-			ConditionSrc: `CapturableCount() > 0 && len(IdleEngineers()) > 0 && (!CanBuildTransport() || EngineerNearCapturable())`,
-			Action:       ActionCaptureBuilding,
-		})
+		// Aggressive capture doctrines (CapturePriority >= Significant) build
+		// engineers and APCs proactively and use the loaded APC as a scout —
+		// rather than waiting for a capturable to be revealed by something else.
+		// Conservative capture doctrines keep the "only when we see a target"
+		// gates so they don't waste queue slots.
+		aggressive := c.d.CapturePriority >= DoctrineSignificant
+
+		produceEngineerSrc := fmt.Sprintf(`CapturableCount() > 0 && !QueueBusy("Infantry") && CanBuildRole("engineer") && RoleCount("engineer") < CapturableCount() && RoleCount("engineer") < %d && Cash() >= 500`, engineerCap)
+		produceAPCSrc := `CapturableCount() > 0 && RoleCount("engineer") > 0 && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildTransport() && TransportCount() < 1 && Cash() >= 800`
+		if aggressive {
+			produceEngineerSrc = fmt.Sprintf(`!QueueBusy("Infantry") && CanBuildRole("engineer") && RoleCount("engineer") < %d && Cash() >= 500`, engineerCap)
+			produceAPCSrc = `RoleCount("engineer") > 0 && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildTransport() && TransportCount() < 1 && Cash() >= 800`
+		}
 
 		c.rules = append(c.rules, &Rule{
 			Name:         "produce-engineer",
 			Priority:     450,
 			Category:     CatProduceInfantry,
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`CapturableCount() > 0 && !QueueBusy("Infantry") && CanBuildRole("engineer") && RoleCount("engineer") < CapturableCount() && RoleCount("engineer") < %d && Cash() >= 500`, engineerCap),
+			ConditionSrc: produceEngineerSrc,
 			Action:       ActionProduceEngineer,
 		})
 
@@ -85,26 +151,24 @@ func (c *doctrineCompiler) addCoreRules() {
 			Priority:     470,
 			Category:     CatProduceVehicle,
 			Exclusive:    true,
-			ConditionSrc: `CapturableCount() > 0 && RoleCount("engineer") > 0 && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildTransport() && TransportCount() < 1 && Cash() >= 800`,
+			ConditionSrc: produceAPCSrc,
 			Action:       ActionProduceAPC,
 		})
 
+		// Defensive rifle floor for rush doctrines. Engineers can't shoot, so a
+		// pure-capture doctrine with InfantryWeight = 0 has nothing to defend
+		// the base with while the rush executes. This rule produces up to 3
+		// basic rifles at 100 cash each — lowest priority in CatProduceInfantry
+		// so produce-engineer (450) always wins when its conditions are met,
+		// and produce-infantry (500) supersedes it whenever the doctrine already
+		// has real infantry production. It's the floor, not the plan.
 		c.rules = append(c.rules, &Rule{
-			Name:         "load-engineer-into-apc",
-			Priority:     845,
-			Category:     "capture",
-			Exclusive:    false,
-			ConditionSrc: `len(IdleEngineers()) > 0 && len(IdleEmptyAPCs()) > 0`,
-			Action:       ActionLoadEngineerIntoAPC,
-		})
-
-		c.rules = append(c.rules, &Rule{
-			Name:         "deliver-apc-to-target",
-			Priority:     847,
-			Category:     "capture",
-			Exclusive:    false,
-			ConditionSrc: `CapturableCount() > 0 && len(IdleLoadedAPCs()) > 0`,
-			Action:       ActionUnloadAPCNearTarget,
+			Name:         "produce-capture-defense-infantry",
+			Priority:     440,
+			Category:     CatProduceInfantry,
+			Exclusive:    true,
+			ConditionSrc: `HasRole("barracks") && !QueueBusy("Infantry") && CanBuild("Infantry","e1") && UnitCount("e1") < 3 && Cash() >= 100`,
+			Action:       ActionProduceInfantry,
 		})
 	}
 
@@ -141,13 +205,21 @@ func (c *doctrineCompiler) addCoreRules() {
 			Action:       ActionLoadCombatInfantry,
 		})
 
-		// Deliver loaded APCs to enemy base.
+		// Deliver loaded APCs to enemy base. At high TransportAssault we drop
+		// the HasEnemyIntel() gate and let the loaded APC scout itself if no
+		// building has been sighted yet — otherwise combat-loaded APCs sit at
+		// base forever if the enemy attacks with units-only and we never spot
+		// their structures. The action handles both branches.
+		deliverAssaultSrc := `HasEnemyIntel() && len(IdleCombatLoadedAPCs()) > 0`
+		if c.d.TransportAssault >= DoctrineSignificant {
+			deliverAssaultSrc = `len(IdleCombatLoadedAPCs()) > 0`
+		}
 		c.rules = append(c.rules, &Rule{
 			Name:         "deliver-assault-apc",
 			Priority:     840,
 			Category:     "transport",
 			Exclusive:    false,
-			ConditionSrc: `HasEnemyIntel() && len(IdleLoadedAPCs()) > 0`,
+			ConditionSrc: deliverAssaultSrc,
 			Action:       ActionDeliverAssaultAPC,
 		})
 	}

@@ -44,6 +44,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/record/panel", s.handleRecordPanel)
 	s.mux.HandleFunc("GET /api/memory/panel", s.handleMemoryPanel)
 	s.mux.HandleFunc("GET /api/memory/librarian", s.handleLibrarianPanel)
+	s.mux.HandleFunc("GET /api/rules/firings", s.handleRuleFiringPanel)
 }
 
 func (s *Server) wins() int {
@@ -127,10 +128,12 @@ func (s *Server) handleRecordPanel(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	lessons, games := s.memorySnapshot(r.Context())
 	var librarian *agent.LibrarianSnapshot
+	var ruleTrace agent.RuleTraceSnapshot
 	if s.strategist != nil {
 		librarian = s.strategist.GetLibrarianSnapshot()
+		ruleTrace = s.strategist.GetRuleTraceSnapshot()
 	}
-	views.Dashboard(s.currentDirective(), s.wins(), s.losses(), lessons, games, librarian).
+	views.Dashboard(s.currentDirective(), s.wins(), s.losses(), lessons, games, librarian, ruleTrace).
 		Render(r.Context(), w)
 }
 
@@ -145,6 +148,14 @@ func (s *Server) handleLibrarianPanel(w http.ResponseWriter, r *http.Request) {
 		snap = s.strategist.GetLibrarianSnapshot()
 	}
 	views.LibrarianPanel(snap).Render(r.Context(), w)
+}
+
+func (s *Server) handleRuleFiringPanel(w http.ResponseWriter, r *http.Request) {
+	var snap agent.RuleTraceSnapshot
+	if s.strategist != nil {
+		snap = s.strategist.GetRuleTraceSnapshot()
+	}
+	views.RuleFiringPanel(snap).Render(r.Context(), w)
 }
 
 func (s *Server) memorySnapshot(ctx context.Context) ([]store.GlobalLesson, []store.GameSummary) {

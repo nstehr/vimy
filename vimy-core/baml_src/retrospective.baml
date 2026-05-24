@@ -55,10 +55,15 @@ function ReviewGame(
     Final losses: {{ final_combat_stats.infantry_lost }} infantry, {{ final_combat_stats.vehicles_lost }} vehicles, {{ final_combat_stats.aircraft_lost }} aircraft, {{ final_combat_stats.naval_lost }} naval
 
     DOCTRINE TRAJECTORY (chronological — each entry is the doctrine in effect starting at that tick)
+    Only the observable SHAPE of each doctrine is shown. Strategist-facing
+    rationale prose is deliberately excluded — your lessons must be grounded
+    in observable weights + events + combat stats, not in self-reflection
+    prose the strategist produced about its own decisions.
     {% for d in doctrine_history %}
-    [tick {{ d.tick }}] {{ d.doctrine.name }}: {{ d.doctrine.rationale }}
+    [tick {{ d.tick }}] {{ d.doctrine.name }}
       aggression={{ d.doctrine.aggression }}, economy={{ d.doctrine.economy_priority }}, ground_def={{ d.doctrine.ground_defense_priority }}, air_def={{ d.doctrine.air_defense_priority }}, tech={{ d.doctrine.tech_priority }}
       units: inf={{ d.doctrine.infantry_weight }}, vehicle={{ d.doctrine.vehicle_weight }}, air={{ d.doctrine.air_weight }}, naval={{ d.doctrine.naval_weight }}
+      capture={{ d.doctrine.capture_priority }}, transport_assault={{ d.doctrine.transport_assault }}
     {% endfor %}
 
     EVENTS (adverse conditions the engine detected during play)
@@ -98,6 +103,15 @@ function ReviewGame(
        tesla coils before we have air") and guidance_text as a concrete response ("pivot to air or
        tech mammoths, don't keep sending tanks"). Confidence: 0.8+ only if you're sure the pattern
        generalizes; 0.4-0.7 for plausible patterns; below 0.4 is probably not worth saving.
+
+       GROUNDING CONSTRAINT (strict): every lesson MUST be tied to a specific event, combat stat, or
+       doctrine shape that was ACTUALLY USED in this game. Check the weights above — if a tactic
+       shows zero use throughout the trajectory (e.g. transport_assault=0 across every entry,
+       capture=0, or air_weight=0), then there is NO observable outcome data to ground a lesson
+       about that tactic. DO NOT emit lessons about tactics the commander considered but avoided,
+       or lessons inferred from general RTS knowledge unrelated to this game. A fabricated lesson
+       is worse than no lesson — it can contaminate future-game memory and undermine existing
+       constraints.
 
     Be terse. This review is metadata that gets injected into future prompts — long prose wastes tokens.
 

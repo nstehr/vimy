@@ -186,7 +186,10 @@ namespace OpenRA.Mods.Vimy
 			}
 
 			bot.QueueOrder(new Order("Move", actor, Target.FromCell(world, new CPos(x, y)), false));
-			Log.Write("debug", $"CommandExecutor: move actor {actorId} to ({x},{y})");
+			// Include the actor's current position so we can see whether it
+			// is actually moving or repeatedly getting Move commands from
+			// the same spot (pathing stalled).
+			Log.Write("debug", $"CommandExecutor: move actor {actorId} from ({actor.Location.X},{actor.Location.Y}) to ({x},{y})");
 		}
 
 		static void ExecuteSetRally(string dataJson, World world, IBot bot)
@@ -381,8 +384,13 @@ namespace OpenRA.Mods.Vimy
 				return;
 			}
 
+			// Log the APC's current position and cargo count so we can tell
+			// whether the unload is happening at a target or prematurely at
+			// base. Pair with Move logs to trace the full delivery timeline.
+			var cargo = actor.TraitOrDefault<Cargo>();
+			var cargoCount = cargo?.PassengerCount ?? 0;
 			bot.QueueOrder(new Order("Unload", actor, false));
-			Log.Write("debug", $"CommandExecutor: unload actor {actorId}");
+			Log.Write("debug", $"CommandExecutor: unload actor {actorId} at ({actor.Location.X},{actor.Location.Y}) cargo={cargoCount}");
 		}
 
 		static void ExecuteRepairUnit(string dataJson, World world, IBot bot)

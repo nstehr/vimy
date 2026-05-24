@@ -170,6 +170,7 @@ func TestActionDeliverAssaultAPC_MovesWhenFar(t *testing.T) {
 			"enemyBases": map[string]EnemyBaseIntel{
 				"Enemy": {Owner: "Enemy", X: 500, Y: 500, Tick: 1, FromBuildings: true},
 			},
+			"apcCargoIntent": map[int]string{10: apcIntentCombat},
 		},
 	}
 
@@ -195,6 +196,7 @@ func TestActionDeliverAssaultAPC_UnloadsWhenClose(t *testing.T) {
 			"enemyBases": map[string]EnemyBaseIntel{
 				"Enemy": {Owner: "Enemy", X: 500, Y: 500, Tick: 1, FromBuildings: true},
 			},
+			"apcCargoIntent": map[int]string{10: apcIntentCombat},
 		},
 	}
 
@@ -251,6 +253,7 @@ func TestActionDeliverAssaultAPC_SkipsWaterBase(t *testing.T) {
 			"enemyBases": map[string]EnemyBaseIntel{
 				"Enemy": {Owner: "Enemy", X: 500, Y: 500, Tick: 1, FromBuildings: true},
 			},
+			"apcCargoIntent": map[int]string{10: apcIntentCombat},
 		},
 		Terrain: grid,
 	}
@@ -260,6 +263,41 @@ func TestActionDeliverAssaultAPC_SkipsWaterBase(t *testing.T) {
 		t.Fatalf("ActionDeliverAssaultAPC returned error: %v", err)
 	}
 	// APC should be sent toward the visible enemy at (400,400), not the water base.
+}
+
+// When no enemy intel exists (no buildings sighted, no units visible), a
+// combat-loaded APC must fall back to exploration instead of sitting at base.
+// This was the real cause of strandded combat APCs in the traced game.
+func TestActionDeliverAssaultAPC_ExploresWhenNoTarget(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	env := RuleEnv{
+		State: model.GameState{
+			Tick:      1000,
+			MapWidth:  1000,
+			MapHeight: 1000,
+			Units: []model.Unit{
+				{ID: 10, Type: "apc", Idle: true, CargoCount: 1, X: 50, Y: 50},
+			},
+			// no enemies visible, no enemyBases intel
+		},
+		Memory: map[string]any{
+			"apcCargoIntent": map[int]string{10: apcIntentCombat},
+		},
+	}
+
+	if err := ActionDeliverAssaultAPC(env, conn); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	targets := getAPCExploreTargets(env.Memory)
+	entry, ok := targets[10]
+	if !ok {
+		t.Fatal("expected exploration target for combat-loaded APC 10")
+	}
+	if entry.X < 500 && entry.Y < 500 {
+		t.Errorf("expected exploration target across the map, got (%d,%d)", entry.X, entry.Y)
+	}
 }
 
 func TestActionDeliverAssaultAPC_NoLandTargetNoOp(t *testing.T) {

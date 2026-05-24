@@ -29,11 +29,22 @@ type retrospectiveSnapshot struct {
 // need. Must be called while the strategist still holds its history, i.e.
 // before Reset. Returns nil if no history exists (nothing to review).
 func (s *Strategist) snapshotForReview(won bool) *retrospectiveSnapshot {
+	// Close the final doctrine window by flushing firing counters BEFORE
+	// copying history. Attach stats to the last DoctrineRecord so the
+	// archive reflects the entire game. No-op when tracing is disabled.
+	var finalStats map[string]rules.RuleFiringStats
+	if s.engine.TracingEnabled() {
+		finalStats = s.engine.FlushFiringStats()
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if len(s.history) == 0 || s.store == nil {
 		return nil
+	}
+	if n := len(s.history); n > 0 && len(finalStats) > 0 {
+		s.history[n-1].RuleStats = finalStats
 	}
 
 	snap := &retrospectiveSnapshot{
@@ -190,6 +201,19 @@ func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveRev
 		if r, ok := ratingByName[rec.Doctrine.Name]; ok {
 			entry.Rating = r.Rating
 			entry.RatingReason = r.Reasoning
+		}
+		if len(rec.RuleSet) > 0 {
+			if rs, err := json.Marshal(rec.RuleSet); err == nil {
+				entry.RuleSetJSON = string(rs)
+			}
+		}
+		for name, stats := range rec.RuleStats {
+			entry.RuleFirings = append(entry.RuleFirings, store.InputRuleFiring{
+				RuleName:  name,
+				FireCount: stats.FireCount,
+				FirstTick: stats.FirstTick,
+				LastTick:  stats.LastTick,
+			})
 		}
 		out.doctrines = append(out.doctrines, entry)
 	}

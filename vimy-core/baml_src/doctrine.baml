@@ -45,6 +45,12 @@ class GameEvent {
   detail string @description("Human-readable description of what happened")
 }
 
+class RecentDoctrine {
+  tick int
+  name string @description("Doctrine name from the prior attempt")
+  shape string @description("Terse shape fingerprint, e.g. 'air=0.75 vehicle=0.4 ground_def=0.35 aggression=0.8'")
+}
+
 class CombatStats {
   infantry_lost int @description("Total infantry killed this game")
   vehicles_lost int @description("Total vehicles lost this game")
@@ -76,6 +82,11 @@ class GameSituation {
   map_height int
   recent_events GameEvent[]
   combat_stats CombatStats | null
+  recent_doctrines RecentDoctrine[] @description("Your OWN recent doctrine attempts this game, newest last. Used to detect and break out of convergent-shape loops.")
+  burned_axes string[] @description("Axes (e.g. 'air', 'infantry') that have been pivoted to 2+ times this match AND each pivot was followed within a few doctrines by domain-specific counter events (aircraft losses, infantry losses to flame, etc.). Treat these as BURNED — do not pivot to them again for the rest of the match. Computed from full doctrine + event history, not just the recent_doctrines window.")
+  capturables_visible TypeCount[] @description("Neutral capturable buildings currently visible on the map — e.g. oilb (oil derrick, passive income), fcom (forward command), miss (comm center), hosp (hospital). Their presence is a direct signal to raise capture_priority >= 0.3 so engineers/transports actually grab them.")
+  being_rushed bool @description("True when early-game (tick < ~6000) AND base is still small (<= 6 buildings) AND harvesters have been attacked recently. Means the enemy is pushing units into our base before we have a perimeter. Triggers the RUSH RESPONSE prompt rule — counter-force, not turtle.")
+  harvester_harassed bool @description("True when mid/late-game (tick >= ~6000) AND base is established (>= 8 buildings) AND there have been 2+ harvester_under_attack or 1+ harvester_lost events in the last ~2000 ticks. Triggers the HARVESTER HARASSMENT prompt rule — escorts, dispersal, defenses near refineries.")
 }
 
 class Doctrine {
@@ -179,6 +190,10 @@ function GenerateDoctrine(directive: string, situation: GameSituation, faction: 
     Enemy buildings (all observed):{% for b in situation.enemy_buildings_seen %} {{ b.count }}x {{ b.type }}{% endfor %}
     {% endif %}
 
+    {% if situation.capturables_visible %}
+    Capturable neutral buildings visible:{% for c in situation.capturables_visible %} {{ c.count }}x {{ c.type }}{% endfor %} — raise capture_priority >= 0.3 to build engineers (and transport_assault > 0 for APC/ranger delivery) to take them.
+    {% endif %}
+
     {% if situation.known_enemy_bases %}
     {% for eb in situation.known_enemy_bases %}
     Known enemy base [{{ eb.owner }}]: ({{ eb.x }}, {{ eb.y }}) last seen tick {{ eb.last_seen_tick }}
@@ -193,6 +208,13 @@ function GenerateDoctrine(directive: string, situation: GameSituation, faction: 
     Recent Events:
     {% for e in situation.recent_events %}
     - [tick {{ e.tick }}] {{ e.kind }}: {{ e.detail }}
+    {% endfor %}
+    {% endif %}
+
+    {% if situation.recent_doctrines %}
+    YOUR RECENT DOCTRINE ATTEMPTS THIS GAME (newest last):
+    {% for rd in situation.recent_doctrines %}
+    - [tick {{ rd.tick }}] {{ rd.name }} — {{ rd.shape }}
     {% endfor %}
     {% endif %}
 
@@ -264,6 +286,14 @@ function GenerateDoctrine(directive: string, situation: GameSituation, faction: 
     - If combat_stats show sustained high losses in one domain (e.g., 20+ infantry lost), that domain is being hard-countered.
     - When infantry dies to static defenses (tesla coils, flame towers), shift weight to vehicles (0.5+) or air (0.3+) to break through, OR increase ground_attack_group_size to 10+ to overwhelm with numbers.
     - When vehicles are countered by tesla coils, shift to air strikes or build up tech for mammoth tanks.
+    - CAUTIONARY-AWARE OPENER: This rule applies ONLY to the opening doctrine of a match (situation.tick is small — roughly under 5000 — AND recent_doctrines is empty or has fewer than 2 entries). When cautionary_patterns are present whose failure_reason or failed_pattern explicitly mentions base raids, harvester harassment / harvester_lost, critical_building_lost, or low ground_def correlated with infrastructure damage — that opponent has a demonstrated raid game. The opener MUST set ground_defense_priority >= 0.6 and economy_priority >= 0.6, even if the directive emphasizes aggression. The directive's offensive intent can resume in subsequent doctrines once the base is hardened. This is not a generic default — only fires when the cautionaries you were given specifically warn about base/economy harassment for this matchup. Without this, by the time reactive evals raise ground_def, the first critical building has already been lost (game 20 vs russia: opener gd=0.35, lost critical building at tick 16510 despite 4 cautionaries warning about exactly this pattern).
+    - CONVERGENCE BREAK: If recent_doctrines shows 4+ attempts with a similar dominant axis (e.g., air_weight >= 0.55 repeatedly) AND recent_events include 'strategy_countered' or repeated harvester_under_attack / critical_building_lost, the repeated shape is failing. You MUST pick a doctrine whose DOMINANT axis differs — e.g., drop the previously-dominant weight to <= 0.25 and raise a different axis (vehicle_weight or ground_defense_priority) to > 0.5. Rationale-on-top pivots ("still air-heavy, but now with more ground") do NOT satisfy this rule. The goal is a structurally different plan, not a reskin. The directive is strategic intent, not a prohibition on pivoting — if the directive's preferred approach is being hard-countered, the correct response is to pivot and prove the counter wrong by a different route. Explicitly note the pivot in your rationale.
+    - STICKY PIVOT: A pivot is only useful if it STICKS. If recent_doctrines shows that you recently pivoted (your previous doctrine had a substantially different dominant axis than the one before it — e.g., naval dropped from 0.60 to 0.25 while vehicle rose above 0.5) AND recent_events STILL contain counter signals (strategy_countered, harvester_under_attack, critical_building_lost within the last few entries — or the underlying condition hasn't visibly resolved, e.g., harvester count hasn't recovered, no new base kills), the battlefield hasn't stabilized yet. You MUST maintain the pivoted shape (keep the formerly-dominant axis <= 0.30 and the new emphasis above 0.5) rather than reverting to the directive's preferred shape. Only revert once counter events have been absent for at least 2-3 consecutive evaluations AND no new economic/infrastructure losses have occurred. Reverting too soon is how a one-shot pivot fails — treat the pivot like a committed build order, not a hedged gesture.
+    - BURNED AXIS: situation.burned_axes lists axes that have been pivoted to 2+ times this match AND each was followed by domain-specific counter events (aircraft losses to SAM/Flak; infantry losses to flame/Tesla; vehicle pushes followed by army_devastated). These are HARD CONSTRAINTS — do not raise the corresponding weight above 0.25 for the rest of the match, regardless of directive. Air burned means air_weight <= 0.25 (and don't list aircraft as preferred). Infantry burned means infantry_weight <= 0.25. Vehicle burned means vehicle_weight <= 0.25 (lean on infantry/air/naval/siege instead). Pick a non-burned axis as your dominant force. If recent_doctrines also shows a recent attempt on a burned axis, that's evidence the rule has already been violated — do not repeat. Note explicitly in rationale which axis is burned and the alternative you chose.
+    - RUSH RESPONSE: When situation.being_rushed is true, the enemy is pushing units into a base that doesn't yet have a perimeter. Harvesters under attack here is NORMAL, not an emergency — turtling won't fix it. The right response is COUNTER-FORCE: kill the rushers before they kill the economy. Hard constraints when this flag is true: infantry_weight >= 0.5 (rifles + dogs spam quickly for body count), ground_defense_priority >= 0.6 (one or two pillboxes at the threatened side, not a fortress), aggression in the 0.4-0.6 range (counter-attack the rushers when you have numbers; do NOT drop to 0 and turtle), capture_priority = 0, transport_assault = 0, no expensive tech detours (tech_priority <= 0.3, superweapon_priority = 0). preferred_infantry MUST start with cheap defenders — Soviet: ["rifleman", "attack_dog", "rocket_soldier"], Allied: ["rifleman", "attack_dog", "rocket_soldier"]. Hold this shape for 2-3 evals or until being_rushed clears (base grows past 6 buildings or tick >= 6000). The intent is to survive the opening AND retain the ability to push back, not to fortify.
+    - HARVESTER HARASSMENT: When situation.harvester_harassed is true (mid/late-game, established base, sustained harvester losses), the enemy is running raid harassment against your economy. Different from a rush — you have a base, but it's leaking. Hard constraints when true: ground_defense_priority >= 0.7 (build pillboxes/turrets near refineries, not just at the front), economy_priority >= 0.7 (replace lost harvesters and consider a 3rd refinery for dispersed harvesting), capture_priority <= 0.2, transport_assault <= 0.1 (don't open new fronts while bleeding at home). Aggression can stay moderate (0.4-0.6) to keep counter-pressure. Keep this shape until harvester_under_attack and harvester_lost events have been absent for 2+ evals.
+    - ANTI-OSCILLATION: Pivoting is good. Whip-sawing between two shapes is not. Examine recent_doctrines for a flip pattern — e.g., infantry-anchor → vehicle-siege → infantry-anchor → vehicle-siege, or any A→B→A→B alternation across the last 4 doctrines where each adjacent pair has substantially different dominant axes. This pattern produces incoherent force composition: you spend on tanks, then infantry, then tanks again, and never accumulate enough of either to win an engagement (army_devastated events are the typical downstream signal). If you detect this pattern, you MUST commit to ONE of the modes for at least 3 consecutive evaluations even if fresh counter events are present. Pick the mode whose primary units are cheaper, faster to mass, or already partially built (check current Units/Buildings). Sustained mediocre execution beats oscillating commitment. Do NOT introduce a third shape (air pivot, etc.) to "break the cycle" — that's just oscillating across more axes. Pick A or B, hold it.
+    - When the enemy clusters AA (sam, agun) alongside ground defenses (pbox, gun, ftur, tsla) so that air can't clear the AA without being shot down and ground can't close on the defenses without dying — stand off with long-range siege (v2_launcher/artillery) that outranges both. Signals: high aircraft_lost with repeated first_contact events at the enemy base, or sustained inability to reduce enemy defense counts despite air+ground pressure. Add v2_launcher / artillery to preferred_vehicle and raise tech_priority so they become available.
     - High losses with no progress = strategy failing, adapt immediately. Low losses = strategy working, maintain course.
 
     Based on the directive and current situation, produce a strategic doctrine.

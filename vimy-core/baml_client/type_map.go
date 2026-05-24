@@ -57,6 +57,8 @@ var typeMap = map[string]reflect.Type{
 	"STREAM_TYPES.PastDoctrineExample":  reflect.TypeOf(stream_types.PastDoctrineExample{}),
 	"TYPES.PowerStatus":                 reflect.TypeOf(types.PowerStatus{}),
 	"STREAM_TYPES.PowerStatus":          reflect.TypeOf(stream_types.PowerStatus{}),
+	"TYPES.RecentDoctrine":              reflect.TypeOf(types.RecentDoctrine{}),
+	"STREAM_TYPES.RecentDoctrine":       reflect.TypeOf(stream_types.RecentDoctrine{}),
 	"TYPES.RelevantMemory":              reflect.TypeOf(types.RelevantMemory{}),
 	"STREAM_TYPES.RelevantMemory":       reflect.TypeOf(stream_types.RelevantMemory{}),
 	"TYPES.RetroLesson":                 reflect.TypeOf(types.RetroLesson{}),

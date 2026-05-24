@@ -21,6 +21,13 @@ const (
 	EventSuperweaponReady     EventKind = "superweapon_ready"
 	EventFirstContact         EventKind = "first_contact"
 	EventStrategyCountered    EventKind = "strategy_countered"
+	// Harvester harass signal. Separate from economy_crisis (which fires only
+	// on total collapse) because sustained flee cycles can strangle income
+	// without any harvester dying — the count stays at cap so the rule-engine
+	// replacement rule stays silent. These events let the retrospective write
+	// "protect harvesters" lessons and the LLM raise ground_def proactively.
+	EventHarvesterLost        EventKind = "harvester_lost"
+	EventHarvesterUnderAttack EventKind = "harvester_under_attack"
 )
 
 // Event represents a significant game event detected by diffing consecutive
@@ -51,6 +58,13 @@ type stateSnapshot struct {
 
 	// Cooldown: tick of last strategy_countered event (carried forward by strategist)
 	lastCounterTick int
+
+	// Harvester harass tracking. harvestersFleeing is the count of
+	// harvesters currently in the flee-tracking map — a proxy for "actively
+	// being chased off their ore". lastHarvesterAttackTick is the cooldown
+	// marker for EventHarvesterUnderAttack.
+	harvestersFleeing       int
+	lastHarvesterAttackTick int
 
 	// lossBaselineTick is when the domain ID accumulation window started.
 	// Within the window, domain ID sets grow (new units added) but dead units
@@ -136,6 +150,12 @@ var threatDisplayName = map[string]string{
 
 // counterCooldownTicks is the minimum gap between strategy_countered events.
 const counterCooldownTicks = 200
+
+// harvesterAttackCooldownTicks is the minimum gap between
+// harvester_under_attack events. 500 ticks (~20s at 25Hz) gives the
+// retrospective multiple signal pings across a sustained harass session
+// without flooding the event log on every tick of threat.
+const harvesterAttackCooldownTicks = 500
 
 // counterLossThresholds is the minimum units lost per domain to trigger the event.
 // Infantry dies much faster than vehicles/aircraft, so a lower threshold
@@ -288,6 +308,9 @@ func takeSnapshot(gs model.GameState, memory map[string]any) stateSnapshot {
 		}
 	}
 
+	// Harvesters actively fleeing — populated by the flee-harvesters rule.
+	snap.harvestersFleeing = rules.CountFleeingHarvesters(memory)
+
 	return snap
 }
 
@@ -358,6 +381,35 @@ func detectEvents(gs model.GameState, memory map[string]any, prev *stateSnapshot
 			Tick:   gs.Tick,
 			Detail: fmt.Sprintf("Economy crisis: cash collapsed %d → %d", prev.cash, cur.cash),
 		})
+	}
+
+	// 5b. harvester_lost: an individual harvester was destroyed this tick.
+	// Distinct from economy_crisis (which fires only on total collapse) so the
+	// retrospective can learn from early harass losses before they compound.
+	if cur.harvesterCnt < prev.harvesterCnt && cur.harvesterCnt > 0 {
+		lost := prev.harvesterCnt - cur.harvesterCnt
+		events = append(events, Event{
+			Kind:   EventHarvesterLost,
+			Tick:   gs.Tick,
+			Detail: fmt.Sprintf("Harvester lost (%d → %d)", prev.harvesterCnt, cur.harvesterCnt),
+		})
+		_ = lost // kept for future detail-enrichment if we start emitting kill counts > 1
+	}
+
+	// 5c. harvester_under_attack: harvesters currently being chased off their
+	// ore, even if not dying. Sustained flee cycles strangle income because
+	// the harvester-replacement rule stays silent (count-at-cap); without a
+	// signal here, the LLM has no way to learn "protect harvesters" from the
+	// event log.
+	if cur.harvestersFleeing > 0 {
+		lastTick := prev.lastHarvesterAttackTick
+		if lastTick == 0 || gs.Tick-lastTick >= harvesterAttackCooldownTicks {
+			events = append(events, Event{
+				Kind:   EventHarvesterUnderAttack,
+				Tick:   gs.Tick,
+				Detail: fmt.Sprintf("%d harvester(s) fleeing from threats", cur.harvestersFleeing),
+			})
+		}
 	}
 
 	// 6. superweapon_ready: our nuke or iron curtain became ready

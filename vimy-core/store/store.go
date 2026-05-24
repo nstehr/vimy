@@ -73,6 +73,18 @@ type InputDoctrine struct {
 	DoctrineJSON string // already-serialized rules.Doctrine
 	Rating       string // "" if unrated
 	RatingReason string
+
+	// Rule-engine trace for this doctrine's window.
+	RuleSetJSON  string                 // JSON array of rule names compiled during the window; "" skips storage
+	RuleFirings  []InputRuleFiring      // per-rule firing stats; empty means no rule fired (or pre-instrumentation)
+}
+
+// InputRuleFiring is a per-rule, per-doctrine-window firing record.
+type InputRuleFiring struct {
+	RuleName  string
+	FireCount int
+	FirstTick int
+	LastTick  int
 }
 
 // InputLesson is a lesson destined for the lessons table.
@@ -89,6 +101,22 @@ type MemoryFilter struct {
 	TopKExemplars    int
 	TopKCautionaries int
 	TopMLessons      int
+}
+
+// SameSideFactions returns the factions that share a tech tree with the
+// given faction (vimy-wkv). Memory queries should match any faction on the
+// same side: france/england/germany are Allied, russia/ukraine are Soviet.
+// Cross-side leakage stays blocked because Soviet and Allied units differ
+// (APC vs Ranger, Iron Curtain vs Chronosphere, etc.).
+func SameSideFactions(faction string) []string {
+	switch faction {
+	case "france", "england", "germany":
+		return []string{"france", "england", "germany"}
+	case "russia", "ukraine":
+		return []string{"russia", "ukraine"}
+	default:
+		return []string{faction}
+	}
 }
 
 // MemoryContext is the assembled retrieval result. Exemplars are examples
@@ -238,14 +266,27 @@ func (s *Store) ArchiveGame(
 	}
 
 	for _, d := range doctrines {
-		if err := q.InsertDoctrine(ctx, db.InsertDoctrineParams{
+		doctrineID, err := q.InsertDoctrine(ctx, db.InsertDoctrineParams{
 			GameID:       gameID,
 			Tick:         int64(d.Tick),
 			DoctrineJson: d.DoctrineJSON,
 			Rating:       nullableString(d.Rating),
 			RatingReason: nullableString(d.RatingReason),
-		}); err != nil {
+			RuleSetJson:  nullableString(d.RuleSetJSON),
+		})
+		if err != nil {
 			return 0, fmt.Errorf("insert doctrine: %w", err)
+		}
+		for _, f := range d.RuleFirings {
+			if err := q.InsertRuleFiring(ctx, db.InsertRuleFiringParams{
+				DoctrineID: doctrineID,
+				RuleName:   f.RuleName,
+				FireCount:  int64(f.FireCount),
+				FirstTick:  int64(f.FirstTick),
+				LastTick:   int64(f.LastTick),
+			}); err != nil {
+				return 0, fmt.Errorf("insert rule_firing: %w", err)
+			}
 		}
 	}
 
@@ -290,8 +331,10 @@ func (s *Store) ArchiveLessons(
 }
 
 // QueryMemory fetches exemplar doctrines (to emulate), cautionary doctrines
-// (to avoid), and lessons matching the filter. Unknown-opponent filters widen
-// rather than zero-out.
+// (to avoid), and lessons for the librarian to judge. SQL filters only on
+// our_faction — the librarian decides cross-opponent relevance semantically,
+// so opponent_faction on MemoryFilter is accepted for future use but not
+// applied at the SQL layer.
 func (s *Store) QueryMemory(ctx context.Context, f MemoryFilter) (MemoryContext, error) {
 	if f.TopKExemplars <= 0 {
 		f.TopKExemplars = 2
@@ -302,37 +345,48 @@ func (s *Store) QueryMemory(ctx context.Context, f MemoryFilter) (MemoryContext,
 	if f.TopMLessons <= 0 {
 		f.TopMLessons = 5
 	}
-	opp := f.OpponentFaction
-	if opp == "" {
-		opp = "unknown"
-	}
-	oppArg := sql.NullString{String: opp, Valid: true}
 
-	exemplars, err := s.queries.QueryExemplarDoctrines(ctx, db.QueryExemplarDoctrinesParams{
-		OurFaction:      f.OurFaction,
-		OpponentFaction: oppArg,
-		Lim:             int64(f.TopKExemplars),
-	})
-	if err != nil {
-		return MemoryContext{}, fmt.Errorf("query exemplars: %w", err)
-	}
+	// Same-side fan-out (vimy-wkv). sqlc + sqlite mishandles slice params
+	// when combined with named params like @lim (positional indices shift),
+	// so we run the single-faction query for each side member and merge.
+	// Limits are applied per-faction; the librarian's TopK selection layer
+	// trims the union to the desired final size.
+	sideFactions := SameSideFactions(f.OurFaction)
 
-	cautionaries, err := s.queries.QueryCautionaryDoctrines(ctx, db.QueryCautionaryDoctrinesParams{
-		OurFaction:      f.OurFaction,
-		OpponentFaction: oppArg,
-		Lim:             int64(f.TopKCautionaries),
-	})
-	if err != nil {
-		return MemoryContext{}, fmt.Errorf("query cautionaries: %w", err)
+	var exemplars []db.QueryExemplarDoctrinesRow
+	for _, faction := range sideFactions {
+		rows, err := s.queries.QueryExemplarDoctrines(ctx, db.QueryExemplarDoctrinesParams{
+			OurFaction: faction,
+			Lim:        int64(f.TopKExemplars),
+		})
+		if err != nil {
+			return MemoryContext{}, fmt.Errorf("query exemplars: %w", err)
+		}
+		exemplars = append(exemplars, rows...)
 	}
 
-	lessons, err := s.queries.QueryLessons(ctx, db.QueryLessonsParams{
-		OurFaction:      f.OurFaction,
-		OpponentFaction: oppArg,
-		Lim:             int64(f.TopMLessons),
-	})
-	if err != nil {
-		return MemoryContext{}, fmt.Errorf("query lessons: %w", err)
+	var cautionaries []db.QueryCautionaryDoctrinesRow
+	for _, faction := range sideFactions {
+		rows, err := s.queries.QueryCautionaryDoctrines(ctx, db.QueryCautionaryDoctrinesParams{
+			OurFaction: faction,
+			Lim:        int64(f.TopKCautionaries),
+		})
+		if err != nil {
+			return MemoryContext{}, fmt.Errorf("query cautionaries: %w", err)
+		}
+		cautionaries = append(cautionaries, rows...)
+	}
+
+	var lessons []db.QueryLessonsRow
+	for _, faction := range sideFactions {
+		rows, err := s.queries.QueryLessons(ctx, db.QueryLessonsParams{
+			OurFaction: faction,
+			Lim:        int64(f.TopMLessons),
+		})
+		if err != nil {
+			return MemoryContext{}, fmt.Errorf("query lessons: %w", err)
+		}
+		lessons = append(lessons, rows...)
 	}
 
 	out := MemoryContext{

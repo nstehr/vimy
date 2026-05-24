@@ -860,6 +860,11 @@ type GameSituation struct {
 	Map_height           *int64               `json:"map_height"`
 	Recent_events        []GameEvent          `json:"recent_events"`
 	Combat_stats         *CombatStats         `json:"combat_stats"`
+	Recent_doctrines     []RecentDoctrine     `json:"recent_doctrines"`
+	Burned_axes          []string             `json:"burned_axes"`
+	Capturables_visible  []TypeCount          `json:"capturables_visible"`
+	Being_rushed         *bool                `json:"being_rushed"`
+	Harvester_harassed   *bool                `json:"harvester_harassed"`
 }
 
 func (c *GameSituation) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -945,6 +950,21 @@ func (c *GameSituation) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap
 		case "combat_stats":
 			c.Combat_stats = baml.Decode(valueHolder).Interface().(*CombatStats)
 
+		case "recent_doctrines":
+			c.Recent_doctrines = baml.Decode(valueHolder).Interface().([]RecentDoctrine)
+
+		case "burned_axes":
+			c.Burned_axes = baml.Decode(valueHolder).Interface().([]string)
+
+		case "capturables_visible":
+			c.Capturables_visible = baml.Decode(valueHolder).Interface().([]TypeCount)
+
+		case "being_rushed":
+			c.Being_rushed = baml.Decode(valueHolder).Interface().(*bool)
+
+		case "harvester_harassed":
+			c.Harvester_harassed = baml.Decode(valueHolder).Interface().(*bool)
+
 		default:
 
 			panic(fmt.Sprintf("unexpected field: %s in class GameSituation", key))
@@ -1002,6 +1022,16 @@ func (c GameSituation) Encode() (*cffi.HostValue, error) {
 	fields["recent_events"] = c.Recent_events
 
 	fields["combat_stats"] = c.Combat_stats
+
+	fields["recent_doctrines"] = c.Recent_doctrines
+
+	fields["burned_axes"] = c.Burned_axes
+
+	fields["capturables_visible"] = c.Capturables_visible
+
+	fields["being_rushed"] = c.Being_rushed
+
+	fields["harvester_harassed"] = c.Harvester_harassed
 
 	return baml.EncodeClass("GameSituation", fields, nil)
 }
@@ -1272,6 +1302,60 @@ func (c PowerStatus) Encode() (*cffi.HostValue, error) {
 
 func (c PowerStatus) BamlTypeName() string {
 	return "PowerStatus"
+}
+
+type RecentDoctrine struct {
+	Tick  *int64  `json:"tick"`
+	Name  *string `json:"name"`
+	Shape *string `json:"shape"`
+}
+
+func (c *RecentDoctrine) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "RecentDoctrine" {
+		panic(fmt.Sprintf("expected RecentDoctrine, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "tick":
+			c.Tick = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "name":
+			c.Name = baml.Decode(valueHolder).Interface().(*string)
+
+		case "shape":
+			c.Shape = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class RecentDoctrine", key))
+
+		}
+	}
+
+}
+
+func (c RecentDoctrine) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["tick"] = c.Tick
+
+	fields["name"] = c.Name
+
+	fields["shape"] = c.Shape
+
+	return baml.EncodeClass("RecentDoctrine", fields, nil)
+}
+
+func (c RecentDoctrine) BamlTypeName() string {
+	return "RecentDoctrine"
 }
 
 type RelevantMemory struct {

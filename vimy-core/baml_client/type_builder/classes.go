@@ -715,6 +715,26 @@ func (t *GameSituationClassView) PropertyCombat_stats() (ClassPropertyView, erro
 	return t.inner.Property("combat_stats")
 }
 
+func (t *GameSituationClassView) PropertyRecent_doctrines() (ClassPropertyView, error) {
+	return t.inner.Property("recent_doctrines")
+}
+
+func (t *GameSituationClassView) PropertyBurned_axes() (ClassPropertyView, error) {
+	return t.inner.Property("burned_axes")
+}
+
+func (t *GameSituationClassView) PropertyCapturables_visible() (ClassPropertyView, error) {
+	return t.inner.Property("capturables_visible")
+}
+
+func (t *GameSituationClassView) PropertyBeing_rushed() (ClassPropertyView, error) {
+	return t.inner.Property("being_rushed")
+}
+
+func (t *GameSituationClassView) PropertyHarvester_harassed() (ClassPropertyView, error) {
+	return t.inner.Property("harvester_harassed")
+}
+
 func (t *TypeBuilder) GameSituation() (*GameSituationClassView, error) {
 	bld, err := t.inner.Class("GameSituation")
 	if err != nil {
@@ -920,6 +940,46 @@ func (t *TypeBuilder) PowerStatus() (*PowerStatusClassView, error) {
 }
 
 func (t *PowerStatusClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type RecentDoctrineClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *RecentDoctrineClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *RecentDoctrineClassView) PropertyTick() (ClassPropertyView, error) {
+	return t.inner.Property("tick")
+}
+
+func (t *RecentDoctrineClassView) PropertyName() (ClassPropertyView, error) {
+	return t.inner.Property("name")
+}
+
+func (t *RecentDoctrineClassView) PropertyShape() (ClassPropertyView, error) {
+	return t.inner.Property("shape")
+}
+
+func (t *TypeBuilder) RecentDoctrine() (*RecentDoctrineClassView, error) {
+	bld, err := t.inner.Class("RecentDoctrine")
+	if err != nil {
+		return nil, err
+	}
+	return &RecentDoctrineClassView{inner: bld}, nil
+}
+
+func (t *RecentDoctrineClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }
 

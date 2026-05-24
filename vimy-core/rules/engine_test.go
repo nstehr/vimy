@@ -24,6 +24,63 @@ func TestDefaultRulesCompile(t *testing.T) {
 	}
 }
 
+func TestFlushFiringStats(t *testing.T) {
+	engine, err := NewEngine(DefaultRules())
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	engine.SetTraceFirings(true)
+
+	engine.recordFiring("a", 10)
+	engine.recordFiring("a", 20)
+	engine.recordFiring("b", 15)
+	engine.recordFiring("a", 30)
+
+	stats := engine.FlushFiringStats()
+	if got := stats["a"].FireCount; got != 3 {
+		t.Errorf("a.FireCount = %d, want 3", got)
+	}
+	if got := stats["a"].FirstTick; got != 10 {
+		t.Errorf("a.FirstTick = %d, want 10", got)
+	}
+	if got := stats["a"].LastTick; got != 30 {
+		t.Errorf("a.LastTick = %d, want 30", got)
+	}
+	if got := stats["b"].FireCount; got != 1 {
+		t.Errorf("b.FireCount = %d, want 1", got)
+	}
+
+	// Flush must reset counters — a second flush with no intervening firings returns empty.
+	second := engine.FlushFiringStats()
+	if len(second) != 0 {
+		t.Errorf("second flush not empty: %+v", second)
+	}
+}
+
+func TestRuleNamesReturnsCompiledRules(t *testing.T) {
+	engine, err := NewEngine(DefaultRules())
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	names := engine.RuleNames()
+	if len(names) != len(engine.rules) {
+		t.Errorf("RuleNames len = %d, want %d", len(names), len(engine.rules))
+	}
+}
+
+func TestRecordFiringNoOpWhenTracingDisabled(t *testing.T) {
+	engine, err := NewEngine(DefaultRules())
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	// traceFirings defaults to false — no SetTraceFirings call.
+	engine.recordFiring("a", 10)
+	engine.recordFiring("b", 20)
+	if stats := engine.FlushFiringStats(); len(stats) != 0 {
+		t.Errorf("expected empty stats with tracing off, got %+v", stats)
+	}
+}
+
 func TestContainsType(t *testing.T) {
 	buildings := []model.Building{
 		{Type: "powr"},

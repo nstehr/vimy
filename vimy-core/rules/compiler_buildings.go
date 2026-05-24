@@ -10,12 +10,36 @@ func (c *doctrineCompiler) addBuildingRules() {
 	// --- Prerequisite buildings ---
 
 	// Radar is the tech-tree gate for vehicles, aircraft, and naval —
-	// include it whenever any of those paths are desired. Requires at
-	// least one military building so it doesn't jump ahead of barracks.
+	// include it whenever any of those paths are desired. Priority is set
+	// below all military-building priorities (war factory / airfield /
+	// naval yard lerp 580–680, barracks 600–700, barracks-prereq 600) so
+	// the doctrine's actual production building always wins the exclusive
+	// "economy" queue first. Radar slots in after — it's a prerequisite
+	// for spy / siege / tech-center only, none of which matter before a
+	// production building exists. This keeps rush doctrines from burning
+	// 1000 cash on radar before the war factory is up.
 	if c.d.VehicleWeight > DoctrineEnabled || c.d.AirWeight > DoctrineEnabled || c.d.NavalWeight > DoctrineEnabled || c.d.TechPriority > DoctrineSignificant {
+		// Default priority 570 keeps military buildings ahead of radar —
+		// APC/engineer rush doctrines depend on this so the war factory is
+		// built before the 1000-cash radar. But when the doctrine's PRIMARY
+		// preferred vehicle requires radar (V2, artillery, heavy/medium/
+		// tesla tank, mammoth), radar IS the enablement step for combat
+		// production. Without this bump V2 doctrines wait ~6000 ticks for
+		// radar and the entire combat pipeline is dead until then. Floor
+		// 710 puts radar just below the siege-preferred war-factory floor
+		// (720), giving the human order: power → refinery → war factory →
+		// radar → second refinery → …
+		//
+		// Narrowly gated on PreferredVehicle[0]: APC-rush doctrines list
+		// 'apc' first (not radar-gated) even when they name medium_tank /
+		// heavy_tank as secondary prefs, so this bump doesn't regress them.
+		radarPriority := 570
+		if prefersRadarGatedPrimary(c.d.PreferredVehicle) {
+			radarPriority = 710
+		}
 		c.rules = append(c.rules, &Rule{
 			Name:         "build-radar",
-			Priority:     710,
+			Priority:     radarPriority,
 			Category:     "economy",
 			Exclusive:    true,
 			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("radar") && !HasRole("radar") && !QueueProducingRole("radar") && (HasRole("barracks") || HasRole("war_factory")) && PowerExcess() >= 0 && Cash() >= 1000`,
@@ -50,7 +74,16 @@ func (c *doctrineCompiler) addBuildingRules() {
 	}
 
 	if c.d.VehicleWeight > DoctrineEnabled {
-		warFactoryPriority := lerp(580, 680, c.d.VehicleWeight)
+		// Lerp ceiling 730 (was 680) so meaningfully vehicle-focused doctrines
+		// can actually beat build-second-refinery (ceiling 700 at max
+		// EconomyPriority). Gradient preserved: a VehicleWeight=0.6 doctrine
+		// gets ~670 (beats second-refinery at EconomyPriority<=0.9), a
+		// VehicleWeight=1.0 doctrine gets 730 (always beats second-refinery).
+		// Moderate doctrines (VehicleWeight 0.2-0.4) still land around
+		// 610-640 — economy wins, which is correct for a secondary-vehicle
+		// focus. Ceiling stays below build-refinery (750) / build-power (800)
+		// so first refinery and power still come first.
+		warFactoryPriority := lerp(580, 730, c.d.VehicleWeight)
 		// Transport assault doctrines need a war factory ASAP for APCs.
 		// Boost priority so the war factory doesn't lose to barracks in the
 		// exclusive "economy" category.
@@ -58,6 +91,28 @@ func (c *doctrineCompiler) addBuildingRules() {
 			taBoost := lerp(0, 40, c.d.TransportAssault)
 			warFactoryPriority = max(warFactoryPriority, lerp(600, 700, c.d.TransportAssault))
 			warFactoryPriority += taBoost
+		}
+		// Standoff-bombardment doctrines (prefer v2_launcher / artillery) have
+		// the narrowest critical path — combat depends on WF + radar only.
+		// Floor 720 so they reliably win regardless of what EconomyPriority
+		// the strategist paired with the doctrine.
+		if c.prefersVehicle("v2_launcher") || c.prefersVehicle("artillery") {
+			warFactoryPriority = max(warFactoryPriority, 720)
+		}
+		// War factory must come before specialized production yards (naval
+		// yard, airfield) regardless of doctrine. Vehicles are universally
+		// useful — they produce harvesters, defenders, MCV recovery, V2s,
+		// and APCs for engineer rushes — while naval and air are
+		// map-conditional. Game 13 (russia vs germany, naval directive,
+		// lost 19m) showed the failure mode: nav=0.70 in the opener gave
+		// build-naval-yard ~650 priority, beating build-war-factory at
+		// ~633. The naval yard built first, the war factory never did,
+		// the rush hit, and zero tanks were ever produced. Floor war
+		// factory at 685 (above the 680 ceiling on both build-naval-yard
+		// and build-airfield) whenever those alternatives compile, so
+		// the universal building always wins the build slot first.
+		if c.d.NavalWeight > DoctrineEnabled || c.d.AirWeight > DoctrineEnabled {
+			warFactoryPriority = max(warFactoryPriority, 685)
 		}
 		// Scale cash threshold inversely with vehicle weight: low-vehicle
 		// doctrines need a bigger buffer so the 2000-credit building doesn't
@@ -134,7 +189,11 @@ func (c *doctrineCompiler) addBuildingRules() {
 	// --- Ground defenses ---
 
 	if c.d.GroundDefensePriority > DoctrineModerate {
-		defenseCap := lerp(1, 5, c.d.GroundDefensePriority)
+		// vimy-90o: cap was 1..5 (gd=1.0 → only 5 total ground defenses), too
+		// few to cover multiple entry points when raids destroy them as fast
+		// as we rebuild. Bumped to 2..10 so a well-defended doctrine can hold
+		// a real perimeter line. Cash gate still throttles spend.
+		defenseCap := lerp(2, 10, c.d.GroundDefensePriority)
 		defenseCash := lerp(1500, 300, c.d.GroundDefensePriority)
 		defensePriority := lerp(400, 600, c.d.GroundDefensePriority)
 		c.rules = append(c.rules, &Rule{
@@ -150,7 +209,9 @@ func (c *doctrineCompiler) addBuildingRules() {
 	// --- AA defenses ---
 
 	if c.d.AirDefensePriority > DoctrineSignificant {
-		aaCap := lerp(1, 3, c.d.AirDefensePriority)
+		// vimy-90o: 1..3 was too few for a base with multiple aircraft
+		// approach vectors. 2..5 lets ad=1.0 cover both flanks plus the rear.
+		aaCap := lerp(2, 5, c.d.AirDefensePriority)
 		aaCash := lerp(1200, 500, c.d.AirDefensePriority)
 		aaPriority := lerp(400, 600, c.d.AirDefensePriority)
 		c.rules = append(c.rules, &Rule{

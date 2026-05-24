@@ -156,9 +156,18 @@ func (c *doctrineCompiler) addProductionRules() {
 		})
 
 		dogCap := lerp(1, 3, c.d.InfantryWeight)
+		// Priority infantryBasePri + 10 puts dogs above rifles (infantryBasePri),
+		// specialists (specialistBasePri), rocket-soldier (495), and engineers
+		// (450) in the exclusive CatProduceInfantry queue. Without this, the
+		// first dog never gets produced when rifles or specialists are eligible
+		// — which is always in rush doctrines — and since scout-with-scouts
+		// needs a dog to designate, non-APC scouting is dead. The low dogCap
+		// (1–3) bounds the preemption: rifles resume winning as soon as the cap
+		// is hit, matching the human pattern of "first dog out of the kennel is
+		// the scout, later dogs guard base when convenient."
 		c.rules = append(c.rules, &Rule{
 			Name:         "produce-attack-dog",
-			Priority:     infantryBasePri - 8,
+			Priority:     infantryBasePri + 10,
 			Category:     CatProduceInfantry,
 			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`HasRole("kennel") && !QueueBusy("Infantry") && CanBuildRole("attack_dog") && RoleCount("attack_dog") < %d && %s`, dogCap, buildCashCondition(200, c.infantrySavings)),
@@ -180,12 +189,23 @@ func (c *doctrineCompiler) addProductionRules() {
 
 	if c.d.VehicleWeight > DoctrineEnabled {
 		vehicleCap := lerp(3, 10, c.d.VehicleWeight)
+		// Scale future-building savings by (1 - VehicleWeight) when the
+		// doctrine explicitly prioritizes vehicles (>= DoctrineHigh). At
+		// VehicleWeight=1.0 reserves fall to zero (vehicles are the whole
+		// plan); at VehicleWeight=0.4 reserves contribute ~60% (still mostly
+		// protect the tech center but don't fully lock out tank production).
+		// Below DoctrineHigh, full savings apply — balanced/tech-focused
+		// doctrines keep their tech center reserve intact.
+		savingsScale := 1.0
+		if c.d.VehicleWeight >= DoctrineHigh {
+			savingsScale = 1.0 - c.d.VehicleWeight
+		}
 		c.rules = append(c.rules, &Rule{
 			Name:         "produce-vehicle",
 			Priority:     480,
 			Category:     CatProduceVehicle,
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildAnyCombatVehicle() && CombatVehicleCount() < %d && %s`, vehicleCap, buildCashCondition(800, c.savings)),
+			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildAnyCombatVehicle() && CombatVehicleCount() < %d && %s`, vehicleCap, buildCashConditionScaled(800, c.savings, savingsScale)),
 			Action:       ActionProduceVehicle,
 		})
 	}
@@ -265,12 +285,47 @@ func (c *doctrineCompiler) addProductionRules() {
 
 	if c.d.VehicleWeight > DoctrineModerate {
 		siegeCap := lerp(1, 3, c.d.VehicleWeight)
+		// When siege is the PRIMARY preferred vehicle, the default 1-3 cap is
+		// too tight: once we have 1-2 V2s the rule stops firing and
+		// produce-flak-truck wins every subsequent vehicle-queue window.
+		// Game 9 observed 14 siege firings vs 85 flak firings over 4.7 hours
+		// with v2_launcher as primary pref. Matching other "this is the plan"
+		// rules (aircraft, ship) with a 3-8 range lets siege actually stay
+		// ahead of flak until replacement attrition catches up.
+		primary := ""
+		if len(c.d.PreferredVehicle) > 0 {
+			primary = c.d.PreferredVehicle[0]
+		}
+		if primary == "v2_launcher" || primary == "artillery" {
+			siegeCap = lerp(3, 8, c.d.VehicleWeight)
+		}
+		// Priority bump when the doctrine explicitly prefers a siege unit.
+		// Default 460 loses to produce-vehicle (480) and produce-flak-truck
+		// (470) in the exclusive vehicle queue, so stand-off doctrines that
+		// want V2s / artillery end up with 1-2 of them over a 50-minute game
+		// (observed live). 485 keeps harvester (510) ahead but places siege
+		// above generic vehicle and flak, so the preferred unit actually
+		// gets built before tanks round-robin past it. Cap still bounds
+		// it (1-3 based on VehicleWeight) so tanks resume afterward.
+		siegePri := 460
+		if c.prefersVehicle("v2_launcher") || c.prefersVehicle("artillery") {
+			siegePri = 485
+		}
+		// Savings scale (same pattern as produce-vehicle in vimy-so2): when
+		// the doctrine explicitly prioritizes vehicles, the tech-center
+		// reserve (1500) shouldn't keep siege fully locked out. Without this,
+		// the priority bump alone can't help — siege's 2400-cash effective
+		// gate means flak-truck (2100) keeps sniping every window.
+		siegeSavingsScale := 1.0
+		if c.d.VehicleWeight >= DoctrineHigh {
+			siegeSavingsScale = 1.0 - c.d.VehicleWeight
+		}
 		c.rules = append(c.rules, &Rule{
 			Name:         "produce-siege-vehicle",
-			Priority:     460,
+			Priority:     siegePri,
 			Category:     CatProduceVehicle,
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && HasRole("radar") && !QueueBusy("Vehicle") && (CanBuildRole("artillery") || CanBuildRole("v2_launcher")) && (RoleCount("artillery") + RoleCount("v2_launcher")) < %d && %s`, siegeCap, buildCashCondition(900, c.savings)),
+			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && HasRole("radar") && !QueueBusy("Vehicle") && (CanBuildRole("artillery") || CanBuildRole("v2_launcher")) && (RoleCount("artillery") + RoleCount("v2_launcher")) < %d && %s`, siegeCap, buildCashConditionScaled(900, c.savings, siegeSavingsScale)),
 			Action:       ActionProduceSiegeVehicle,
 		})
 	}
@@ -353,9 +408,25 @@ func (c *doctrineCompiler) addProductionRules() {
 
 	if c.d.NavalWeight > DoctrineEnabled && c.d.TechPriority > DoctrineSignificant {
 		advNavalCap := lerp(1, 3, c.d.TechPriority*c.d.NavalWeight)
+		advNavalPri := 430
+		// When the doctrine names a tech-gated naval unit as primary preferred,
+		// the default cap (1-3) and below-generic priority (430 < produce-ship
+		// 440) let produce-ship snipe every Ship-queue cash window — observed
+		// live in game 11 with missile_sub as primary pref (vimy-sja). Mirror
+		// the siege-vehicle fix: bump cap to lerp(3,8,NavalWeight) and priority
+		// above produce-ship so missile_sub / cruiser / destroyer actually get
+		// built when they're the plan.
+		primary := ""
+		if len(c.d.PreferredNaval) > 0 {
+			primary = c.d.PreferredNaval[0]
+		}
+		if primary == "missile_sub" || primary == "cruiser" || primary == "destroyer" {
+			advNavalCap = lerp(3, 8, c.d.NavalWeight)
+			advNavalPri = 445
+		}
 		c.rules = append(c.rules, &Rule{
 			Name:         "produce-advanced-ship",
-			Priority:     430,
+			Priority:     advNavalPri,
 			Category:     CatProduceShip,
 			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`MapHasWater() && HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("cruiser") || CanBuildRole("destroyer") || CanBuildRole("missile_sub")) && (RoleCount("cruiser") + RoleCount("destroyer") + RoleCount("missile_sub")) < %d && %s`, advNavalCap, buildCashCondition(2000, c.savings)),

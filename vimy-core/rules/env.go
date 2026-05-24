@@ -191,6 +191,39 @@ func (e RuleEnv) MapHasWater() bool {
 	return e.Terrain.HasWater()
 }
 
+// allChokepoints runs FindChokepoints once per match and caches the result in
+// memory. The terrain grid is static, so re-scanning each tick would be waste.
+func (e RuleEnv) allChokepoints() []model.Chokepoint {
+	if e.Terrain == nil {
+		return nil
+	}
+	if cached, ok := e.Memory["chokepoints"].([]model.Chokepoint); ok {
+		return cached
+	}
+	cps := model.FindChokepoints(e.Terrain)
+	e.Memory["chokepoints"] = cps
+	return cps
+}
+
+// ChokepointsTowardEnemy returns chokepoints ranked by relevance to the path
+// between the base centroid and the nearest known enemy base. Falls back to
+// the unranked list when there is no enemy intel so callers can still mine
+// defensively on structure. Returns nil if no terrain or no chokes exist.
+func (e RuleEnv) ChokepointsTowardEnemy() []model.Chokepoint {
+	cps := e.allChokepoints()
+	if len(cps) == 0 || e.Terrain == nil || e.Terrain.CellW <= 0 || e.Terrain.CellH <= 0 {
+		return cps
+	}
+	base := e.NearestEnemyBase()
+	if base == nil {
+		return cps
+	}
+	centX, centY := e.BuildingCentroid()
+	from := [2]int{centX / e.Terrain.CellW, centY / e.Terrain.CellH}
+	to := [2]int{base.X / e.Terrain.CellW, base.Y / e.Terrain.CellH}
+	return model.RankChokepointsOnPath(cps, e.Terrain, from, to)
+}
+
 func (e RuleEnv) EnemiesVisible() bool { return len(e.State.Enemies) > 0 }
 
 // DamagedSquadUnits returns idle squad members below the given HP threshold.
@@ -276,6 +309,16 @@ func (e RuleEnv) ServiceDepot() *model.Building {
 	return nil
 }
 
+// WarFactory returns the first war factory building, or nil if none exists.
+func (e RuleEnv) WarFactory() *model.Building {
+	for i := range e.State.Buildings {
+		if matchesType(e.State.Buildings[i].Type, WarFactory) {
+			return &e.State.Buildings[i]
+		}
+	}
+	return nil
+}
+
 // Airfield returns the first airfield or helipad building, or nil if none exists.
 func (e RuleEnv) Airfield() *model.Building {
 	for i := range e.State.Buildings {
@@ -331,7 +374,15 @@ func (e RuleEnv) ServiceDepotOrCentroid() (int, int) {
 }
 
 // OverextendedSquadMembers returns idle squad members whose distance from
-// base centroid exceeds leashPct fraction of the map diagonal.
+// base centroid exceeds leashPct fraction of the map diagonal AND who are
+// not currently near a known enemy base. The enemy-base exemption (vimy-91b)
+// prevents the recall rule from yanking units away from the enemy base mid-
+// attack — when a unit finishes a kill inside the enemy base it goes idle,
+// and without this exemption it gets walked all the way home, re-formed
+// into a squad, ordered back to the enemy base, finishes another kill, and
+// the cycle repeats. In game 23 (126k-tick loss) this fired 764 times,
+// which fully explains the user's observation that vimy 'held tactically'
+// but never closed the deal.
 func (e RuleEnv) OverextendedSquadMembers(name string, leashPct float64) []model.Unit {
 	squads := getSquads(e.Memory)
 	sq, ok := squads[name]
@@ -341,8 +392,15 @@ func (e RuleEnv) OverextendedSquadMembers(name string, leashPct float64) []model
 	centX, centY := e.BuildingCentroid()
 	mw := float64(e.State.MapWidth)
 	mh := float64(e.State.MapHeight)
-	leashDist := math.Sqrt(mw*mw+mh*mh) * leashPct
+	diagonal := math.Sqrt(mw*mw + mh*mh)
+	leashDist := diagonal * leashPct
 	leashSq := leashDist * leashDist
+
+	// Forward-deployed units near a remembered enemy base are NOT overextended.
+	// 20% of diagonal is roughly the engagement radius around a base.
+	const enemyBaseExemptPct = 0.20
+	enemyExemptSq := (diagonal * enemyBaseExemptPct) * (diagonal * enemyBaseExemptPct)
+	bases := getEnemyBases(e.Memory)
 
 	idleSet := make(map[int]bool)
 	unitMap := make(map[int]model.Unit)
@@ -361,9 +419,22 @@ func (e RuleEnv) OverextendedSquadMembers(name string, leashPct float64) []model
 		u := unitMap[id]
 		dx := float64(u.X - centX)
 		dy := float64(u.Y - centY)
-		if dx*dx+dy*dy > leashSq {
-			out = append(out, u)
+		if dx*dx+dy*dy <= leashSq {
+			continue
 		}
+		nearEnemyBase := false
+		for _, b := range bases {
+			ex := float64(u.X - b.X)
+			ey := float64(u.Y - b.Y)
+			if ex*ex+ey*ey <= enemyExemptSq {
+				nearEnemyBase = true
+				break
+			}
+		}
+		if nearEnemyBase {
+			continue
+		}
+		out = append(out, u)
 	}
 	return out
 }
@@ -499,7 +570,9 @@ func isNaval(u model.Unit) bool {
 }
 
 // IdleGroundUnits returns idle land combat units — excludes economic units
-// (harvesters, MCVs) and other domains (aircraft, naval).
+// (harvesters, MCVs), utility units (engineers, APCs, minelayers, rangers),
+// attack dogs (bite-only, anti-infantry — shouldn't be dispatched against
+// vehicles by offensive squads), and other domains (aircraft, naval).
 func (e RuleEnv) IdleGroundUnits() []model.Unit {
 	scoutID := getScoutID(e.Memory)
 	var out []model.Unit
@@ -507,7 +580,7 @@ func (e RuleEnv) IdleGroundUnits() []model.Unit {
 		if !u.Idle {
 			continue
 		}
-		if matchesType(u.Type, Harvester) || matchesType(u.Type, MCV) || matchesType(u.Type, Ranger) || matchesType(u.Type, Engineer) || matchesType(u.Type, APC) || matchesType(u.Type, Minelayer) {
+		if matchesType(u.Type, Harvester) || matchesType(u.Type, MCV) || matchesType(u.Type, Ranger) || matchesType(u.Type, Engineer) || matchesType(u.Type, APC) || matchesType(u.Type, Minelayer) || matchesType(u.Type, AttackDog) {
 			continue
 		}
 		if scoutID != 0 && u.ID == scoutID {
@@ -536,7 +609,7 @@ func (e RuleEnv) NearBaseGroundUnits() []model.Unit {
 
 	var out []model.Unit
 	for _, u := range e.State.Units {
-		if matchesType(u.Type, Harvester) || matchesType(u.Type, MCV) || matchesType(u.Type, Engineer) || matchesType(u.Type, APC) {
+		if matchesType(u.Type, Harvester) || matchesType(u.Type, MCV) || matchesType(u.Type, Engineer) || matchesType(u.Type, APC) || matchesType(u.Type, AttackDog) {
 			continue
 		}
 		if isAircraft(u) || isNaval(u) {
@@ -605,6 +678,76 @@ func (e RuleEnv) IdleLoadedAPCs() []model.Unit {
 	var out []model.Unit
 	for _, u := range e.State.Units {
 		if u.Idle && isTransport(u) && u.CargoCount > 0 {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
+// APC cargo intent: the game state only tells us an APC has N passengers, not
+// what kind. We tag each APC as "engineer" or "combat" at load time so the
+// deliver rules (capture vs. assault) only pick APCs carrying their own kind.
+const (
+	apcIntentEngineer = "engineer"
+	apcIntentCombat   = "combat"
+)
+
+// GetAPCCargoIntent returns the intent map, allocating if needed. Exported for
+// actions that need to tag on load or clear on unload.
+func GetAPCCargoIntent(memory map[string]any) map[int]string {
+	return memoryMap[int, string](memory, "apcCargoIntent")
+}
+
+// pruneAPCCargoIntent drops entries for APCs that no longer exist. It does
+// NOT prune based on CargoCount: a freshly-tagged APC takes a tick or two
+// for the server to register the Enter command, during which the APC shows
+// CargoCount=0 on our side. Pruning on "empty" would drop the tag during
+// this transient, and both deliver rules would then ignore the loaded APC
+// forever. Stale tags from failed loads are harmless — the next successful
+// load overwrites. Unload paths clear the tag explicitly via ClearAPCCargoIntent.
+func pruneAPCCargoIntent(memory map[string]any, units []model.Unit) {
+	intent := GetAPCCargoIntent(memory)
+	if len(intent) == 0 {
+		return
+	}
+	live := make(map[int]bool, len(units))
+	for _, u := range units {
+		live[u.ID] = true
+	}
+	for id := range intent {
+		if !live[id] {
+			delete(intent, id)
+		}
+	}
+}
+
+// ClearAPCCargoIntent removes the intent tag for a specific APC. Call on
+// unload so the APC can be re-tagged when it picks up a new passenger.
+func ClearAPCCargoIntent(memory map[string]any, id int) {
+	delete(GetAPCCargoIntent(memory), id)
+}
+
+// IdleEngineerLoadedAPCs returns loaded APCs tagged as carrying engineers.
+// Used by deliver-apc-to-target so it won't pick up a combat-loaded APC.
+func (e RuleEnv) IdleEngineerLoadedAPCs() []model.Unit {
+	return e.idleLoadedAPCsByIntent(apcIntentEngineer)
+}
+
+// IdleCombatLoadedAPCs returns loaded APCs tagged as carrying combat infantry.
+// Used by deliver-assault-apc so it won't pick up an engineer-loaded APC.
+func (e RuleEnv) IdleCombatLoadedAPCs() []model.Unit {
+	return e.idleLoadedAPCsByIntent(apcIntentCombat)
+}
+
+func (e RuleEnv) idleLoadedAPCsByIntent(want string) []model.Unit {
+	pruneAPCCargoIntent(e.Memory, e.State.Units)
+	intent := GetAPCCargoIntent(e.Memory)
+	var out []model.Unit
+	for _, u := range e.State.Units {
+		if !u.Idle || !isTransport(u) || u.CargoCount == 0 {
+			continue
+		}
+		if intent[u.ID] == want {
 			out = append(out, u)
 		}
 	}
@@ -696,9 +839,14 @@ func getMinelayerAssignments(memory map[string]any) map[int]bool {
 	return make(map[int]bool)
 }
 
-// designateScout assigns the first unassigned idle light tank as the scout.
-// Called each tick from updateScoutDesignation so the scout is auto-assigned
-// after production completes.
+// designateScout assigns the first unassigned idle scout-capable unit. A light
+// tank is preferred when available (more survivable, more vision). Falls back
+// to an attack dog when no light tank exists — the Soviet equivalent of the
+// Allied Ranger: cheap, fast, disposable. Humans use the first dog out of the
+// kennel as their perimeter scout in Soviet rush openings, and before this
+// fallback Soviet rush doctrines had no non-APC scouting at all.
+// Called each tick from the engine so the designation persists across
+// production events.
 func designateScout(env RuleEnv) {
 	scoutID := getScoutID(env.Memory)
 	if scoutID != 0 {
@@ -712,18 +860,28 @@ func designateScout(env RuleEnv) {
 		delete(env.Memory, "scoutUnitID")
 		scoutID = 0
 	}
-	// If we have rangers, no need for a scout light tank.
+	// If we have rangers, no need for a dedicated designation — IdleScouts
+	// includes all rangers automatically.
 	for _, u := range env.State.Units {
 		if matchesType(u.Type, Ranger) {
 			return
 		}
 	}
-	// Designate the first idle, unassigned light tank.
 	assigned := squadUnitIDSet(env.Memory)
+	// Prefer a light tank.
 	for _, u := range env.State.Units {
 		if u.Idle && matchesType(u.Type, LightTank) && !assigned[u.ID] {
 			env.Memory["scoutUnitID"] = u.ID
 			slog.Debug("designated scout light tank", "id", u.ID)
+			return
+		}
+	}
+	// Soviet fallback: first unassigned idle attack dog. Matches the human
+	// pattern of sending the first dog on patrol while later dogs guard base.
+	for _, u := range env.State.Units {
+		if u.Idle && matchesType(u.Type, AttackDog) && !assigned[u.ID] {
+			env.Memory["scoutUnitID"] = u.ID
+			slog.Debug("designated scout attack dog", "id", u.ID)
 			return
 		}
 	}
@@ -814,13 +972,17 @@ func (e RuleEnv) EngineerNearCapturable() bool {
 // because aircraft bypass ground defenses and can soften positions before
 // a ground push.
 var airTargetValue = map[string]float64{
-	// Defense structures (highest — air bypasses these)
+	// Win-condition target — same reasoning as groundTargetValue (vimy-68x).
+	ConstructionYard: 12, "afac": 12,
+	// Defense structures — clear them so we can stay over the base.
 	TeslaCoil: 10, Turret: 8, Pillbox: 7, CamoPillbox: 7, FlameTower: 6,
 	// Superweapons
 	MissileSilo: 9, IronCurtain: 9,
 	// Production
-	ConstructionYard: 6, "afac": 6, WarFactory: 5, Airfield: 5, Helipad: 5,
-	SovietBarracks: 4, AlliedBarracks: 4, Refinery: 4,
+	WarFactory: 5, Airfield: 5, Helipad: 5,
+	SovietBarracks: 4, AlliedBarracks: 4,
+	// Economy — bumped from 4 to 6 so refineries get pressed.
+	Refinery: 6,
 	// AA defenses (risky but worth removing)
 	AAGun: 4, SAMSite: 4,
 	// Power / support
@@ -886,7 +1048,12 @@ func (e RuleEnv) BestAirTarget() *model.Enemy {
 // Active base defenses score highest because they're actively killing our ground
 // units. AA defenses and naval buildings score low — not threatening to ground forces.
 var groundTargetValue = map[string]float64{
-	// Active base defenses (highest — these are killing our units)
+	// Win-condition target: destroying the construction yard is the actual
+	// objective. Game 19 (vimy-68x): 21 STRONG-rated doctrines, attack >
+	// defense, but lost because squads kept fighting mobile units instead
+	// of pressing enemy infrastructure. CY now leads the value table.
+	ConstructionYard: 12,
+	// Active base defenses — kill these first so the push survives.
 	TeslaCoil: 10, Turret: 8, Pillbox: 7, CamoPillbox: 7, FlameTower: 6,
 	// Superweapons
 	MissileSilo: 9, IronCurtain: 9,
@@ -894,8 +1061,9 @@ var groundTargetValue = map[string]float64{
 	AAGun: 2, SAMSite: 2,
 	// Production (destroy their ability to replace losses)
 	WarFactory: 6, Airfield: 5, Helipad: 5, SovietBarracks: 4, AlliedBarracks: 4,
-	// Economy
-	Refinery: 5, ConstructionYard: 4,
+	// Economy — bumped from 5 to 7 so refineries get pressed once
+	// active defenses are down (economic strangulation is a real win path).
+	Refinery: 7,
 	// Naval (low priority for ground forces)
 	SubPen: 2, NavalYard: 2,
 	// Power / support
@@ -904,11 +1072,16 @@ var groundTargetValue = map[string]float64{
 
 const groundTargetValueDefault = 1.0 // mobile units / unknown types
 
-// BestGroundTarget picks the highest-value enemy for ground attacks, using distance
-// as a decay factor. Scoring: val * hpBonus / dist.
-// val = type value from groundTargetValue (dominant factor)
-// hpBonus = 2.0 - hpRatio — gentle tiebreaker favoring damaged targets
-// 1/dist = stronger distance decay than air (ground units travel slowly)
+// BestGroundTarget picks the highest-value enemy for ground attacks. Scoring:
+// val * hpBonus / (1 + dist/groundDistanceScale).
+// val      = type value from groundTargetValue (dominant factor)
+// hpBonus  = 2.0 - hpRatio — gentle tiebreaker favoring damaged targets
+// distance = soft decay so a high-value building across the map can still
+//            beat a value-1 mobile unit at the squad's doorstep. The old
+//            1/dist decay caused squads to chase trash units forever instead
+//            of pressing enemy infrastructure (vimy-68x).
+const groundDistanceScale = 50.0
+
 func (e RuleEnv) BestGroundTarget() *model.Enemy {
 	if len(e.State.Enemies) == 0 {
 		return nil
@@ -944,10 +1117,7 @@ func (e RuleEnv) BestGroundTarget() *model.Enemy {
 		dx := float64(en.X - bx)
 		dy := float64(en.Y - by)
 		dist := math.Sqrt(dx*dx + dy*dy)
-		if dist < 1 {
-			dist = 1
-		}
-		score := val * hpBonus / dist
+		score := val * hpBonus / (1 + dist/groundDistanceScale)
 		if score > bestScore {
 			bestScore = score
 			best = en
@@ -1234,6 +1404,25 @@ type EnemyBaseIntel struct {
 	FromBuildings bool // true if derived from building sightings (high confidence)
 }
 
+// enemyHarvesterIntel persists last-known positions of enemy harvesters.
+// Keyed by harvester ID. Harvesters cluster near refineries which sit
+// inside enemy bases, so their positions remain useful location intel
+// even after they fade back into fog.
+type enemyHarvesterIntel struct {
+	X, Y, Tick int
+}
+
+// IntelCenter is an inferred estimate of the enemy base position based on
+// the full set of accumulated sightings — visible buildings and harvesters
+// plus persistent high-confidence base intel. Confidence scales 0..1 with
+// the total weighted sighting mass; a lone harvester sighting yields low
+// confidence, multiple buildings yield high.
+type IntelCenter struct {
+	X, Y       int
+	Confidence float64
+	Sources    int
+}
+
 // knownBuildingTypes distinguishes enemy buildings from mobile units in the
 // Enemies list. Building sightings give high-confidence base positions;
 // unit sightings might just be an attack force passing through.
@@ -1367,6 +1556,16 @@ func updateIntel(env RuleEnv) {
 
 	env.Memory["enemyBases"] = bases
 
+	// Persist last-known positions of enemy harvesters for InferredEnemyBaseCenter.
+	harvesters := memoryMap[int, enemyHarvesterIntel](env.Memory, "enemyHarvesterIntel")
+	for _, e := range env.State.Enemies {
+		if matchesType(e.Type, Harvester) {
+			harvesters[e.ID] = enemyHarvesterIntel{X: e.X, Y: e.Y, Tick: env.State.Tick}
+		}
+	}
+
+	updateDefenseIntel(env)
+
 	// Accumulate historical enemy sightings.
 	// Units: deduplicate by ID — each unit is unique.
 	// Buildings: track high-water mark — max visible at once per type,
@@ -1438,6 +1637,73 @@ func (e RuleEnv) HasEnemyIntel() bool {
 	return false
 }
 
+// InferredEnemyBaseCenter returns the weighted centroid of all accumulated
+// enemy-position intel — visible buildings, visible harvesters, persistent
+// harvester last-known positions, and persistent high-confidence base intel.
+// Weights: persistent base centroid = 5.0 (strongest; already aggregated from
+// building sightings), currently-visible buildings = 3.0 each, harvesters
+// = 1.0 each (decayed to 0.5 past 500 ticks to discount stale positions).
+// Returns nil when no intel exists yet. Siege / artillery / scout-rally rules
+// can target this point even when only fragments of the base have been seen.
+func (e RuleEnv) InferredEnemyBaseCenter() *IntelCenter {
+	sumX, sumY, totalW := 0.0, 0.0, 0.0
+	sources := 0
+
+	for _, enemy := range e.State.Enemies {
+		var w float64
+		switch {
+		case IsKnownBuildingType(enemy.Type):
+			w = 3.0
+		case matchesType(enemy.Type, Harvester):
+			w = 1.0
+		}
+		if w == 0 {
+			continue
+		}
+		sumX += float64(enemy.X) * w
+		sumY += float64(enemy.Y) * w
+		totalW += w
+		sources++
+	}
+
+	// Persistent harvester intel — keep contributing even after losing sight.
+	for _, harv := range memoryMap[int, enemyHarvesterIntel](e.Memory, "enemyHarvesterIntel") {
+		w := 1.0
+		if e.State.Tick-harv.Tick > 500 {
+			w = 0.5
+		}
+		sumX += float64(harv.X) * w
+		sumY += float64(harv.Y) * w
+		totalW += w
+		sources++
+	}
+
+	// Persistent high-confidence base centroid — strongest single anchor.
+	for _, base := range getEnemyBases(e.Memory) {
+		if !base.FromBuildings {
+			continue
+		}
+		sumX += float64(base.X) * 5.0
+		sumY += float64(base.Y) * 5.0
+		totalW += 5.0
+		sources++
+	}
+
+	if totalW == 0 {
+		return nil
+	}
+	conf := totalW / 15.0 // 15 ≈ three full-weight buildings
+	if conf > 1.0 {
+		conf = 1.0
+	}
+	return &IntelCenter{
+		X:          int(sumX / totalW),
+		Y:          int(sumY / totalW),
+		Confidence: conf,
+		Sources:    sources,
+	}
+}
+
 // NearestEnemyBase returns the closest remembered enemy base for fog-of-war attacks.
 func (e RuleEnv) NearestEnemyBase() *EnemyBaseIntel {
 	bases := getEnemyBases(e.Memory)
@@ -1468,6 +1734,327 @@ func (e RuleEnv) NearestEnemyBase() *EnemyBaseIntel {
 
 func (e RuleEnv) EnemyBaseCount() int {
 	return len(getEnemyBases(e.Memory))
+}
+
+// EnemyDefenseIntel is a remembered enemy defense building. We retain these
+// across ticks so path planning can avoid defended approaches even when the
+// defenses aren't currently in vision.
+type EnemyDefenseIntel struct {
+	ActorID int
+	Type    string
+	X, Y    int
+	Tick    int
+}
+
+// defenseThreatWeight maps defense type → threat weight painted onto the
+// field. Tesla > pillbox by rough DPS/range heuristic.
+var defenseThreatWeight = map[string]float64{
+	Pillbox:     1.0,
+	CamoPillbox: 1.0,
+	Turret:      1.2,
+	FlameTower:  1.4,
+	TeslaCoil:   2.5,
+	AAGun:       0.4, // anti-air, not ground threat
+	SAMSite:     0.4,
+}
+
+func isEnemyDefenseType(t string) bool {
+	_, ok := defenseThreatWeight[baseTypeName(t)]
+	return ok
+}
+
+func baseTypeName(t string) string {
+	base := strings.ToLower(t)
+	if idx := strings.IndexByte(base, '.'); idx >= 0 {
+		base = base[:idx]
+	}
+	return base
+}
+
+// updateDefenseIntel refreshes remembered defense positions. Currently visible
+// defenses overwrite prior records; stale records (≥300 ticks old) are
+// cleared if any of our units stand near the recorded spot and the defense
+// isn't visible — mirrors the base-intel clearing pattern.
+func updateDefenseIntel(env RuleEnv) {
+	defs := getEnemyDefenses(env.Memory)
+	for _, e := range env.State.Enemies {
+		if !isEnemyDefenseType(e.Type) {
+			continue
+		}
+		defs[e.ID] = EnemyDefenseIntel{
+			ActorID: e.ID, Type: baseTypeName(e.Type), X: e.X, Y: e.Y, Tick: env.State.Tick,
+		}
+	}
+
+	const clearRadiusSq = 10 * 10
+	const minAge = 300
+	for id, intel := range defs {
+		if env.State.Tick-intel.Tick < minAge {
+			continue
+		}
+		ourNearby := false
+		for _, u := range env.State.Units {
+			dx, dy := u.X-intel.X, u.Y-intel.Y
+			if dx*dx+dy*dy < clearRadiusSq {
+				ourNearby = true
+				break
+			}
+		}
+		if !ourNearby {
+			continue
+		}
+		stillThere := false
+		for _, e := range env.State.Enemies {
+			if e.ID == intel.ActorID {
+				stillThere = true
+				break
+			}
+		}
+		if !stillThere {
+			delete(defs, id)
+		}
+	}
+	env.Memory["enemyDefenses"] = defs
+}
+
+func getEnemyDefenses(memory map[string]any) map[int]EnemyDefenseIntel {
+	if v, ok := memory["enemyDefenses"].(map[int]EnemyDefenseIntel); ok {
+		return v
+	}
+	return make(map[int]EnemyDefenseIntel)
+}
+
+// ThreatField rasterizes remembered enemy defenses onto a field parallel to
+// the terrain grid. Returns nil if no terrain grid is available.
+func (e RuleEnv) ThreatField() *model.ThreatField {
+	if e.Terrain == nil {
+		return nil
+	}
+	f := model.NewThreatField(e.Terrain)
+	for _, d := range getEnemyDefenses(e.Memory) {
+		w, ok := defenseThreatWeight[d.Type]
+		if !ok {
+			w = 1.0
+		}
+		f.AddSource(e.Terrain, d.X, d.Y, w)
+	}
+	return f
+}
+
+// airDefenseThreatWeight is the AA-only threat weighting used for routing
+// aircraft. Pillbox/Tesla/FlameTower don't shoot aircraft, so they shouldn't
+// influence air approach. Only AAGun and SAMSite count. Weights are higher
+// than ground equivalents because aircraft can't return fire as
+// straightforwardly and a SAM cluster reliably shreds approaching strike
+// packages.
+var airDefenseThreatWeight = map[string]float64{
+	AAGun:   2.0,
+	SAMSite: 2.5,
+}
+
+// AirThreatField is the AA-only counterpart of ThreatField — used for routing
+// aircraft around SAM/AAGun clusters before they engage a ground target.
+func (e RuleEnv) AirThreatField() *model.ThreatField {
+	if e.Terrain == nil {
+		return nil
+	}
+	f := model.NewThreatField(e.Terrain)
+	for _, d := range getEnemyDefenses(e.Memory) {
+		w, ok := airDefenseThreatWeight[d.Type]
+		if !ok {
+			continue
+		}
+		f.AddSource(e.Terrain, d.X, d.Y, w)
+	}
+	return f
+}
+
+// ApproachWaypoint returns an intermediate attack-move target that avoids
+// defended zones on the way to `dest`. It is the last zone on the weighted
+// path whose cumulative threat is still low — where the squad should stage
+// before committing to the final push. Returns zero, false when no waypoint
+// is useful (open approach, no intel, unreachable).
+func (e RuleEnv) ApproachWaypoint(destX, destY int) (int, int, bool) {
+	return e.approachWaypointWithField(destX, destY, e.ThreatField())
+}
+
+// AirApproachWaypoint mirrors ApproachWaypoint but routes around AA defenses
+// only. Used by air-strike squads so aircraft enter from a low-AA flank
+// instead of flying straight over a SAM cluster.
+func (e RuleEnv) AirApproachWaypoint(destX, destY int) (int, int, bool) {
+	return e.approachWaypointWithField(destX, destY, e.AirThreatField())
+}
+
+// approachAxisRadiusCells is how far from the target the candidate flank
+// waypoints sit. ~8 zone-cells is a small detour relative to base-to-target
+// distance but well outside a defense cluster's painted radius, so the
+// candidate east of the target scores cleanly even when defenses are
+// painted south of the target.
+const approachAxisRadiusCells = 8
+
+// openEnoughThreshold gates the entire mechanism: if the direct corridor
+// from our base to the target has less threat than this, don't pick a
+// detour at all — the path is already open. Calibrated to roughly the
+// signal of 1-2 distant defenses in the corridor.
+const openEnoughThreshold = 1.0
+
+// BestApproachAxis evaluates 8 compass-direction waypoints arranged around
+// `dest` and returns the one whose corridor-from-base has the lowest threat.
+// Unlike ApproachWaypoint (which picks a single weighted BFS path), this
+// reliably picks the genuinely open flank when an enemy base has defenses
+// on one side and a clear approach on the other. Returns false when:
+//   - terrain or threat data is missing
+//   - the direct corridor is already low-threat (open approach)
+//   - no candidate is meaningfully cleaner than the direct approach
+//
+// Replaces ApproachWaypoint as the front door for squad routing (vimy-b14).
+// ApproachWaypoint remains available as a lower-level utility.
+func (e RuleEnv) BestApproachAxis(destX, destY int) (int, int, bool) {
+	return e.bestApproachAxisWithField(destX, destY, e.ThreatField())
+}
+
+// BestAirApproachAxis is the AA-only counterpart of BestApproachAxis.
+func (e RuleEnv) BestAirApproachAxis(destX, destY int) (int, int, bool) {
+	return e.bestApproachAxisWithField(destX, destY, e.AirThreatField())
+}
+
+func (e RuleEnv) bestApproachAxisWithField(destX, destY int, field *model.ThreatField) (int, int, bool) {
+	if e.Terrain == nil || e.Terrain.CellW <= 0 || e.Terrain.CellH <= 0 || field == nil {
+		return 0, 0, false
+	}
+	centX, centY := e.BuildingCentroid()
+
+	directScore := corridorThreatSum(field, e.Terrain, centX, centY, destX, destY)
+	if directScore < openEnoughThreshold {
+		return 0, 0, false
+	}
+
+	radiusMap := approachAxisRadiusCells * maxInt(e.Terrain.CellW, e.Terrain.CellH)
+
+	bestScore := math.Inf(1)
+	var bestX, bestY int
+	for i := 0; i < 8; i++ {
+		angle := float64(i) * math.Pi / 4
+		wx := destX + int(float64(radiusMap)*math.Cos(angle))
+		wy := destY + int(float64(radiusMap)*math.Sin(angle))
+		wx = clampInt(wx, 0, e.State.MapWidth-1)
+		wy = clampInt(wy, 0, e.State.MapHeight-1)
+		score := corridorThreatSum(field, e.Terrain, centX, centY, wx, wy)
+		if score < bestScore {
+			bestScore = score
+			bestX = wx
+			bestY = wy
+		}
+	}
+
+	// Only detour if the best flank is meaningfully cleaner than direct. The
+	// 0.8 ratio avoids constant re-routing when all candidates score similar.
+	if bestScore >= directScore*0.8 {
+		return 0, 0, false
+	}
+	return bestX, bestY, true
+}
+
+// corridorThreatSum sums the threat field cells inside the axis-aligned
+// bounding box between two map positions. Same primitive used by the older
+// ApproachWaypoint gate.
+func corridorThreatSum(field *model.ThreatField, t *model.TerrainGrid, ax, ay, bx, by int) float64 {
+	if t == nil || t.CellW <= 0 || t.CellH <= 0 {
+		return 0
+	}
+	aCol, aRow := ax/t.CellW, ay/t.CellH
+	bCol, bRow := bx/t.CellW, by/t.CellH
+	minCol, maxCol := aCol, bCol
+	if minCol > maxCol {
+		minCol, maxCol = maxCol, minCol
+	}
+	minRow, maxRow := aRow, bRow
+	if minRow > maxRow {
+		minRow, maxRow = maxRow, minRow
+	}
+	sum := 0.0
+	for r := minRow; r <= maxRow; r++ {
+		for c := minCol; c <= maxCol; c++ {
+			sum += field.At(c, r)
+		}
+	}
+	return sum
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func (e RuleEnv) approachWaypointWithField(destX, destY int, field *model.ThreatField) (int, int, bool) {
+	if e.Terrain == nil || e.Terrain.CellW <= 0 || e.Terrain.CellH <= 0 {
+		return 0, 0, false
+	}
+	centX, centY := e.BuildingCentroid()
+	from := [2]int{centX / e.Terrain.CellW, centY / e.Terrain.CellH}
+	to := [2]int{destX / e.Terrain.CellW, destY / e.Terrain.CellH}
+	if field == nil {
+		return 0, 0, false
+	}
+
+	const penalty = 5.0
+	const bboxHeatThreshold = 1.0 // cumulative threat in the corridor between base and goal
+	const hotThreshold = 0.4      // per-zone threat that marks a zone as contested
+
+	// Gate: sum threat inside the axis-aligned bounding box between base and
+	// goal. BFS tie-breaking makes "direct path heat" unreliable, but a fat
+	// bounding-box scan catches defense placements that sit between us and
+	// the target regardless of which shortest path BFS happens to pick.
+	minCol, maxCol := from[0], to[0]
+	if minCol > maxCol {
+		minCol, maxCol = maxCol, minCol
+	}
+	minRow, maxRow := from[1], to[1]
+	if minRow > maxRow {
+		minRow, maxRow = maxRow, minRow
+	}
+	bboxHeat := 0.0
+	for row := minRow; row <= maxRow; row++ {
+		for col := minCol; col <= maxCol; col++ {
+			bboxHeat += field.At(col, row)
+		}
+	}
+	if bboxHeat < bboxHeatThreshold {
+		return 0, 0, false
+	}
+
+	// Find the weighted path and pick a staging zone on it. Preference order:
+	//   1. Last cool zone before the path first enters a hot cell.
+	//   2. Second-to-last path zone (the squad forms up just before the goal
+	//      along the alternate approach the weighted BFS picked).
+	weighted := model.ApproachPath(e.Terrain, field, from, to, penalty)
+	if len(weighted) < 2 {
+		return 0, 0, false
+	}
+
+	var wp [2]int
+	found := false
+	for i, p := range weighted {
+		if i == 0 {
+			continue
+		}
+		if field.At(p[0], p[1]) >= hotThreshold {
+			wp = weighted[i-1]
+			found = true
+			break
+		}
+	}
+	if !found {
+		wp = weighted[len(weighted)-2]
+		found = true
+	}
+	if wp == from {
+		return 0, 0, false
+	}
+	x, y := e.Terrain.ZoneCenter(wp[0], wp[1])
+	return x, y, true
 }
 
 // BaseUnderAttack uses a 20% map-diagonal proximity threshold. This avoids

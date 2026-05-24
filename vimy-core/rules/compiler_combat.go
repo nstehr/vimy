@@ -10,16 +10,33 @@ func (c *doctrineCompiler) addCombatRules() {
 
 	defendPriority := lerp(350, 500, c.d.GroundDefensePriority)
 
+	// Pre-compute the attack-squad creation threshold so the defense rule
+	// can reserve units only when there's also enough surplus for attack.
+	// Mirrors the floor used in form-ground-attack below.
+	formGroundAttackThreshold := c.d.GroundAttackGroupSize * 6 / 10
+	if formGroundAttackThreshold < 3 {
+		formGroundAttackThreshold = 3
+	}
+
 	// High defense priority: reserve a persistent squad so defenders aren't
 	// poached by attack rules between engagements.
 	if c.d.GroundDefensePriority > DoctrineSignificant {
 		defenseSize := lerp(2, 5, c.d.GroundDefensePriority)
+		// Only pre-position the defense squad when (a) the base is actually
+		// under attack — units must defend now — or (b) we have enough
+		// unassigned ground to ALSO feed form-ground-attack at its threshold.
+		// Without this, a small army (post-attrition or early game) gets
+		// fully poached into a defend role that has nothing to do
+		// (squad-defend-base only fires on BaseUnderAttack), starving attack
+		// formation forever. Game 16 (vimy-sde): mammoth tank + medium tanks
+		// observed sitting idle next to base while no enemy threat existed.
+		surplusThreshold := defenseSize + formGroundAttackThreshold
 		c.rules = append(c.rules, &Rule{
 			Name:         "form-defense-squad",
 			Priority:     defendPriority + SquadFormBonus,
 			Category:     "squad_form",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`(!SquadExists("ground-defense") && len(UnassignedIdleGround()) >= %d) || (SquadNeedsReinforcement("ground-defense") && len(UnassignedIdleGround()) >= 1)`, defenseSize),
+			ConditionSrc: fmt.Sprintf(`((!SquadExists("ground-defense") && len(UnassignedIdleGround()) >= %d) || (SquadNeedsReinforcement("ground-defense") && len(UnassignedIdleGround()) >= 1)) && (BaseUnderAttack() || len(UnassignedIdleGround()) >= %d)`, defenseSize, surplusThreshold),
 			Action:       FormSquad("ground-defense", "ground", defenseSize, "defend"),
 		})
 
@@ -59,12 +76,24 @@ func (c *doctrineCompiler) addCombatRules() {
 	c.attackPriority = lerp(200, 400, c.d.Aggression)
 	c.activationThreshold = lerpf(0.6, 1.0, 1.0-c.d.Aggression)
 
+	// Squad-creation threshold: 60% of the requested group size, floor 3
+	// (computed above as formGroundAttackThreshold so the defense rule can
+	// gate on it too). The full GroundAttackGroupSize still gates
+	// SquadReadyRatio for the actual attack commit; the squad just needs
+	// to exist for that to start counting. Game 15 (vimy-a8e): LLM
+	// defaulted GroundAttackGroupSize=10 in 105 of 200 doctrines; defense
+	// squad took 2-5 units first; with total ground forces under 15
+	// (common post-attrition), only 3-5 were unassigned — below the
+	// 10-unit creation threshold. Squad never spawned, attack never
+	// happened. Lowering the creation gate lets a partial squad form and
+	// the existing reinforcement path then tops it up via
+	// SquadNeedsReinforcement.
 	c.rules = append(c.rules, &Rule{
 		Name:         "form-ground-attack",
 		Priority:     c.attackPriority + SquadFormBonus,
 		Category:     "squad_form",
 		Exclusive:    false,
-		ConditionSrc: fmt.Sprintf(`(!SquadExists("ground-attack") && len(UnassignedIdleGround()) >= %d) || (SquadNeedsReinforcement("ground-attack") && len(UnassignedIdleGround()) >= 1)`, c.d.GroundAttackGroupSize),
+		ConditionSrc: fmt.Sprintf(`(!SquadExists("ground-attack") && len(UnassignedIdleGround()) >= %d) || (SquadNeedsReinforcement("ground-attack") && len(UnassignedIdleGround()) >= 1)`, formGroundAttackThreshold),
 		Action:       FormSquad("ground-attack", "ground", c.d.GroundAttackGroupSize, "attack"),
 	})
 
@@ -105,12 +134,17 @@ func (c *doctrineCompiler) addCombatRules() {
 	if c.d.AirWeight > DoctrineEnabled {
 		airAttackPriority := lerp(200, 400, c.d.Aggression) - AirDomainOffset
 
+		// Same partial-roster fix as form-ground-attack (vimy-a8e).
+		airFormThreshold := c.d.AirAttackGroupSize * 6 / 10
+		if airFormThreshold < 2 {
+			airFormThreshold = 2
+		}
 		c.rules = append(c.rules, &Rule{
 			Name:         "form-air-attack",
 			Priority:     airAttackPriority + SquadFormBonus,
 			Category:     "squad_form",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`(!SquadExists("air-attack") && len(UnassignedIdleAir()) >= %d) || (SquadNeedsReinforcement("air-attack") && len(UnassignedIdleAir()) >= 1)`, c.d.AirAttackGroupSize),
+			ConditionSrc: fmt.Sprintf(`(!SquadExists("air-attack") && len(UnassignedIdleAir()) >= %d) || (SquadNeedsReinforcement("air-attack") && len(UnassignedIdleAir()) >= 1)`, airFormThreshold),
 			Action:       FormSquad("air-attack", "air", c.d.AirAttackGroupSize, "attack"),
 		})
 
@@ -147,12 +181,17 @@ func (c *doctrineCompiler) addCombatRules() {
 	if c.d.NavalWeight > DoctrineEnabled {
 		navalAttackPriority := lerp(200, 400, c.d.Aggression) - NavalDomainOffset
 
+		// Same partial-roster fix as form-ground-attack (vimy-a8e).
+		navalFormThreshold := c.d.NavalAttackGroupSize * 6 / 10
+		if navalFormThreshold < 2 {
+			navalFormThreshold = 2
+		}
 		c.rules = append(c.rules, &Rule{
 			Name:         "form-naval-attack",
 			Priority:     navalAttackPriority + SquadFormBonus,
 			Category:     "squad_form",
 			Exclusive:    false,
-			ConditionSrc: fmt.Sprintf(`MapHasWater() && ((!SquadExists("naval-attack") && len(UnassignedIdleNaval()) >= %d) || (SquadNeedsReinforcement("naval-attack") && len(UnassignedIdleNaval()) >= 1))`, c.d.NavalAttackGroupSize),
+			ConditionSrc: fmt.Sprintf(`MapHasWater() && ((!SquadExists("naval-attack") && len(UnassignedIdleNaval()) >= %d) || (SquadNeedsReinforcement("naval-attack") && len(UnassignedIdleNaval()) >= 1))`, navalFormThreshold),
 			Action:       FormSquad("naval-attack", "naval", c.d.NavalAttackGroupSize, "attack"),
 		})
 

@@ -57,10 +57,11 @@ func (q *Queries) GetGame(ctx context.Context, id int64) (Game, error) {
 	return i, err
 }
 
-const insertDoctrine = `-- name: InsertDoctrine :exec
+const insertDoctrine = `-- name: InsertDoctrine :one
 INSERT INTO archived_doctrines (
-    game_id, tick, doctrine_json, rating, rating_reason
-) VALUES (?, ?, ?, ?, ?)
+    game_id, tick, doctrine_json, rating, rating_reason, rule_set_json
+) VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id
 `
 
 type InsertDoctrineParams struct {
@@ -69,17 +70,21 @@ type InsertDoctrineParams struct {
 	DoctrineJson string         `json:"doctrine_json"`
 	Rating       sql.NullString `json:"rating"`
 	RatingReason sql.NullString `json:"rating_reason"`
+	RuleSetJson  sql.NullString `json:"rule_set_json"`
 }
 
-func (q *Queries) InsertDoctrine(ctx context.Context, arg InsertDoctrineParams) error {
-	_, err := q.db.ExecContext(ctx, insertDoctrine,
+func (q *Queries) InsertDoctrine(ctx context.Context, arg InsertDoctrineParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, insertDoctrine,
 		arg.GameID,
 		arg.Tick,
 		arg.DoctrineJson,
 		arg.Rating,
 		arg.RatingReason,
+		arg.RuleSetJson,
 	)
-	return err
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const insertGame = `-- name: InsertGame :one
@@ -146,6 +151,31 @@ func (q *Queries) InsertLesson(ctx context.Context, arg InsertLessonParams) erro
 		arg.Confidence,
 		arg.AppliesFaction,
 		arg.AppliesVs,
+	)
+	return err
+}
+
+const insertRuleFiring = `-- name: InsertRuleFiring :exec
+INSERT INTO rule_firings (
+    doctrine_id, rule_name, fire_count, first_tick, last_tick
+) VALUES (?, ?, ?, ?, ?)
+`
+
+type InsertRuleFiringParams struct {
+	DoctrineID int64  `json:"doctrine_id"`
+	RuleName   string `json:"rule_name"`
+	FireCount  int64  `json:"fire_count"`
+	FirstTick  int64  `json:"first_tick"`
+	LastTick   int64  `json:"last_tick"`
+}
+
+func (q *Queries) InsertRuleFiring(ctx context.Context, arg InsertRuleFiringParams) error {
+	_, err := q.db.ExecContext(ctx, insertRuleFiring,
+		arg.DoctrineID,
+		arg.RuleName,
+		arg.FireCount,
+		arg.FirstTick,
+		arg.LastTick,
 	)
 	return err
 }
@@ -281,18 +311,14 @@ SELECT d.doctrine_json, d.rating, d.rating_reason,
 FROM archived_doctrines d
 JOIN games g ON d.game_id = g.id
 WHERE g.our_faction = ?1
-  AND (g.opponent_faction = ?2
-       OR g.opponent_faction IS NULL
-       OR ?2 = 'unknown')
   AND d.rating = 'weak'
 ORDER BY g.played_at DESC
-LIMIT ?3
+LIMIT ?2
 `
 
 type QueryCautionaryDoctrinesParams struct {
-	OurFaction      string         `json:"our_faction"`
-	OpponentFaction sql.NullString `json:"opponent_faction"`
-	Lim             int64          `json:"lim"`
+	OurFaction string `json:"our_faction"`
+	Lim        int64  `json:"lim"`
 }
 
 type QueryCautionaryDoctrinesRow struct {
@@ -305,8 +331,10 @@ type QueryCautionaryDoctrinesRow struct {
 	PlayedAt        int64          `json:"played_at"`
 }
 
+// Opponent faction is NOT filtered here; the librarian decides whether the
+// failure mode transfers across opponents.
 func (q *Queries) QueryCautionaryDoctrines(ctx context.Context, arg QueryCautionaryDoctrinesParams) ([]QueryCautionaryDoctrinesRow, error) {
-	rows, err := q.db.QueryContext(ctx, queryCautionaryDoctrines, arg.OurFaction, arg.OpponentFaction, arg.Lim)
+	rows, err := q.db.QueryContext(ctx, queryCautionaryDoctrines, arg.OurFaction, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
@@ -342,19 +370,15 @@ SELECT d.doctrine_json, d.rating, d.rating_reason,
 FROM archived_doctrines d
 JOIN games g ON d.game_id = g.id
 WHERE g.our_faction = ?1
-  AND (g.opponent_faction = ?2
-       OR g.opponent_faction IS NULL
-       OR ?2 = 'unknown')
   AND g.quality_tag = 'exemplary'
   AND d.rating IN ('strong', 'adequate')
 ORDER BY g.played_at DESC
-LIMIT ?3
+LIMIT ?2
 `
 
 type QueryExemplarDoctrinesParams struct {
-	OurFaction      string         `json:"our_faction"`
-	OpponentFaction sql.NullString `json:"opponent_faction"`
-	Lim             int64          `json:"lim"`
+	OurFaction string `json:"our_faction"`
+	Lim        int64  `json:"lim"`
 }
 
 type QueryExemplarDoctrinesRow struct {
@@ -367,8 +391,10 @@ type QueryExemplarDoctrinesRow struct {
 	PlayedAt        int64          `json:"played_at"`
 }
 
+// Opponent faction is NOT filtered here; the librarian judges cross-opponent
+// relevance semantically. SQL only scopes to our faction + rating quality.
 func (q *Queries) QueryExemplarDoctrines(ctx context.Context, arg QueryExemplarDoctrinesParams) ([]QueryExemplarDoctrinesRow, error) {
-	rows, err := q.db.QueryContext(ctx, queryExemplarDoctrines, arg.OurFaction, arg.OpponentFaction, arg.Lim)
+	rows, err := q.db.QueryContext(ctx, queryExemplarDoctrines, arg.OurFaction, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
@@ -402,17 +428,13 @@ const queryLessons = `-- name: QueryLessons :many
 SELECT trigger_text, guidance_text, confidence
 FROM lessons
 WHERE applies_faction = ?1
-  AND (applies_vs = ?2
-       OR applies_vs IS NULL
-       OR ?2 = 'unknown')
 ORDER BY confidence DESC, created_at DESC
-LIMIT ?3
+LIMIT ?2
 `
 
 type QueryLessonsParams struct {
-	OurFaction      string         `json:"our_faction"`
-	OpponentFaction sql.NullString `json:"opponent_faction"`
-	Lim             int64          `json:"lim"`
+	OurFaction string `json:"our_faction"`
+	Lim        int64  `json:"lim"`
 }
 
 type QueryLessonsRow struct {
@@ -421,8 +443,10 @@ type QueryLessonsRow struct {
 	Confidence   float64 `json:"confidence"`
 }
 
+// Opponent faction is NOT filtered here; lessons are often generalizable
+// across opponents and the librarian will drop what doesn't apply.
 func (q *Queries) QueryLessons(ctx context.Context, arg QueryLessonsParams) ([]QueryLessonsRow, error) {
-	rows, err := q.db.QueryContext(ctx, queryLessons, arg.OurFaction, arg.OpponentFaction, arg.Lim)
+	rows, err := q.db.QueryContext(ctx, queryLessons, arg.OurFaction, arg.Lim)
 	if err != nil {
 		return nil, err
 	}

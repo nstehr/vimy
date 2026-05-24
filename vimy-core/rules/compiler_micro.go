@@ -105,7 +105,7 @@ func (c *doctrineCompiler) addMicroRules() {
 		Category:     "recon",
 		Exclusive:    false,
 		ConditionSrc: `len(IdleScouts()) > 0`,
-		Action:       ActionScoutWithRangers,
+		Action:       ActionScoutPatrol,
 	})
 
 	// Generic fallback: scout with any idle ground units once army is large enough.

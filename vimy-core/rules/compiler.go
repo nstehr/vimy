@@ -71,9 +71,25 @@ type doctrineCompiler struct {
 // tech center might never save 1500 credits because infantry keep spending
 // at 100 each.
 func buildCashCondition(unitCost int, savings []buildingSaving) string {
+	return buildCashConditionScaled(unitCost, savings, 1.0)
+}
+
+// buildCashConditionScaled is like buildCashCondition but multiplies each
+// savings reserve's cost by `scale` before adding it to the threshold. Used
+// by produce-vehicle under high VehicleWeight: the LLM explicitly said
+// vehicles are the plan, so reserves for future buildings shouldn't fully
+// lock out combat-vehicle production — a human would trade a little future
+// tech delay for having tanks on the field now. scale=1.0 preserves existing
+// behavior; scale=0.5 halves each reserve's weight; scale=0.0 removes them
+// entirely. A savings clause whose scaled cost falls to zero is dropped.
+func buildCashConditionScaled(unitCost int, savings []buildingSaving, scale float64) string {
 	cond := fmt.Sprintf("Cash() >= %d", unitCost)
 	for _, s := range savings {
-		cond += fmt.Sprintf(` && (%s || Cash() >= %d)`, s.existsExpr, unitCost+s.cost)
+		scaledCost := int(float64(s.cost) * scale)
+		if scaledCost <= 0 {
+			continue
+		}
+		cond += fmt.Sprintf(` && (%s || Cash() >= %d)`, s.existsExpr, unitCost+scaledCost)
 	}
 	return cond
 }
@@ -88,6 +104,42 @@ func (c *doctrineCompiler) prefersInfantry(role string) bool {
 		}
 	}
 	return false
+}
+
+func (c *doctrineCompiler) prefersVehicle(role string) bool {
+	for _, r := range c.d.PreferredVehicle {
+		if r == role {
+			return true
+		}
+	}
+	return false
+}
+
+// radarGatedVehicles lists combat vehicles that require a radar dome to
+// produce. Matches RA's stock build tree for Soviets and Allies. Used to
+// decide whether a doctrine should prioritize radar construction (because
+// radar is the enablement step for its primary combat unit) vs. defer
+// radar (because its primary unit — APC, flak_truck, light_tank — doesn't
+// need it).
+var radarGatedVehicles = map[string]bool{
+	"v2_launcher":  true,
+	"artillery":    true,
+	"heavy_tank":   true,
+	"medium_tank":  true,
+	"tesla_tank":   true,
+	"mammoth_tank": true,
+}
+
+// prefersRadarGatedPrimary reports whether the doctrine's top-ranked
+// preferred vehicle is one that requires radar. Only the first entry
+// counts — secondary prefs are fallbacks, not critical path. This narrow
+// trigger is what keeps APC-rush doctrines (which list tanks as secondary
+// prefs) from being pulled into radar-first build orders.
+func prefersRadarGatedPrimary(preferred []string) bool {
+	if len(preferred) == 0 {
+		return false
+	}
+	return radarGatedVehicles[preferred[0]]
 }
 
 // initSavings computes the building savings and infantry savings slices
@@ -120,8 +172,13 @@ func (c *doctrineCompiler) initSavings() {
 	// rules save cash for the war factory building (2000 credits). Without
 	// this, infantry production drains cash below the war factory threshold
 	// and the war factory is never built — especially in rush doctrines.
+	//
+	// Aggressive doctrines (Aggression >= DoctrineSignificant) skip this
+	// reserve: they need bodies on the field *now* to defend the base while
+	// the war factory is being built. Engineer-rush gets swarmed if rifles
+	// are cash-gated above 2100 through the whole early game.
 	c.infantrySavings = append([]buildingSaving(nil), c.savings...)
-	if c.d.VehicleWeight > DoctrineEnabled {
+	if c.d.VehicleWeight > DoctrineEnabled && c.d.Aggression < DoctrineSignificant {
 		c.infantrySavings = append(c.infantrySavings, buildingSaving{
 			existsExpr: `HasRole("war_factory")`,
 			cost:       2000,

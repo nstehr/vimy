@@ -12,14 +12,21 @@ type Querier interface {
 	CountLosses(ctx context.Context) (int64, error)
 	CountWins(ctx context.Context) (int64, error)
 	GetGame(ctx context.Context, id int64) (Game, error)
-	InsertDoctrine(ctx context.Context, arg InsertDoctrineParams) error
+	InsertDoctrine(ctx context.Context, arg InsertDoctrineParams) (int64, error)
 	InsertGame(ctx context.Context, arg InsertGameParams) (int64, error)
 	InsertLesson(ctx context.Context, arg InsertLessonParams) error
+	InsertRuleFiring(ctx context.Context, arg InsertRuleFiringParams) error
 	ListGames(ctx context.Context) ([]ListGamesRow, error)
 	ListGamesDetailed(ctx context.Context, arg ListGamesDetailedParams) ([]Game, error)
 	ListTopLessons(ctx context.Context, limit int64) ([]ListTopLessonsRow, error)
+	// Opponent faction is NOT filtered here; the librarian decides whether the
+	// failure mode transfers across opponents.
 	QueryCautionaryDoctrines(ctx context.Context, arg QueryCautionaryDoctrinesParams) ([]QueryCautionaryDoctrinesRow, error)
+	// Opponent faction is NOT filtered here; the librarian judges cross-opponent
+	// relevance semantically. SQL only scopes to our faction + rating quality.
 	QueryExemplarDoctrines(ctx context.Context, arg QueryExemplarDoctrinesParams) ([]QueryExemplarDoctrinesRow, error)
+	// Opponent faction is NOT filtered here; lessons are often generalizable
+	// across opponents and the librarian will drop what doesn't apply.
 	QueryLessons(ctx context.Context, arg QueryLessonsParams) ([]QueryLessonsRow, error)
 }
 

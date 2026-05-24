@@ -33,6 +33,23 @@ type Engine struct {
 	Terrain *model.TerrainGrid
 	prefs   UnitPreferences
 	bias    TargetBias
+
+	// Per-rule firing counters for the current doctrine window. Reset by
+	// FlushFiringStats when a doctrine swap occurs or the game ends.
+	// Only populated when traceFirings is true.
+	statsMu      sync.Mutex
+	traceFirings bool
+	fireCounts   map[string]int
+	firstTick    map[string]int
+	lastTick     map[string]int
+}
+
+// RuleFiringStats captures how often a rule fired during a doctrine window
+// and the tick range over which it fired.
+type RuleFiringStats struct {
+	FireCount int
+	FirstTick int
+	LastTick  int
 }
 
 // NewEngine compiles all rule conditions into expr bytecode and sorts by priority.
@@ -42,9 +59,95 @@ func NewEngine(rules []*Rule) (*Engine, error) {
 		return nil, err
 	}
 	return &Engine{
-		rules:  compiled,
-		Memory: make(map[string]any),
+		rules:      compiled,
+		Memory:     make(map[string]any),
+		fireCounts: make(map[string]int),
+		firstTick:  make(map[string]int),
+		lastTick:   make(map[string]int),
 	}, nil
+}
+
+// SetTraceFirings enables or disables per-rule firing instrumentation.
+// When disabled (the default), recordFiring is a no-op and FlushFiringStats
+// returns empty maps. Toggle takes effect on subsequent Evaluate calls.
+func (e *Engine) SetTraceFirings(on bool) {
+	e.statsMu.Lock()
+	e.traceFirings = on
+	e.statsMu.Unlock()
+	slog.Info("rule firing trace toggled", "enabled", on)
+}
+
+// TracingEnabled reports whether firing instrumentation is currently on.
+func (e *Engine) TracingEnabled() bool {
+	e.statsMu.Lock()
+	defer e.statsMu.Unlock()
+	return e.traceFirings
+}
+
+// recordFiring increments the per-rule firing counter and updates the tick
+// range. No-op when tracing is disabled — one early-return per firing.
+func (e *Engine) recordFiring(name string, tick int) {
+	e.statsMu.Lock()
+	defer e.statsMu.Unlock()
+	if !e.traceFirings {
+		return
+	}
+	if _, ok := e.firstTick[name]; !ok {
+		e.firstTick[name] = tick
+	}
+	e.lastTick[name] = tick
+	e.fireCounts[name]++
+}
+
+// FlushFiringStats atomically reads and clears the current window's counters.
+// Callers use this on doctrine swap (attach stats to the outgoing doctrine
+// record) and at game end (attach stats to the final doctrine record).
+// Returns empty when tracing is disabled.
+func (e *Engine) FlushFiringStats() map[string]RuleFiringStats {
+	e.statsMu.Lock()
+	defer e.statsMu.Unlock()
+	out := make(map[string]RuleFiringStats, len(e.fireCounts))
+	for name, count := range e.fireCounts {
+		out[name] = RuleFiringStats{
+			FireCount: count,
+			FirstTick: e.firstTick[name],
+			LastTick:  e.lastTick[name],
+		}
+	}
+	e.fireCounts = make(map[string]int)
+	e.firstTick = make(map[string]int)
+	e.lastTick = make(map[string]int)
+	return out
+}
+
+// FiringStatsSnapshot returns a non-destructive copy of the current window's
+// counters. Used by the dashboard for live visibility; does NOT reset.
+func (e *Engine) FiringStatsSnapshot() map[string]RuleFiringStats {
+	e.statsMu.Lock()
+	defer e.statsMu.Unlock()
+	out := make(map[string]RuleFiringStats, len(e.fireCounts))
+	for name, count := range e.fireCounts {
+		out[name] = RuleFiringStats{
+			FireCount: count,
+			FirstTick: e.firstTick[name],
+			LastTick:  e.lastTick[name],
+		}
+	}
+	return out
+}
+
+// RuleNames returns the names of all rules currently compiled into the
+// engine — the "available" rule set for the current doctrine window. Used
+// alongside FlushFiringStats so a coding agent can compute which rules were
+// available but never fired (counterfactual).
+func (e *Engine) RuleNames() []string {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	names := make([]string, len(e.rules))
+	for i, r := range e.rules {
+		names[i] = r.Name
+	}
+	return names
 }
 
 // Evaluate runs all rules against the current game state.
@@ -85,6 +188,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 
 		anyFired = true
 		slog.Debug("rule fired", "rule", r.Name, "priority", r.Priority, "category", r.Category)
+		e.recordFiring(r.Name, gs.Tick)
 
 		if err := r.Action(env, conn); err != nil {
 			slog.Error("rule action error", "rule", r.Name, "error", err)
@@ -127,7 +231,8 @@ func (e *Engine) Swap(newRules []*Rule) error {
 }
 
 // Reset clears all accumulated state so the engine is ready for a new game.
-// The compiled rules and terrain are preserved; only per-game memory is wiped.
+// The compiled rules and terrain are preserved; only per-game memory and
+// firing counters are wiped.
 func (e *Engine) Reset() {
 	e.memMu.Lock()
 	e.Memory = make(map[string]any)
@@ -137,6 +242,12 @@ func (e *Engine) Reset() {
 	e.prefs = UnitPreferences{}
 	e.bias = TargetBias{}
 	e.mu.Unlock()
+
+	e.statsMu.Lock()
+	e.fireCounts = make(map[string]int)
+	e.firstTick = make(map[string]int)
+	e.lastTick = make(map[string]int)
+	e.statsMu.Unlock()
 
 	slog.Info("engine reset")
 }

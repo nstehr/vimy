@@ -5,7 +5,7 @@ import (
 	"github.com/nstehr/vimy/vimy-core/store"
 )
 
-templ Dashboard(currentDirective string, wins int, losses int, lessons []store.GlobalLesson, games []store.GameSummary, librarian *agent.LibrarianSnapshot) {
+templ Dashboard(currentDirective string, wins int, losses int, lessons []store.GlobalLesson, games []store.GameSummary, librarian *agent.LibrarianSnapshot, ruleTrace agent.RuleTraceSnapshot) {
 	@Layout("Vimy - Doctrine Dashboard") {
 		<div class="space-y-8">
 			<!-- Record Panel -->
@@ -33,6 +33,12 @@ templ Dashboard(currentDirective string, wins int, losses int, lessons []store.G
 			<div>
 				<h2 class="text-lg font-semibold text-gray-200 mb-4">Compiled Rules</h2>
 				@RulesPanel(nil)
+			</div>
+
+			<!-- Rule Firing Trace -->
+			<div>
+				<h2 class="text-lg font-semibold text-gray-200 mb-4">Rule Firings <span class="text-sm font-normal text-gray-500">— current doctrine window</span></h2>
+				@RuleFiringPanel(ruleTrace)
 			</div>
 
 			<!-- Active Memory (librarian filter for this game) -->

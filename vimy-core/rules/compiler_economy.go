@@ -85,13 +85,22 @@ func (c *doctrineCompiler) addEconomyRules() {
 		})
 	}
 
+	// Extra harvesters: priority 510 is deliberately above every combat-vehicle
+	// rule (produce-vehicle=480, produce-assault-apc≈475-490, produce-apc=470,
+	// produce-flak-truck=470) so the exclusive vehicle queue doesn't starve
+	// income expansion. The rule's own cap (RoleCount("harvester") <
+	// RoleCount("refinery") + 1) stops it once we've matched ore capacity, so
+	// the high priority doesn't crowd out combat production in steady state.
+	// Cash gate is bare Cash() >= 1400 with no c.savings stack — harvesters
+	// *generate* the income that c.savings is reserving, so gating harvester
+	// production on those reserves is backwards.
 	if c.d.EconomyPriority > DoctrineDominant {
 		c.rules = append(c.rules, &Rule{
 			Name:         "produce-extra-harvester",
-			Priority:     420,
+			Priority:     510,
 			Category:     CatProduceVehicle,
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`HasRole("refinery") && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("harvester") && RoleCount("harvester") < RoleCount("refinery") + 1 && %s`, buildCashCondition(1400, c.savings)),
+			ConditionSrc: `HasRole("refinery") && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildRole("harvester") && RoleCount("harvester") < RoleCount("refinery") + 1 && Cash() >= 1400`,
 			Action:       ActionProduceHarvester,
 		})
 	}

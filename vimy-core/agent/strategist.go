@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	baml_client "github.com/nstehr/vimy/vimy-core/baml_client"
@@ -27,6 +28,13 @@ type DoctrineRecord struct {
 	Doctrine      rules.Doctrine
 	Events        []Event
 	HasEnemyIntel bool
+
+	// Rule-engine trace for the window this doctrine was active.
+	// RuleSet is the list of rules compiled in at doctrine swap time (the
+	// "available" set). RuleStats is filled in once the window closes — on
+	// the next doctrine swap or at game end.
+	RuleSet   []string
+	RuleStats map[string]rules.RuleFiringStats
 }
 
 // TypeCount is a type name with a count, used for display purposes.
@@ -63,6 +71,15 @@ type Strategist struct {
 	cooldown  int            // minimum ticks between event-driven evaluations
 	pending   []Event        // events accumulated since last evaluation
 	history   []DoctrineRecord // append-only log of all doctrine outputs
+
+	// stressEvents holds high-impact events (harvester/critical-building/
+	// strategy-countered) for several evaluation cycles after they fire.
+	// Without this, a forced pivot at eval N "consumes" the events feed and
+	// eval N+1 sees an empty event list — which the LLM reads as
+	// "situation resolved" and reverts the pivot prematurely (vimy-8vc).
+	// Keeping these visible across the stressEventTTL window lets the
+	// STICKY PIVOT prompt rule actually evaluate the right context.
+	stressEvents []Event
 
 	// Cumulative loss tracking — independent of event windowing.
 	// prevFreshIDs holds per-domain unit IDs from the PREVIOUS tick (never merged).
@@ -116,6 +133,7 @@ func (s *Strategist) Reset() {
 	s.latest = nil
 	s.prevSnap = nil
 	s.pending = nil
+	s.stressEvents = nil
 	s.history = nil
 	s.prevFreshIDs = nil
 	s.totalLosses = nil
@@ -223,6 +241,25 @@ func (s *Strategist) GetRules() []rules.RuleSummary {
 	return s.engine.Rules()
 }
 
+// RuleTraceSnapshot is the dashboard-facing view of rule firing
+// instrumentation for the current doctrine window.
+type RuleTraceSnapshot struct {
+	Enabled   bool
+	RuleSet   []string
+	Stats     map[string]rules.RuleFiringStats
+}
+
+// GetRuleTraceSnapshot returns the live firing counters (non-destructive)
+// plus the current rule set. When tracing is disabled, Enabled is false and
+// the caller should render the "tracing off" state.
+func (s *Strategist) GetRuleTraceSnapshot() RuleTraceSnapshot {
+	return RuleTraceSnapshot{
+		Enabled: s.engine.TracingEnabled(),
+		RuleSet: s.engine.RuleNames(),
+		Stats:   s.engine.FiringStatsSnapshot(),
+	}
+}
+
 // GetBattlefieldStatus returns current losses and enemy composition.
 func (s *Strategist) GetBattlefieldStatus() *BattlefieldStatus {
 	s.mu.Lock()
@@ -318,12 +355,16 @@ func (s *Strategist) UpdateState(gs model.GameState) {
 
 	if s.prevSnap != nil {
 		snap.lastCounterTick = s.prevSnap.lastCounterTick
+		snap.lastHarvesterAttackTick = s.prevSnap.lastHarvesterAttackTick
 
 		counterFired := false
 		for _, e := range events {
 			if e.Kind == EventStrategyCountered {
 				snap.lastCounterTick = gs.Tick
 				counterFired = true
+			}
+			if e.Kind == EventHarvesterUnderAttack {
+				snap.lastHarvesterAttackTick = gs.Tick
 			}
 		}
 
@@ -386,6 +427,25 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	for k, v := range s.totalLosses {
 		losses[k] = v
 	}
+	// Widened from 8 to 16 (vimy-b9a) so the BURNED AXIS prompt rule can
+	// see repeated pivots that are 10-20 doctrines apart. Game 21 had 4
+	// air pivots across the match each followed by aircraft losses, but
+	// the LLM never saw 2 in a single window.
+	recentDoctrines := recentDoctrineSummaries(s.history, 16)
+
+	// Persist high-impact events so the LLM continues to see the stress
+	// signal across several evaluations after the original event fired
+	// (vimy-8vc). Without this, a forced pivot consumes the event feed and
+	// the next eval reads it as "resolved", reverting the pivot.
+	currentTick := 0
+	if gs != nil {
+		currentTick = gs.Tick
+	}
+	s.stressEvents = pruneStressEvents(s.stressEvents, currentTick)
+	s.stressEvents = appendStressEvents(s.stressEvents, events)
+	stressSnapshot := append([]Event(nil), s.stressEvents...)
+	burnedAxes := computeBurnedAxes(s.history, s.stressEvents)
+	beingRushed, harvesterHarassed := computePressureFlags(currentTick, gs, s.stressEvents)
 	s.mu.Unlock()
 
 	if gs == nil {
@@ -399,7 +459,12 @@ func (s *Strategist) evaluate(ctx context.Context) {
 
 	s.engine.LockMemory()
 	swFires := snapshotSuperweaponFires(s.engine.Memory)
-	situation := buildSituation(*gs, s.engine.Memory, events, swFires, losses)
+	mergedEvents := mergeStressEvents(events, stressSnapshot)
+	situation := buildSituation(*gs, s.engine.Memory, mergedEvents, swFires, losses)
+	situation.Recent_doctrines = recentDoctrines
+	situation.Burned_axes = burnedAxes
+	situation.Being_rushed = beingRushed
+	situation.Harvester_harassed = harvesterHarassed
 	enemyBases, _ := s.engine.Memory["enemyBases"].(map[string]rules.EnemyBaseIntel)
 	hasEnemyIntel := len(enemyBases) > 0
 	s.engine.UnlockMemory()
@@ -414,7 +479,20 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	doctrine := fromBAML(bamlDoctrine)
 	doctrine.Validate()
 
+	// Close out the previous doctrine window: flush the engine's firing
+	// counters and attach them to the last DoctrineRecord. The stats
+	// reflect rule activity during the window that just ended. No-op
+	// when rule tracing is disabled.
+	tracingOn := s.engine.TracingEnabled()
+	var priorStats map[string]rules.RuleFiringStats
+	if tracingOn {
+		priorStats = s.engine.FlushFiringStats()
+	}
+
 	s.mu.Lock()
+	if n := len(s.history); n > 0 && len(priorStats) > 0 {
+		s.history[n-1].RuleStats = priorStats
+	}
 	s.history = append(s.history, DoctrineRecord{
 		Tick:          gs.Tick,
 		Doctrine:      doctrine,
@@ -461,7 +539,17 @@ func (s *Strategist) evaluate(ctx context.Context) {
 		return
 	}
 
+	// Capture the rule set available in the window that just opened so a
+	// coding agent can later diff "available" vs "actually fired". Skip
+	// when tracing is disabled — the rule_set_json archive is paired with
+	// firing stats and only meaningful alongside them.
 	s.mu.Lock()
+	if tracingOn {
+		ruleSet := s.engine.RuleNames()
+		if n := len(s.history); n > 0 {
+			s.history[n-1].RuleSet = ruleSet
+		}
+	}
 	s.lastTick = gs.Tick
 	s.mu.Unlock()
 }
@@ -524,6 +612,267 @@ func snapshotSuperweaponFires(memory map[string]any) []types.SuperweaponFire {
 	memory["superweaponFiresSnapshot"] = snapshot
 
 	return fires
+}
+
+// stressEventTTL is how long a high-impact event stays in the persisted
+// feed after its original fire tick. 1500 ticks ~= 3 evaluation intervals at
+// the default 500-tick cadence, which is enough for the STICKY PIVOT prompt
+// rule to see the signal across the pivot evaluation and at least one
+// follow-up before the LLM is allowed to consider reverting.
+const stressEventTTL = 1500
+
+// stressKinds enumerates the event kinds that should persist beyond a
+// single evaluation. These all signal sustained pressure that a one-shot
+// pivot rarely resolves: economy raids, base damage, and explicit counter
+// detection. Lower-impact events (first_contact, phase_transition, etc.)
+// are intentionally excluded so the persisted feed stays tight.
+var stressKinds = map[EventKind]bool{
+	EventCriticalBuildingLost: true,
+	EventArmyDevastated:       true,
+	EventEconomyCrisis:        true,
+	EventStrategyCountered:    true,
+	EventHarvesterLost:        true,
+	EventHarvesterUnderAttack: true,
+}
+
+// pruneStressEvents drops persisted events older than stressEventTTL.
+func pruneStressEvents(buf []Event, currentTick int) []Event {
+	if len(buf) == 0 {
+		return buf
+	}
+	out := buf[:0]
+	for _, e := range buf {
+		if currentTick-e.Tick <= stressEventTTL {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// appendStressEvents copies stress-kind entries from fresh events into the
+// persisted buffer, deduping by (Kind, Tick).
+func appendStressEvents(buf []Event, fresh []Event) []Event {
+	for _, e := range fresh {
+		if !stressKinds[e.Kind] {
+			continue
+		}
+		dup := false
+		for _, b := range buf {
+			if b.Kind == e.Kind && b.Tick == e.Tick {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			buf = append(buf, e)
+		}
+	}
+	return buf
+}
+
+// mergeStressEvents combines fresh events with persisted stress events,
+// deduping by (Kind, Tick). Used when handing the event list to the LLM
+// so it sees both this-tick events and recent unresolved stress.
+func mergeStressEvents(fresh, persisted []Event) []Event {
+	if len(persisted) == 0 {
+		return fresh
+	}
+	out := append([]Event(nil), fresh...)
+	for _, p := range persisted {
+		dup := false
+		for _, f := range fresh {
+			if f.Kind == p.Kind && f.Tick == p.Tick {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// axisDominantThreshold is the weight at or above which a doctrine is
+// considered to "pivot to" that axis. Mirrors the convergence-break wording
+// in the prompt (axis weight >= ~0.55).
+const axisDominantThreshold = 0.55
+
+// burnedAxisMinPivots is how many pivots-with-counter must occur before an
+// axis is marked burned for the rest of the match. Two confirmed counters
+// is the threshold the BURNED AXIS prompt rule already uses.
+const burnedAxisMinPivots = 2
+
+// burnedAxisLookbackTicks limits how long after a pivot doctrine a counter
+// event "counts" against it. Roughly two evaluation intervals — the same
+// window stress events persist for under stressEventTTL.
+const burnedAxisLookbackTicks = 1500
+
+// computeBurnedAxes inspects the FULL game history (not just the recent
+// window) and returns axes that have been pivoted to burnedAxisMinPivots+
+// times AND each pivot was followed within burnedAxisLookbackTicks by a
+// domain-specific counter event. The returned list is what the BURNED
+// AXIS prompt rule treats as a hard constraint for subsequent doctrines.
+//
+// vimy-b9a: previously this detection lived only in the prompt and only
+// looked at the last 8 doctrines, missing repeat air pivots that were
+// 10-20 doctrines apart (game 21: 4 air pivots, none caught).
+func computeBurnedAxes(history []DoctrineRecord, stress []Event) []string {
+	if len(history) == 0 {
+		return nil
+	}
+	axisCounts := map[string]int{}
+	for _, rec := range history {
+		d := rec.Doctrine
+		var axis string
+		switch {
+		case d.AirWeight >= axisDominantThreshold:
+			axis = "air"
+		case d.InfantryWeight >= axisDominantThreshold:
+			axis = "infantry"
+		case d.NavalWeight >= axisDominantThreshold:
+			axis = "naval"
+		case d.VehicleWeight >= axisDominantThreshold:
+			axis = "vehicle"
+		default:
+			continue
+		}
+		if axisCounteredAfter(rec.Tick, axis, stress) {
+			axisCounts[axis]++
+		}
+	}
+	var out []string
+	for axis, n := range axisCounts {
+		if n >= burnedAxisMinPivots {
+			out = append(out, axis)
+		}
+	}
+	return out
+}
+
+// axisCounteredAfter reports whether a stress event matching the axis fired
+// within burnedAxisLookbackTicks ticks AFTER the given pivot tick. Matching
+// uses event detail strings — strategy_countered events carry the domain
+// in their detail (e.g. "aircraft taking heavy losses", "infantry taking
+// heavy losses", "army_devastated" implies vehicle/ground commitment).
+func axisCounteredAfter(pivotTick int, axis string, stress []Event) bool {
+	for _, e := range stress {
+		if e.Tick < pivotTick || e.Tick-pivotTick > burnedAxisLookbackTicks {
+			continue
+		}
+		detail := strings.ToLower(e.Detail)
+		switch axis {
+		case "air":
+			if strings.Contains(detail, "aircraft") || strings.Contains(detail, "sam") || strings.Contains(detail, "flak") {
+				return true
+			}
+		case "infantry":
+			if strings.Contains(detail, "infantry") || strings.Contains(detail, "flame") || strings.Contains(detail, "tesla") {
+				return true
+			}
+		case "vehicle":
+			if e.Kind == EventArmyDevastated {
+				return true
+			}
+		case "naval":
+			if strings.Contains(detail, "naval") || strings.Contains(detail, "submarine") || strings.Contains(detail, "destroyer") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Pressure-flag thresholds (vimy-w13). The user observation that prompted
+// this: in a rush scenario harvesters will ALWAYS be under attack — small
+// base, no perimeter. So we can't treat "harvester_under_attack present" as
+// a single emergency signal. Split it into two cases that need different
+// doctrine responses:
+//
+//   - being_rushed: early game + small base + recent harvester pressure.
+//     Response should be COUNTER-FORCE (rifle/dog spam, pillbox at the
+//     threatened side), not turtle. Killing the rushers is what unblocks
+//     the economy, not bunkering.
+//
+//   - harvester_harassed: mid/late game + established base + sustained
+//     harvester losses. Response should be DISPERSAL / ESCORTS / static
+//     defense near refineries. Can briefly slow the main push.
+//
+// Both flags are computed from the stress-event buffer (which already
+// persists harvester events for ~1500 ticks) plus current building count.
+const (
+	rushTickCutoff           = 6000 // rush window closes around mid-game
+	rushMaxBuildingCount     = 6    // small base = vulnerable to rush
+	harassTickFloor          = 6000 // harassment is a mid/late phenomenon
+	harassMinBuildingCount   = 8    // established base
+	harassMinHarvesterEvents = 2    // need sustained, not one-off
+	pressureLookbackTicks    = 2000 // window for "recent" stress events
+)
+
+// computePressureFlags returns (beingRushed, harvesterHarassed) from the
+// current tick, game state, and persisted stress events. Both flags can be
+// false; at most one should be true at a time given the disjoint tick
+// thresholds, but the prompt handles either case independently.
+func computePressureFlags(currentTick int, gs *model.GameState, stress []Event) (bool, bool) {
+	if gs == nil {
+		return false, false
+	}
+	buildingCount := len(gs.Buildings)
+
+	harvesterAttackEvents := 0
+	harvesterLostEvents := 0
+	for _, e := range stress {
+		if currentTick-e.Tick > pressureLookbackTicks {
+			continue
+		}
+		switch e.Kind {
+		case EventHarvesterUnderAttack:
+			harvesterAttackEvents++
+		case EventHarvesterLost:
+			harvesterLostEvents++
+		}
+	}
+
+	beingRushed := currentTick < rushTickCutoff &&
+		buildingCount <= rushMaxBuildingCount &&
+		(harvesterAttackEvents >= 1 || harvesterLostEvents >= 1)
+
+	harvesterHarassed := currentTick >= harassTickFloor &&
+		buildingCount >= harassMinBuildingCount &&
+		(harvesterAttackEvents >= harassMinHarvesterEvents || harvesterLostEvents >= 1)
+
+	return beingRushed, harvesterHarassed
+}
+
+// recentDoctrineSummaries returns the last n doctrines from history as
+// compact shape fingerprints for the strategist prompt. Passing these back to
+// the LLM lets it see when its own attempts are converging on a single shape
+// that the battlefield keeps rejecting — the signal needed to force a pivot
+// that lessons alone don't produce (see vimy-os6).
+func recentDoctrineSummaries(history []DoctrineRecord, n int) []types.RecentDoctrine {
+	if n <= 0 || len(history) == 0 {
+		return nil
+	}
+	start := len(history) - n
+	if start < 0 {
+		start = 0
+	}
+	out := make([]types.RecentDoctrine, 0, len(history)-start)
+	for _, rec := range history[start:] {
+		d := rec.Doctrine
+		shape := fmt.Sprintf(
+			"air=%.2f vehicle=%.2f infantry=%.2f ground_def=%.2f air_def=%.2f aggression=%.2f tech=%.2f econ=%.2f",
+			d.AirWeight, d.VehicleWeight, d.InfantryWeight,
+			d.GroundDefensePriority, d.AirDefensePriority,
+			d.Aggression, d.TechPriority, d.EconomyPriority,
+		)
+		out = append(out, types.RecentDoctrine{
+			Tick:  int64(rec.Tick),
+			Name:  d.Name,
+			Shape: shape,
+		})
+	}
+	return out
 }
 
 // buildSituation constructs a structured GameSituation from the current
@@ -630,6 +979,19 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 	}
 	for t, c := range rules.GetEnemyBuildingsSeen(memory) {
 		sit.Enemy_buildings_seen = append(sit.Enemy_buildings_seen, types.TypeCount{Type: t, Count: int64(c)})
+	}
+
+	// Capturable neutrals (oil derricks, comm centers, hospitals, etc.) —
+	// without this the strategist has no signal to raise capture_priority
+	// when scouts uncover tech buildings (vimy-b2c).
+	if len(gs.Capturables) > 0 {
+		capCounts := make(map[string]int)
+		for _, c := range gs.Capturables {
+			capCounts[c.Type]++
+		}
+		for t, c := range capCounts {
+			sit.Capturables_visible = append(sit.Capturables_visible, types.TypeCount{Type: t, Count: int64(c)})
+		}
 	}
 
 	// Known enemy bases

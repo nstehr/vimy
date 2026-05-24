@@ -6,9 +6,15 @@ INSERT INTO games (
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id;
 
--- name: InsertDoctrine :exec
+-- name: InsertDoctrine :one
 INSERT INTO archived_doctrines (
-    game_id, tick, doctrine_json, rating, rating_reason
+    game_id, tick, doctrine_json, rating, rating_reason, rule_set_json
+) VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id;
+
+-- name: InsertRuleFiring :exec
+INSERT INTO rule_firings (
+    doctrine_id, rule_name, fire_count, first_tick, last_tick
 ) VALUES (?, ?, ?, ?, ?);
 
 -- name: InsertLesson :exec
@@ -41,39 +47,36 @@ SELECT id, played_at, our_faction, opponent_faction,
 FROM games WHERE id = ?;
 
 -- name: QueryExemplarDoctrines :many
+-- Opponent faction is NOT filtered here; the librarian judges cross-opponent
+-- relevance semantically. SQL only scopes to our faction + rating quality.
 SELECT d.doctrine_json, d.rating, d.rating_reason,
        g.won, g.quality_tag, g.opponent_faction, g.played_at
 FROM archived_doctrines d
 JOIN games g ON d.game_id = g.id
 WHERE g.our_faction = @our_faction
-  AND (g.opponent_faction = @opponent_faction
-       OR g.opponent_faction IS NULL
-       OR @opponent_faction = 'unknown')
   AND g.quality_tag = 'exemplary'
   AND d.rating IN ('strong', 'adequate')
 ORDER BY g.played_at DESC
 LIMIT @lim;
 
 -- name: QueryCautionaryDoctrines :many
+-- Opponent faction is NOT filtered here; the librarian decides whether the
+-- failure mode transfers across opponents.
 SELECT d.doctrine_json, d.rating, d.rating_reason,
        g.won, g.quality_tag, g.opponent_faction, g.played_at
 FROM archived_doctrines d
 JOIN games g ON d.game_id = g.id
 WHERE g.our_faction = @our_faction
-  AND (g.opponent_faction = @opponent_faction
-       OR g.opponent_faction IS NULL
-       OR @opponent_faction = 'unknown')
   AND d.rating = 'weak'
 ORDER BY g.played_at DESC
 LIMIT @lim;
 
 -- name: QueryLessons :many
+-- Opponent faction is NOT filtered here; lessons are often generalizable
+-- across opponents and the librarian will drop what doesn't apply.
 SELECT trigger_text, guidance_text, confidence
 FROM lessons
 WHERE applies_faction = @our_faction
-  AND (applies_vs = @opponent_faction
-       OR applies_vs IS NULL
-       OR @opponent_faction = 'unknown')
 ORDER BY confidence DESC, created_at DESC
 LIMIT @lim;
 

@@ -388,6 +388,94 @@ func TestDetectEvents_EconomyCrisis_HarvestersLost(t *testing.T) {
 	}
 }
 
+func TestDetectEvents_HarvesterLost_FiresOnPartialDecrease(t *testing.T) {
+	// Two harvesters alive; enemy kills one. harvester_lost should fire
+	// (economy_crisis should NOT — we still have 1 harvester alive).
+	gs := baseGameState(100)
+	gs.Units = append(gs.Units, model.Unit{ID: 19, Type: "harv", Idle: false})
+	memory := make(map[string]any)
+	prev := takeSnapshot(gs, memory)
+
+	gs.Tick = 101
+	gs.Units = gs.Units[:len(gs.Units)-1] // remove id 19
+
+	events := detectEvents(gs, memory, &prev)
+	gotLost, gotCrisis := false, false
+	for _, e := range events {
+		if e.Kind == EventHarvesterLost {
+			gotLost = true
+		}
+		if e.Kind == EventEconomyCrisis {
+			gotCrisis = true
+		}
+	}
+	if !gotLost {
+		t.Errorf("expected harvester_lost on partial decrease, got %+v", events)
+	}
+	if gotCrisis {
+		t.Errorf("economy_crisis should NOT fire while a harvester remains, got %+v", events)
+	}
+}
+
+func TestDetectEvents_HarvesterUnderAttack_FiresWhenFleeing(t *testing.T) {
+	gs := baseGameState(100)
+	memory := map[string]any{}
+	prev := takeSnapshot(gs, memory)
+
+	// Simulate the flee-harvesters rule having tagged one harvester. The
+	// helper counts via reflection so any int-keyed map value suffices.
+	memory["harvesterFleeing"] = map[int]struct{}{10: {}}
+
+	gs.Tick = 101
+	events := detectEvents(gs, memory, &prev)
+	found := false
+	for _, e := range events {
+		if e.Kind == EventHarvesterUnderAttack {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected harvester_under_attack when harvesters are fleeing, got %+v", events)
+	}
+}
+
+func TestDetectEvents_HarvesterUnderAttack_CooldownSuppresses(t *testing.T) {
+	gs := baseGameState(100)
+	memory := map[string]any{"harvesterFleeing": map[int]struct{}{10: {}}}
+	prev := takeSnapshot(gs, memory)
+	prev.lastHarvesterAttackTick = 50 // last fire was 50 ticks ago; within 500-tick cooldown
+
+	gs.Tick = 200
+	events := detectEvents(gs, memory, &prev)
+	for _, e := range events {
+		if e.Kind == EventHarvesterUnderAttack {
+			t.Errorf("did not expect harvester_under_attack inside cooldown window, got %+v", events)
+		}
+	}
+}
+
+func TestDetectEvents_HarvesterUnderAttack_FiresAgainPastCooldown(t *testing.T) {
+	gs := baseGameState(100)
+	memory := map[string]any{"harvesterFleeing": map[int]struct{}{10: {}}}
+	prev := takeSnapshot(gs, memory)
+	prev.lastHarvesterAttackTick = 100
+
+	gs.Tick = 700 // 600 ticks later, past 500-tick cooldown
+	events := detectEvents(gs, memory, &prev)
+	found := false
+	for _, e := range events {
+		if e.Kind == EventHarvesterUnderAttack {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected harvester_under_attack after cooldown expires, got %+v", events)
+	}
+}
+
+// Prevent unused import if no other test here references rules directly.
+var _ = rules.CountFleeingHarvesters
+
 func TestDetectEvents_EconomyCrisis_CashCollapse(t *testing.T) {
 	gs := baseGameState(100)
 	gs.Player.Cash = 800

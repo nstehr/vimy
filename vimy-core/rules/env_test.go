@@ -88,6 +88,39 @@ func TestOverextendedSquadMembers(t *testing.T) {
 	}
 }
 
+func TestOverextendedSquadMembers_ExemptsUnitsNearEnemyBase(t *testing.T) {
+	// Unit 2 is far from our base (would normally be flagged) but adjacent to
+	// a known enemy base — it's correctly forward-deployed and must not be
+	// recalled (vimy-91b).
+	env := RuleEnv{
+		State: model.GameState{
+			MapWidth:  1000,
+			MapHeight: 1000,
+			Buildings: []model.Building{{ID: 100, Type: "fact", X: 100, Y: 100}},
+			Units: []model.Unit{
+				{ID: 1, Type: "3tnk", X: 100, Y: 100, Idle: true}, // near base
+				{ID: 2, Type: "3tnk", X: 900, Y: 900, Idle: true}, // far from base, AT enemy base
+				{ID: 3, Type: "3tnk", X: 600, Y: 600, Idle: true}, // no-man's land
+			},
+		},
+		Memory: map[string]any{
+			"squads": map[string]*Squad{
+				"ground-attack": {Name: "ground-attack", Domain: "ground", UnitIDs: []int{1, 2, 3}, TargetSize: 3},
+			},
+			"enemyBases": map[string]EnemyBaseIntel{
+				"opp": {Owner: "opp", X: 900, Y: 900, Tick: 100},
+			},
+		},
+	}
+
+	got := env.OverextendedSquadMembers("ground-attack", 0.25)
+	// Unit 2 is exempted (near enemy base). Unit 3 is in no-man's land (far
+	// from both our base and the enemy base) and should still be flagged.
+	if len(got) != 1 || got[0].ID != 3 {
+		t.Errorf("expected only unit 3 (no-man's land) to be flagged, got %v", got)
+	}
+}
+
 func TestOverextendedSquadMembers_NoSquad(t *testing.T) {
 	env := RuleEnv{
 		State:  model.GameState{MapWidth: 1000, MapHeight: 1000},
@@ -470,16 +503,18 @@ func TestBestAirTarget_GroundDefBoosted(t *testing.T) {
 	base := model.Building{X: 0, Y: 0}
 
 	t.Run("pillbox boosted over refinery with bias", func(t *testing.T) {
-		// Without bias: pbox=7, proc=4 → pbox wins anyway, but by less.
-		// With AirGroundDef=3.0: pbox=7*3=21 vs proc=4 → much stronger preference.
-		// Test against construction yard (6) at closer range.
-		// pbox at dist=20: score = 7*3.0 * 1.0 / sqrt(20) ≈ 4.70
-		// fact at dist=5:  score = 6 * 1.0 / sqrt(5) ≈ 2.68
+		// With AirGroundDef=3.0: pbox=7*3=21 vs proc=6 → strong preference.
+		// pbox at dist=20: score = 21 * 1.0 / sqrt(20) ≈ 4.70
+		// proc at dist=5:  score =  6 * 1.0 / sqrt(5)  ≈ 2.68
+		// (Construction yard / fact is intentionally NOT used here — its
+		// post-vimy-68x value of 12 is high enough that a 3x bias on a
+		// neighbouring pillbox can't overcome it at close range, which is
+		// the new and correct behaviour.)
 		env := RuleEnv{
 			State: model.GameState{
 				Buildings: []model.Building{base},
 				Enemies: []model.Enemy{
-					{ID: 1, Type: "fact", X: 5, Y: 0, HP: 100, MaxHP: 100},
+					{ID: 1, Type: "proc", X: 5, Y: 0, HP: 100, MaxHP: 100},
 					{ID: 2, Type: "pbox", X: 20, Y: 0, HP: 100, MaxHP: 100},
 				},
 			},
@@ -583,6 +618,134 @@ func TestUpdateIntel_ClearsStaleIntel(t *testing.T) {
 	bases := getEnemyBases(env.Memory)
 	if _, exists := bases["Enemy1"]; exists {
 		t.Error("expected stale intel for Enemy1 to be cleared")
+	}
+}
+
+// InferredEnemyBaseCenter should combine currently-visible buildings,
+// visible harvesters, persistent harvester sightings, and the existing
+// high-confidence base centroid into a single weighted point. Buildings
+// pull strongly; harvester-only sightings return a lower-confidence result.
+func TestInferredEnemyBaseCenter_NoIntelReturnsNil(t *testing.T) {
+	env := RuleEnv{
+		State:  model.GameState{Tick: 100},
+		Memory: map[string]any{},
+	}
+	if env.InferredEnemyBaseCenter() != nil {
+		t.Error("expected nil inferred center when no intel exists")
+	}
+}
+
+func TestInferredEnemyBaseCenter_HarvestersAlone(t *testing.T) {
+	env := RuleEnv{
+		State: model.GameState{
+			Tick: 100,
+			Enemies: []model.Enemy{
+				{ID: 1, Type: "harv", Owner: "Enemy", X: 80, Y: 80},
+			},
+		},
+		Memory: map[string]any{},
+	}
+	center := env.InferredEnemyBaseCenter()
+	if center == nil {
+		t.Fatal("expected non-nil center from harvester sighting")
+	}
+	if center.X != 80 || center.Y != 80 {
+		t.Errorf("expected center at harvester position (80,80), got (%d,%d)", center.X, center.Y)
+	}
+	if center.Confidence >= 0.5 {
+		t.Errorf("single harvester should yield low confidence, got %.2f", center.Confidence)
+	}
+}
+
+func TestInferredEnemyBaseCenter_BuildingsPullStronger(t *testing.T) {
+	// A building at (100,100) should pull the centroid much harder than a
+	// distant harvester at (10,10). Expected centroid near (100,100), not
+	// halfway.
+	env := RuleEnv{
+		State: model.GameState{
+			Tick: 100,
+			Enemies: []model.Enemy{
+				{ID: 1, Type: "proc", Owner: "Enemy", X: 100, Y: 100},
+				{ID: 2, Type: "harv", Owner: "Enemy", X: 10, Y: 10},
+			},
+		},
+		Memory: map[string]any{},
+	}
+	center := env.InferredEnemyBaseCenter()
+	if center == nil {
+		t.Fatal("expected center")
+	}
+	// Building weight 3 at (100,100) + harvester weight 1 at (10,10) → weighted X = (300+10)/4 = 77.5
+	if center.X < 70 || center.X > 85 {
+		t.Errorf("expected centroid pulled toward building (x≈77), got %d", center.X)
+	}
+}
+
+func TestInferredEnemyBaseCenter_PersistentHarvesterIntel(t *testing.T) {
+	// Harvester sighted 100 ticks ago, no longer visible. The persistent
+	// intel should still contribute to the centroid.
+	env := RuleEnv{
+		State: model.GameState{
+			Tick:    200,
+			Enemies: []model.Enemy{}, // no current sightings
+		},
+		Memory: map[string]any{
+			"enemyHarvesterIntel": map[int]enemyHarvesterIntel{
+				7: {X: 60, Y: 60, Tick: 100},
+			},
+		},
+	}
+	center := env.InferredEnemyBaseCenter()
+	if center == nil {
+		t.Fatal("persistent harvester intel should yield a center")
+	}
+	if center.X != 60 || center.Y != 60 {
+		t.Errorf("expected center at persisted harvester position, got (%d,%d)", center.X, center.Y)
+	}
+}
+
+func TestInferredEnemyBaseCenter_DecaysOldHarvesterIntel(t *testing.T) {
+	// One recent harvester at (50,50), one very old (600 ticks ago) at
+	// (0,0). Old one should count at half weight; centroid skews toward the
+	// recent sighting.
+	env := RuleEnv{
+		State: model.GameState{Tick: 800},
+		Memory: map[string]any{
+			"enemyHarvesterIntel": map[int]enemyHarvesterIntel{
+				1: {X: 50, Y: 50, Tick: 800}, // fresh, weight 1.0
+				2: {X: 0, Y: 0, Tick: 200},   // 600 ticks old → weight 0.5
+			},
+		},
+	}
+	center := env.InferredEnemyBaseCenter()
+	if center == nil {
+		t.Fatal("expected center")
+	}
+	// Weighted X = (50*1 + 0*0.5) / 1.5 ≈ 33
+	if center.X < 28 || center.X > 38 {
+		t.Errorf("expected decayed-weight centroid near x≈33, got %d", center.X)
+	}
+}
+
+func TestUpdateIntel_PersistsHarvesterSightings(t *testing.T) {
+	env := RuleEnv{
+		State: model.GameState{
+			Tick: 500,
+			Enemies: []model.Enemy{
+				{ID: 42, Type: "harv", Owner: "Enemy", X: 123, Y: 45},
+			},
+		},
+		Memory: make(map[string]any),
+	}
+	updateIntel(env)
+
+	harvesters := memoryMap[int, enemyHarvesterIntel](env.Memory, "enemyHarvesterIntel")
+	got, ok := harvesters[42]
+	if !ok {
+		t.Fatal("expected harvester 42 to be persisted after updateIntel")
+	}
+	if got.X != 123 || got.Y != 45 || got.Tick != 500 {
+		t.Errorf("expected {123,45,500}, got %+v", got)
 	}
 }
 
@@ -690,5 +853,278 @@ func TestServiceDepot_None(t *testing.T) {
 	}
 	if env.ServiceDepot() != nil {
 		t.Error("expected nil when no service depot")
+	}
+}
+
+func TestChokepointsTowardEnemy_RanksByPath(t *testing.T) {
+	// Two bridges. Base at map (50,50) → zone (0,0). Enemy at (450,450) →
+	// zone (4,4). The bridge at (2,1) lies on the shortest passable path;
+	// the bridge at (0,3) is reachable but off the direct route.
+	grid := &model.TerrainGrid{
+		Cols: 5, Rows: 5, CellW: 100, CellH: 100,
+		Grid: []model.TerrainType{
+			model.Land, model.Land, model.Land, model.Land, model.Land,
+			model.Water, model.Water, model.Bridge, model.Water, model.Water,
+			model.Water, model.Land, model.Land, model.Land, model.Water,
+			model.Bridge, model.Land, model.Land, model.Land, model.Water,
+			model.Land, model.Land, model.Land, model.Land, model.Land,
+		},
+	}
+	env := RuleEnv{
+		State: model.GameState{
+			Buildings: []model.Building{{ID: 1, Type: "fact", X: 50, Y: 50}},
+		},
+		Terrain: grid,
+		Memory: map[string]any{
+			"enemyBases": map[string]EnemyBaseIntel{
+				"Enemy1": {Owner: "Enemy1", X: 450, Y: 450, Tick: 1, FromBuildings: true},
+			},
+		},
+	}
+
+	got := env.ChokepointsTowardEnemy()
+	if len(got) == 0 {
+		t.Fatal("expected ranked chokepoints, got none")
+	}
+	if got[0].Col != 2 || got[0].Row != 1 {
+		t.Errorf("top choke = (%d,%d), want on-path bridge (2,1)", got[0].Col, got[0].Row)
+	}
+}
+
+func TestChokepointsTowardEnemy_CachesDetection(t *testing.T) {
+	grid := &model.TerrainGrid{
+		Cols: 4, Rows: 4, CellW: 10, CellH: 10,
+		Grid: []model.TerrainType{
+			model.Land, model.Land, model.Water, model.Water,
+			model.Land, model.Land, model.Water, model.Water,
+			model.Cliff, model.Bridge, model.Land, model.Land,
+			model.Cliff, model.Land, model.Land, model.Land,
+		},
+	}
+	mem := map[string]any{}
+	env := RuleEnv{Terrain: grid, Memory: mem}
+
+	_ = env.ChokepointsTowardEnemy()
+	cached, ok := mem["chokepoints"].([]model.Chokepoint)
+	if !ok {
+		t.Fatalf("expected chokepoints cached in memory, got %T", mem["chokepoints"])
+	}
+	if len(cached) != 1 {
+		t.Errorf("expected 1 cached choke, got %d", len(cached))
+	}
+}
+
+func TestChokepointsTowardEnemy_NoTerrain(t *testing.T) {
+	env := RuleEnv{Memory: map[string]any{}}
+	if got := env.ChokepointsTowardEnemy(); got != nil {
+		t.Errorf("expected nil without terrain, got %+v", got)
+	}
+}
+
+func TestApproachWaypoint_RoutesAroundThreat(t *testing.T) {
+	// 7x5 open land. Base at (50,50), enemy base at (650,250). Remembered
+	// pillboxes block the direct middle-row corridor, forcing the waypoint
+	// to skirt north or south instead of charging through.
+	grid := &model.TerrainGrid{
+		Cols: 7, Rows: 5, CellW: 100, CellH: 100,
+		Grid: []model.TerrainType{
+			model.Land, model.Land, model.Land, model.Land, model.Land, model.Land, model.Land,
+			model.Land, model.Land, model.Land, model.Land, model.Land, model.Land, model.Land,
+			model.Land, model.Land, model.Land, model.Land, model.Land, model.Land, model.Land,
+			model.Land, model.Land, model.Land, model.Land, model.Land, model.Land, model.Land,
+			model.Land, model.Land, model.Land, model.Land, model.Land, model.Land, model.Land,
+		},
+	}
+	env := RuleEnv{
+		State: model.GameState{
+			Tick:      500,
+			Buildings: []model.Building{{ID: 1, Type: "fact", X: 50, Y: 50}},
+		},
+		Memory: map[string]any{
+			"enemyDefenses": map[int]EnemyDefenseIntel{
+				10: {ActorID: 10, Type: Pillbox, X: 350, Y: 250, Tick: 100},
+				11: {ActorID: 11, Type: Pillbox, X: 450, Y: 250, Tick: 100},
+			},
+		},
+		Terrain: grid,
+	}
+
+	wx, wy, ok := env.ApproachWaypoint(650, 250)
+	if !ok {
+		t.Fatal("expected a waypoint when direct path is contested")
+	}
+	// The waypoint should not be in the middle row (row=2, y=200..299).
+	if wy >= 200 && wy < 300 {
+		// Acceptable only if it's pre-threat zone before the pillboxes (x < 300).
+		if wx >= 300 {
+			t.Errorf("waypoint (%d,%d) should skirt threat row, not pass through it", wx, wy)
+		}
+	}
+}
+
+func TestAirApproachWaypoint_RoutesAroundAA(t *testing.T) {
+	// 7x5 open land. Base at (50,50), target at (650,250). SAM cluster blocks
+	// the middle row. A pillbox in the same row should NOT influence routing
+	// (only AA matters for aircraft).
+	grid := &model.TerrainGrid{
+		Cols: 7, Rows: 5, CellW: 100, CellH: 100,
+		Grid: []model.TerrainType{
+			model.Land, model.Land, model.Land, model.Land, model.Land, model.Land, model.Land,
+			model.Land, model.Land, model.Land, model.Land, model.Land, model.Land, model.Land,
+			model.Land, model.Land, model.Land, model.Land, model.Land, model.Land, model.Land,
+			model.Land, model.Land, model.Land, model.Land, model.Land, model.Land, model.Land,
+			model.Land, model.Land, model.Land, model.Land, model.Land, model.Land, model.Land,
+		},
+	}
+	env := RuleEnv{
+		State: model.GameState{
+			Tick:      500,
+			Buildings: []model.Building{{ID: 1, Type: "fact", X: 50, Y: 50}},
+		},
+		Memory: map[string]any{
+			"enemyDefenses": map[int]EnemyDefenseIntel{
+				10: {ActorID: 10, Type: SAMSite, X: 350, Y: 250, Tick: 100},
+				11: {ActorID: 11, Type: SAMSite, X: 450, Y: 250, Tick: 100},
+			},
+		},
+		Terrain: grid,
+	}
+
+	wx, wy, ok := env.AirApproachWaypoint(650, 250)
+	if !ok {
+		t.Fatal("expected an air waypoint when SAM cluster blocks direct path")
+	}
+	if wy >= 200 && wy < 300 && wx >= 300 {
+		t.Errorf("air waypoint (%d,%d) should skirt SAM row, not pass through it", wx, wy)
+	}
+}
+
+func TestAirApproachWaypoint_IgnoresGroundDefenses(t *testing.T) {
+	// Pillboxes alone should NOT trigger an air waypoint — they don't shoot
+	// aircraft, so the air corridor is open.
+	grid := &model.TerrainGrid{
+		Cols: 7, Rows: 5, CellW: 100, CellH: 100,
+		Grid: make([]model.TerrainType, 35),
+	}
+	env := RuleEnv{
+		State: model.GameState{
+			Tick:      500,
+			Buildings: []model.Building{{ID: 1, Type: "fact", X: 50, Y: 50}},
+		},
+		Memory: map[string]any{
+			"enemyDefenses": map[int]EnemyDefenseIntel{
+				10: {ActorID: 10, Type: Pillbox, X: 350, Y: 250, Tick: 100},
+				11: {ActorID: 11, Type: TeslaCoil, X: 450, Y: 250, Tick: 100},
+			},
+		},
+		Terrain: grid,
+	}
+	if _, _, ok := env.AirApproachWaypoint(650, 250); ok {
+		t.Error("air waypoint should not trigger on ground defenses alone")
+	}
+}
+
+func TestBestApproachAxis_PicksOpenFlank(t *testing.T) {
+	// Base at southeast (650, 450). Enemy target at northwest (250, 150).
+	// Defenses clustered SOUTH of the target (250, 250..280). EAST of target
+	// (450, 150) is wide open. BestApproachAxis must pick a waypoint on the
+	// east/north side of the target, not somewhere south of it where the
+	// defenses are painted.
+	grid := &model.TerrainGrid{
+		Cols: 9, Rows: 7, CellW: 100, CellH: 100,
+		Grid: make([]model.TerrainType, 9*7),
+	}
+	for i := range grid.Grid {
+		grid.Grid[i] = model.Land
+	}
+	env := RuleEnv{
+		State: model.GameState{
+			Tick:      500,
+			MapWidth:  900,
+			MapHeight: 700,
+			Buildings: []model.Building{{ID: 1, Type: "fact", X: 650, Y: 450}},
+		},
+		Memory: map[string]any{
+			"enemyDefenses": map[int]EnemyDefenseIntel{
+				10: {ActorID: 10, Type: Pillbox, X: 250, Y: 280, Tick: 100},
+				11: {ActorID: 11, Type: Pillbox, X: 300, Y: 280, Tick: 100},
+				12: {ActorID: 12, Type: TeslaCoil, X: 200, Y: 280, Tick: 100},
+			},
+		},
+		Terrain: grid,
+	}
+
+	wx, wy, ok := env.BestApproachAxis(250, 150)
+	if !ok {
+		t.Fatal("expected BestApproachAxis to pick a flank waypoint")
+	}
+	// The defenses are on the south side of the target (y around 250-280).
+	// A flank waypoint must NOT be south of the target — it should be at or
+	// above the target's y (north or east).
+	if wy > 150 {
+		t.Errorf("waypoint (%d,%d) is south of target — should pick north/east flank away from defenses", wx, wy)
+	}
+}
+
+func TestBestApproachAxis_OpenCorridorReturnsNoWaypoint(t *testing.T) {
+	// No defenses → direct corridor is clean → no waypoint.
+	grid := &model.TerrainGrid{
+		Cols: 5, Rows: 5, CellW: 100, CellH: 100,
+		Grid: make([]model.TerrainType, 25),
+	}
+	env := RuleEnv{
+		State: model.GameState{
+			MapWidth:  500,
+			MapHeight: 500,
+			Buildings: []model.Building{{ID: 1, Type: "fact", X: 50, Y: 50}},
+		},
+		Memory:  map[string]any{},
+		Terrain: grid,
+	}
+	if _, _, ok := env.BestApproachAxis(450, 450); ok {
+		t.Error("expected no waypoint when corridor is open")
+	}
+}
+
+func TestApproachWaypoint_NoThreatReturnsNoWaypoint(t *testing.T) {
+	grid := &model.TerrainGrid{
+		Cols: 5, Rows: 5, CellW: 100, CellH: 100,
+		Grid: make([]model.TerrainType, 25),
+	}
+	env := RuleEnv{
+		State: model.GameState{
+			Buildings: []model.Building{{ID: 1, Type: "fact", X: 50, Y: 50}},
+		},
+		Memory:  map[string]any{},
+		Terrain: grid,
+	}
+	if _, _, ok := env.ApproachWaypoint(450, 450); ok {
+		t.Error("expected no waypoint when no threat intel exists")
+	}
+}
+
+func TestUpdateDefenseIntel_RemembersVisible(t *testing.T) {
+	env := RuleEnv{
+		State: model.GameState{
+			Tick: 100,
+			Enemies: []model.Enemy{
+				{ID: 42, Type: "pbox", X: 200, Y: 200, HP: 50, MaxHP: 50},
+				{ID: 43, Type: "tsla", X: 220, Y: 220, HP: 100, MaxHP: 100},
+				{ID: 44, Type: "e1", X: 250, Y: 250, HP: 100, MaxHP: 100}, // infantry — skip
+			},
+		},
+		Memory: map[string]any{},
+	}
+	updateDefenseIntel(env)
+
+	defs := getEnemyDefenses(env.Memory)
+	if len(defs) != 2 {
+		t.Fatalf("expected 2 defenses remembered, got %d (%+v)", len(defs), defs)
+	}
+	if _, ok := defs[42]; !ok {
+		t.Error("expected pillbox ID=42 remembered")
+	}
+	if _, ok := defs[43]; !ok {
+		t.Error("expected tesla ID=43 remembered")
 	}
 }

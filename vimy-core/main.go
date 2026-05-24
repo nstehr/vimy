@@ -28,13 +28,15 @@ const banner = `
 Doctrine-Driven RTS Intelligence`
 
 var (
-	directive string
-	addr      string
+	directive   string
+	addr        string
+	traceRules  bool
 )
 
 func main() {
 	flag.StringVar(&directive, "doctrine", "", "initial doctrine directive (e.g. \"Blitzkrieg\", \"guerrilla warfare\")")
 	flag.StringVar(&addr, "addr", ":8080", "HTTP dashboard listen address")
+	flag.BoolVar(&traceRules, "trace-rules", false, "record per-rule firing counters per doctrine window; archives rule_firings rows on game end and exposes live counters to the dashboard")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
@@ -54,6 +56,10 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("rule engine initialized", "rules", len(rules.DefaultRules()))
+
+	if traceRules {
+		engine.SetTraceFirings(true)
+	}
 
 	var strategist *agent.Strategist
 	if directive != "" {

@@ -190,6 +190,134 @@ func TestHarvestersInDanger(t *testing.T) {
 	}
 }
 
+// Regression: the previous implementation sent a fresh Move every tick any
+// harvester was in danger, which invalidated the server's pathfinder and
+// pinned the harvester in place. Second call on the same tick-window with
+// the same destination must not re-issue.
+func TestFleeHarvesters_SkipsDuplicate(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	env := RuleEnv{
+		State: model.GameState{
+			Tick:      100,
+			MapWidth:  1000,
+			MapHeight: 1000,
+			Buildings: []model.Building{
+				{ID: 10, Type: "proc", X: 50, Y: 50},
+			},
+			Units: []model.Unit{
+				{ID: 1, Type: "harv", Idle: true, X: 100, Y: 100},
+			},
+			Enemies: []model.Enemy{
+				{ID: 99, X: 120, Y: 120, HP: 100, MaxHP: 100},
+			},
+		},
+		Memory: make(map[string]any),
+	}
+
+	flee := FleeHarvesters(0.10)
+	if err := flee(env, conn); err != nil {
+		t.Fatalf("first flee: %v", err)
+	}
+	state := getHarvesterFleeState(env.Memory)
+	if _, ok := state[1]; !ok {
+		t.Fatal("expected harvester 1 tracked after first flee")
+	}
+	before := state[1]
+
+	// Re-invoke on a subsequent tick, still in danger, same destination.
+	// State must not be touched — no re-send.
+	env.State.Tick = 120
+	if err := flee(env, conn); err != nil {
+		t.Fatalf("second flee: %v", err)
+	}
+	if state[1] != before {
+		t.Errorf("duplicate flee must not update state: before=%+v after=%+v", before, state[1])
+	}
+}
+
+// After the resend window elapses, the throttle should release — a still-
+// endangered harvester that presumably lost its order gets a fresh Move.
+func TestFleeHarvesters_ResendsAfterStale(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	env := RuleEnv{
+		State: model.GameState{
+			Tick:      1000,
+			MapWidth:  1000,
+			MapHeight: 1000,
+			Buildings: []model.Building{
+				{ID: 10, Type: "proc", X: 50, Y: 50},
+			},
+			Units: []model.Unit{
+				{ID: 1, Type: "harv", Idle: true, X: 100, Y: 100},
+			},
+			Enemies: []model.Enemy{
+				{ID: 99, X: 120, Y: 120, HP: 100, MaxHP: 100},
+			},
+		},
+		Memory: map[string]any{
+			"harvesterFleeing": map[int]harvesterFleeEntry{
+				1: {Tick: 1000 - harvesterFleeResend - 1, X: 50, Y: 50},
+			},
+		},
+	}
+
+	flee := FleeHarvesters(0.10)
+	if err := flee(env, conn); err != nil {
+		t.Fatalf("flee: %v", err)
+	}
+	state := getHarvesterFleeState(env.Memory)
+	if state[1].Tick != 1000 {
+		t.Errorf("expected fresh flee command at tick 1000, got entry %+v", state[1])
+	}
+}
+
+// Harvester no longer in danger → entry pruned so a future re-entry to
+// danger issues a fresh order without the stale tick check blocking it.
+func TestFleeHarvesters_PrunesSafeHarvesters(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	env := RuleEnv{
+		State: model.GameState{
+			Tick:      500,
+			MapWidth:  1000,
+			MapHeight: 1000,
+			Buildings: []model.Building{
+				{ID: 10, Type: "proc", X: 50, Y: 50},
+			},
+			Units: []model.Unit{
+				{ID: 1, Type: "harv", Idle: true, X: 100, Y: 100}, // still in danger
+				{ID: 2, Type: "harv", Idle: true, X: 900, Y: 900}, // safe now
+			},
+			Enemies: []model.Enemy{
+				{ID: 99, X: 120, Y: 120, HP: 100, MaxHP: 100},
+			},
+		},
+		Memory: map[string]any{
+			"harvesterFleeing": map[int]harvesterFleeEntry{
+				1: {Tick: 100, X: 50, Y: 50},
+				2: {Tick: 100, X: 50, Y: 50}, // harvester 2 is no longer in danger
+			},
+		},
+	}
+
+	flee := FleeHarvesters(0.10)
+	if err := flee(env, conn); err != nil {
+		t.Fatalf("flee: %v", err)
+	}
+	state := getHarvesterFleeState(env.Memory)
+	if _, ok := state[2]; ok {
+		t.Error("expected harvester 2 entry pruned once no longer in danger")
+	}
+	if _, ok := state[1]; !ok {
+		t.Error("expected harvester 1 entry preserved while still in danger")
+	}
+}
+
 func TestCompileDoctrineMicroRules(t *testing.T) {
 	d := DefaultDoctrine() // Aggression=0.5, EconomyPriority=0.5
 	rules := CompileDoctrine(d)
