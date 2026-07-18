@@ -30,6 +30,13 @@ type Doctrine struct {
 	TransportAssault           float64  `json:"transport_assault,omitempty"`
 	GroundTargetAAPriority     float64  `json:"ground_target_aa_priority"`
 	AirTargetGroundDefPriority float64  `json:"air_target_ground_def_priority"`
+
+	// Tempo / commit knobs (added in the 4-knob expansion). Zero-value
+	// defaults preserve prior behavior when unset.
+	CommitRatio        float64 `json:"commit_ratio"`         // 0.0-1.0, 0=disabled → use lerp default. Ready-ratio threshold for squad deployment.
+	BaseDefenseFloor   int     `json:"base_defense_floor"`   // 0-15, minimum base defenses before offensive squad rules fire.
+	RepairBudgetRatio  float64 `json:"repair_budget_ratio"`  // 0.0-1.0, 0=disabled → unlimited (current behavior). Cap on repair spending as a fraction of cash on hand.
+	ScoutReachPriority float64 `json:"scout_reach_priority"` // 0.0-1.0, 0=disabled → default perimeter patrol. Higher = probe toward last-known enemy direction.
 }
 
 // DefaultDoctrine is used when no LLM strategist is configured.
@@ -74,6 +81,10 @@ func (d *Doctrine) Validate() {
 	d.GroundAttackGroupSize = clampInt(d.GroundAttackGroupSize, 3, 15)
 	d.AirAttackGroupSize = clampInt(d.AirAttackGroupSize, 1, 8)
 	d.NavalAttackGroupSize = clampInt(d.NavalAttackGroupSize, 2, 10)
+	d.CommitRatio = clamp(d.CommitRatio, 0, 1)
+	d.BaseDefenseFloor = clampInt(d.BaseDefenseFloor, 0, 15)
+	d.RepairBudgetRatio = clamp(d.RepairBudgetRatio, 0, 1)
+	d.ScoutReachPriority = clamp(d.ScoutReachPriority, 0, 1)
 }
 
 func clampInt(v, min, max int) int {

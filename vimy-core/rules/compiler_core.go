@@ -370,7 +370,11 @@ func (c *doctrineCompiler) addCoreRules() {
 		Priority:     350,
 		Category:     "combat",
 		Exclusive:    false,
-		ConditionSrc: `BaseUnderAttack() && len(IdleGroundUnits()) > 0`,
+		// Condition uses UnassignedIdleGround so we don't fire when only
+		// squad members are idle (the action wouldn't do anything anyway
+		// after the poaching fix). Emergency-base-defense remains as the
+		// last-resort fallback when even squad members must be recalled.
+		ConditionSrc: `BaseUnderAttack() && len(UnassignedIdleGround()) > 0`,
 		Action:       ActionDefendBase,
 	})
 

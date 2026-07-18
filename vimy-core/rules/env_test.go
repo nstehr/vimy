@@ -88,19 +88,19 @@ func TestOverextendedSquadMembers(t *testing.T) {
 	}
 }
 
-func TestOverextendedSquadMembers_ExemptsUnitsNearEnemyBase(t *testing.T) {
-	// Unit 2 is far from our base (would normally be flagged) but adjacent to
-	// a known enemy base — it's correctly forward-deployed and must not be
-	// recalled (vimy-91b).
+func TestOverextendedSquadMembers_ExemptsForwardStaging(t *testing.T) {
+	// Our base at (100,100). Enemy base at (900,900). Unit 2 at (550,550) — a
+	// flank-waypoint staging position halfway between bases, closer to enemy
+	// than to home. Must NOT be flagged overextended (vimy-rmb).
 	env := RuleEnv{
 		State: model.GameState{
 			MapWidth:  1000,
 			MapHeight: 1000,
 			Buildings: []model.Building{{ID: 100, Type: "fact", X: 100, Y: 100}},
 			Units: []model.Unit{
-				{ID: 1, Type: "3tnk", X: 100, Y: 100, Idle: true}, // near base
-				{ID: 2, Type: "3tnk", X: 900, Y: 900, Idle: true}, // far from base, AT enemy base
-				{ID: 3, Type: "3tnk", X: 600, Y: 600, Idle: true}, // no-man's land
+				{ID: 1, Type: "3tnk", X: 100, Y: 100, Idle: true}, // near our base
+				{ID: 2, Type: "3tnk", X: 550, Y: 550, Idle: true}, // staging closer to enemy
+				{ID: 3, Type: "3tnk", X: 100, Y: 950, Idle: true}, // wandered away (far home, far enemy)
 			},
 		},
 		Memory: map[string]any{
@@ -114,10 +114,77 @@ func TestOverextendedSquadMembers_ExemptsUnitsNearEnemyBase(t *testing.T) {
 	}
 
 	got := env.OverextendedSquadMembers("ground-attack", 0.25)
-	// Unit 2 is exempted (near enemy base). Unit 3 is in no-man's land (far
-	// from both our base and the enemy base) and should still be flagged.
+	// Unit 2 is closer to enemy than to home → forward-progressing → exempt.
+	// Unit 3 is at (100,950): dist-to-home ≈ 850, dist-to-enemy ≈ 802 — also
+	// closer to enemy. Exempt. So only "no-man's-land OFF-axis" should flag.
+	// Update unit 3 to a true no-man's-land position perpendicular to the axis.
+	for _, u := range got {
+		if u.ID == 2 {
+			t.Errorf("unit 2 (forward staging) should NOT be flagged, got %v", got)
+		}
+	}
+}
+
+func TestOverextendedSquadMembers_FlagsOffAxisWanderer(t *testing.T) {
+	// Off-axis: home at (100,100), enemy at (900,100). Unit way north at
+	// (500, 950) — far from both bases AND not making forward progress
+	// (distance to enemy ≈ 950, distance to home ≈ 940 — slightly closer to
+	// home so NOT exempt by the forward-progress rule).
+	env := RuleEnv{
+		State: model.GameState{
+			MapWidth:  1000,
+			MapHeight: 1000,
+			Buildings: []model.Building{{ID: 100, Type: "fact", X: 100, Y: 100}},
+			Units: []model.Unit{
+				{ID: 7, Type: "3tnk", X: 500, Y: 950, Idle: true},
+			},
+		},
+		Memory: map[string]any{
+			"squads": map[string]*Squad{
+				"ground-attack": {Name: "ground-attack", Domain: "ground", UnitIDs: []int{7}, TargetSize: 1},
+			},
+			"enemyBases": map[string]EnemyBaseIntel{
+				"opp": {Owner: "opp", X: 900, Y: 100, Tick: 100},
+			},
+		},
+	}
+	got := env.OverextendedSquadMembers("ground-attack", 0.25)
+	if len(got) != 1 || got[0].ID != 7 {
+		t.Errorf("expected off-axis wanderer to be flagged, got %v", got)
+	}
+}
+
+func TestOverextendedSquadMembers_ExemptsUnitsNearEnemyBase(t *testing.T) {
+	// Unit 2 is far from our base (would normally be flagged) but adjacent to
+	// a known enemy base — it's correctly forward-deployed and must not be
+	// recalled (vimy-91b).
+	env := RuleEnv{
+		State: model.GameState{
+			MapWidth:  1000,
+			MapHeight: 1000,
+			Buildings: []model.Building{{ID: 100, Type: "fact", X: 100, Y: 100}},
+			Units: []model.Unit{
+				{ID: 1, Type: "3tnk", X: 100, Y: 100, Idle: true}, // near base
+				{ID: 2, Type: "3tnk", X: 900, Y: 900, Idle: true}, // AT enemy base
+				{ID: 3, Type: "3tnk", X: 100, Y: 600, Idle: true}, // off-axis (perpendicular to home-enemy line)
+			},
+		},
+		Memory: map[string]any{
+			"squads": map[string]*Squad{
+				"ground-attack": {Name: "ground-attack", Domain: "ground", UnitIDs: []int{1, 2, 3}, TargetSize: 3},
+			},
+			"enemyBases": map[string]EnemyBaseIntel{
+				"opp": {Owner: "opp", X: 900, Y: 900, Tick: 100},
+			},
+		},
+	}
+
+	got := env.OverextendedSquadMembers("ground-attack", 0.25)
+	// Unit 2 (at enemy base) is exempt via forward-progress. Unit 3 is off
+	// the home-enemy axis (dist-to-home=500, dist-to-enemy≈854) — closer to
+	// home so NOT forward-progressing, still flagged. Unit 1 is inside leash.
 	if len(got) != 1 || got[0].ID != 3 {
-		t.Errorf("expected only unit 3 (no-man's land) to be flagged, got %v", got)
+		t.Errorf("expected only unit 3 (off-axis wanderer) to be flagged, got %v", got)
 	}
 }
 
@@ -598,13 +665,16 @@ func TestBestCapturable_NoTerrainGrid(t *testing.T) {
 }
 
 func TestUpdateIntel_ClearsStaleIntel(t *testing.T) {
+	// Intel at tick 200. First eligible-to-clear tick is 200+3000=3200.
+	// After that, requires 500 ticks of continuous "our unit near + no enemy"
+	// before clearing (vimy scout-clearing-intel fix).
 	env := RuleEnv{
 		State: model.GameState{
-			Tick: 600,
+			Tick: 3500,
 			Units: []model.Unit{
 				{ID: 1, Type: "3tnk", X: 100, Y: 100}, // our unit near intel position
 			},
-			Enemies: []model.Enemy{}, // no enemies visible
+			Enemies: []model.Enemy{},
 		},
 		Memory: map[string]any{
 			"enemyBases": map[string]EnemyBaseIntel{
@@ -613,11 +683,49 @@ func TestUpdateIntel_ClearsStaleIntel(t *testing.T) {
 		},
 	}
 
+	// First call: starts the sustain counter, doesn't clear yet.
 	updateIntel(env)
+	if _, exists := getEnemyBases(env.Memory)["Enemy1"]; !exists {
+		t.Fatal("intel should NOT clear on first tick — needs sustained confirmation")
+	}
 
-	bases := getEnemyBases(env.Memory)
-	if _, exists := bases["Enemy1"]; exists {
-		t.Error("expected stale intel for Enemy1 to be cleared")
+	// Advance past the sustain threshold with our unit still parked there.
+	env.State.Tick = 4100 // 3500 + 600 > intelClearSustain (500)
+	updateIntel(env)
+	if _, exists := getEnemyBases(env.Memory)["Enemy1"]; exists {
+		t.Error("expected stale intel for Enemy1 to be cleared after sustained confirmation")
+	}
+}
+
+func TestUpdateIntel_ScoutPassThroughDoesNotClear(t *testing.T) {
+	// Scout is briefly near the enemy base and no enemy visible at that
+	// instant. Intel must NOT clear — otherwise a scout patrol wipes the
+	// enemy base intel every rotation (observed live in vimy match).
+	env := RuleEnv{
+		State: model.GameState{
+			Tick: 3500,
+			Units: []model.Unit{
+				{ID: 1, Type: "3tnk", X: 100, Y: 100},
+			},
+			Enemies: []model.Enemy{},
+		},
+		Memory: map[string]any{
+			"enemyBases": map[string]EnemyBaseIntel{
+				"Enemy1": {Owner: "Enemy1", X: 105, Y: 105, Tick: 200, FromBuildings: true},
+			},
+		},
+	}
+	updateIntel(env)
+	if _, exists := getEnemyBases(env.Memory)["Enemy1"]; !exists {
+		t.Fatal("intel cleared on first tick — sustained confirmation broken")
+	}
+	// Scout moves away next tick.
+	env.State.Tick = 3510
+	env.State.Units[0].X = 500
+	env.State.Units[0].Y = 500
+	updateIntel(env)
+	if _, exists := getEnemyBases(env.Memory)["Enemy1"]; !exists {
+		t.Error("intel cleared after scout moved away — should still persist")
 	}
 }
 
@@ -1063,6 +1171,56 @@ func TestBestApproachAxis_PicksOpenFlank(t *testing.T) {
 	// above the target's y (north or east).
 	if wy > 150 {
 		t.Errorf("waypoint (%d,%d) is south of target — should pick north/east flank away from defenses", wx, wy)
+	}
+}
+
+func TestAircraftCapacity(t *testing.T) {
+	env := RuleEnv{
+		State: model.GameState{
+			Buildings: []model.Building{
+				{Type: "afld"}, // Airfield
+				{Type: "hpad"}, // Helipad
+				{Type: "hpad"}, // Helipad
+				{Type: "fact"}, // unrelated
+			},
+		},
+	}
+	got := env.AircraftCapacity()
+	want := 4 + 1 + 1 // 1 airfield (4 pads) + 2 helipads
+	if got != want {
+		t.Errorf("AircraftCapacity = %d, want %d", got, want)
+	}
+}
+
+func TestIsRushedAndIsHarvesterHarassed(t *testing.T) {
+	env := RuleEnv{Memory: map[string]any{}}
+	if env.IsRushed() || env.IsHarvesterHarassed() {
+		t.Error("expected both flags false when memory empty")
+	}
+	env.Memory["beingRushed"] = true
+	if !env.IsRushed() {
+		t.Error("expected IsRushed() = true after setting memory")
+	}
+	if env.IsHarvesterHarassed() {
+		t.Error("expected IsHarvesterHarassed() still false")
+	}
+	env.Memory["harvesterHarassed"] = true
+	if !env.IsHarvesterHarassed() {
+		t.Error("expected IsHarvesterHarassed() = true")
+	}
+}
+
+func TestAxisBurned(t *testing.T) {
+	env := RuleEnv{Memory: map[string]any{}}
+	if env.AxisBurned("air") {
+		t.Error("expected no burn when memory empty")
+	}
+	env.Memory["burnedAxes"] = map[string]bool{"air": true}
+	if !env.AxisBurned("air") {
+		t.Error("expected air burned")
+	}
+	if env.AxisBurned("vehicle") {
+		t.Error("expected vehicle not burned")
 	}
 }
 

@@ -95,7 +95,36 @@ func (c *doctrineCompiler) addProductionRules() {
 			Priority:     infantryBasePri,
 			Category:     CatProduceInfantry,
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuild("Infantry","e1") && UnitCount("e1") < %d && %s`, infantryCap, buildCashCondition(100, c.infantrySavings)),
+			ConditionSrc: fmt.Sprintf(`!AxisBurned("infantry") && HasRole("barracks") && !QueueBusy("Infantry") && CanBuild("Infantry","e1") && UnitCount("e1") < %d && %s`, infantryCap, buildCashCondition(100, c.infantrySavings)),
+			Action:       ActionProduceInfantry,
+		})
+
+		// Rush-mode variant (vimy-ovm follow-up): when being_rushed, drop the
+		// war-factory + vehicle-savings reserves and lower the cash floor to
+		// 50. Cheap rifles need to spawn now — the rush-response doctrine
+		// shape (infantry>=0.5, ground_def>=0.6) doesn't translate into actual
+		// units if the cash gates lock infantry production behind tech savings.
+		// Higher priority so it wins category dispatch over the normal variant
+		// when both qualify. Cap is raised to 2x infantryCap to let rifles
+		// stockpile beyond the steady-state alive count during the rush window.
+		//
+		// No production-building reserves during rush. An earlier version
+		// (vimy-qp1) reserved cash for war factory / airfield here after
+		// game 43 produced 39 rifles but 0 vehicles. But game 47 showed
+		// the reservation was overcorrection: with 483 repair firings and
+		// harvester harassment, cash rarely holds >= 2050, so rush rifles
+		// stopped firing (only 20 produced) and the economy died in 13k
+		// ticks anyway. Correct human response to a rush: survive first
+		// with rifles + pillboxes, tech second. Once IsRushed clears at
+		// tick 10500 (or when harvester events stop), normal build rules
+		// resume and WF/airfield build via their own paths.
+		rushCap := infantryCap * 2
+		c.rules = append(c.rules, &Rule{
+			Name:         "produce-infantry-rush",
+			Priority:     infantryBasePri + 20,
+			Category:     CatProduceInfantry,
+			Exclusive:    true,
+			ConditionSrc: fmt.Sprintf(`IsRushed() && !AxisBurned("infantry") && HasRole("barracks") && !QueueBusy("Infantry") && CanBuild("Infantry","e1") && UnitCount("e1") < %d && Cash() >= 50`, rushCap),
 			Action:       ActionProduceInfantry,
 		})
 
@@ -124,7 +153,7 @@ func (c *doctrineCompiler) addProductionRules() {
 				Priority:     infantryBasePri - 5,
 				Category:     CatProduceInfantry,
 				Exclusive:    true,
-				ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuild("Infantry","e1") && %s && UnitCount("e1") >= %d && UnitCount("e1") < %d && %s`, missingCond, infantryCap, bridgeCap, buildCashCondition(100, c.infantrySavings)),
+				ConditionSrc: fmt.Sprintf(`!AxisBurned("infantry") && HasRole("barracks") && !QueueBusy("Infantry") && CanBuild("Infantry","e1") && %s && UnitCount("e1") >= %d && UnitCount("e1") < %d && %s`, missingCond, infantryCap, bridgeCap, buildCashCondition(100, c.infantrySavings)),
 				Action:       ActionProduceInfantry,
 			})
 		}
@@ -138,7 +167,7 @@ func (c *doctrineCompiler) addProductionRules() {
 			Priority:     infantryBasePri - 2,
 			Category:     CatProduceInfantry,
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuildRole("grenadier") && RoleCount("grenadier") < %d && %s`, grenadierCap, buildCashCondition(160, c.infantrySavings)),
+			ConditionSrc: fmt.Sprintf(`!AxisBurned("infantry") && HasRole("barracks") && !QueueBusy("Infantry") && CanBuildRole("grenadier") && RoleCount("grenadier") < %d && %s`, grenadierCap, buildCashCondition(160, c.infantrySavings)),
 			Action:       ActionProduceGrenadier,
 		})
 	}
@@ -205,7 +234,7 @@ func (c *doctrineCompiler) addProductionRules() {
 			Priority:     480,
 			Category:     CatProduceVehicle,
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildAnyCombatVehicle() && CombatVehicleCount() < %d && %s`, vehicleCap, buildCashConditionScaled(800, c.savings, savingsScale)),
+			ConditionSrc: fmt.Sprintf(`!AxisBurned("vehicle") && HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildAnyCombatVehicle() && CombatVehicleCount() < %d && %s`, vehicleCap, buildCashConditionScaled(800, c.savings, savingsScale)),
 			Action:       ActionProduceVehicle,
 		})
 	}
@@ -217,7 +246,7 @@ func (c *doctrineCompiler) addProductionRules() {
 			Priority:     460,
 			Category:     CatProduceAircraft,
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`HasRole("airfield") && !QueueBusy("Aircraft") && CanBuildAnyCombatAircraft() && CombatAircraftCount() < %d && %s`, airCap, buildCashCondition(800, c.savings)),
+			ConditionSrc: fmt.Sprintf(`!AxisBurned("air") && HasRole("airfield") && !QueueBusy("Aircraft") && CanBuildAnyCombatAircraft() && CombatAircraftCount() < %d && CombatAircraftCount() < AircraftCapacity() && %s`, airCap, buildCashCondition(800, c.savings)),
 			Action:       ActionProduceAircraft,
 		})
 	}
@@ -229,7 +258,7 @@ func (c *doctrineCompiler) addProductionRules() {
 			Priority:     440,
 			Category:     CatProduceShip,
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`MapHasWater() && HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("submarine") || CanBuildRole("destroyer")) && (RoleCount("submarine") + RoleCount("destroyer")) < %d && %s`, navalCap, buildCashCondition(800, c.savings)),
+			ConditionSrc: fmt.Sprintf(`!AxisBurned("naval") && MapHasWater() && HasRole("naval_yard") && !QueueBusy("Ship") && (CanBuildRole("submarine") || CanBuildRole("destroyer")) && (RoleCount("submarine") + RoleCount("destroyer")) < %d && %s`, navalCap, buildCashCondition(800, c.savings)),
 			Action:       ActionProduceShip,
 		})
 	}
@@ -255,7 +284,7 @@ func (c *doctrineCompiler) addProductionRules() {
 			Priority:     495,
 			Category:     CatProduceInfantry,
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`HasRole("barracks") && !QueueBusy("Infantry") && CanBuildRole("rocket_soldier") && RoleCount("rocket_soldier") < %d && %s`, rocketCap, buildCashCondition(300, c.infantrySavings)),
+			ConditionSrc: fmt.Sprintf(`!AxisBurned("infantry") && HasRole("barracks") && !QueueBusy("Infantry") && CanBuildRole("rocket_soldier") && RoleCount("rocket_soldier") < %d && %s`, rocketCap, buildCashCondition(300, c.infantrySavings)),
 			Action:       ActionProduceRocketSoldier,
 		})
 	}
@@ -389,7 +418,7 @@ func (c *doctrineCompiler) addProductionRules() {
 			Priority:     445,
 			Category:     CatProduceAircraft,
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`HasRole("airfield") && !QueueBusy("Aircraft") && CanBuildRole("basic_aircraft") && RoleCount("basic_aircraft") < %d && %s`, basicAirCap, buildCashCondition(1500, c.savings)),
+			ConditionSrc: fmt.Sprintf(`HasRole("airfield") && !QueueBusy("Aircraft") && CanBuildRole("basic_aircraft") && RoleCount("basic_aircraft") < %d && CombatAircraftCount() < AircraftCapacity() && %s`, basicAirCap, buildCashCondition(1500, c.savings)),
 			Action:       ActionProduceBasicAircraft,
 		})
 	}
@@ -401,7 +430,7 @@ func (c *doctrineCompiler) addProductionRules() {
 			Priority:     455,
 			Category:     CatProduceAircraft,
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`HasRole("airfield") && !QueueBusy("Aircraft") && CanBuildRole("advanced_aircraft") && RoleCount("advanced_aircraft") < %d && %s`, advAirCap, buildCashCondition(1500, c.savings)),
+			ConditionSrc: fmt.Sprintf(`HasRole("airfield") && !QueueBusy("Aircraft") && CanBuildRole("advanced_aircraft") && RoleCount("advanced_aircraft") < %d && CombatAircraftCount() < AircraftCapacity() && %s`, advAirCap, buildCashCondition(1500, c.savings)),
 			Action:       ActionProduceAdvancedAircraft,
 		})
 	}

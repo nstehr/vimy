@@ -7,6 +7,21 @@ import (
 	"github.com/nstehr/vimy/vimy-core/model"
 )
 
+func TestIsCriticalRepairType(t *testing.T) {
+	critical := []string{"fact", "weap", "tent", "barr", "proc", "powr", "apwr"}
+	noncritical := []string{"dome", "atek", "stek", "afld", "hpad", "pbox", "sam"}
+	for _, t1 := range critical {
+		if !isCriticalRepairType(t1) {
+			t.Errorf("expected %q to be critical", t1)
+		}
+	}
+	for _, t1 := range noncritical {
+		if isCriticalRepairType(t1) {
+			t.Errorf("expected %q to be non-critical", t1)
+		}
+	}
+}
+
 func TestDefenseHint_NoBuildings(t *testing.T) {
 	env := RuleEnv{
 		State:  model.GameState{},

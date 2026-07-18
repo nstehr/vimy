@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
 
@@ -68,6 +69,11 @@ type Strategist struct {
 	lastTick  int    // tick of last evaluation
 	ready     chan struct{}
 	prevSnap  *stateSnapshot // previous state snapshot for event diff
+	// prevCashSnapshot: cash observed at the last strategist evaluation.
+	// Used to compute cash_burn_rate (net cash change per interval) surfaced
+	// to the LLM as a "is this build order sustainable?" signal.
+	prevCashSnapshot int
+	prevCashTick     int
 	cooldown  int            // minimum ticks between event-driven evaluations
 	pending   []Event        // events accumulated since last evaluation
 	history   []DoctrineRecord // append-only log of all doctrine outputs
@@ -80,6 +86,14 @@ type Strategist struct {
 	// Keeping these visible across the stressEventTTL window lets the
 	// STICKY PIVOT prompt rule actually evaluate the right context.
 	stressEvents []Event
+
+	// burnStress holds the same kinds of events but never prunes within a
+	// match. Burn detection (computeBurnedAxes) walks this so a counter
+	// event remains correlatable with later doctrines hours of play later —
+	// without it, game 31 only ever held 1 vehicle counter in the 1500-tick
+	// window and never crossed the burn threshold despite 71 vehicle-heavy
+	// doctrines (vimy follow-up after game 31).
+	burnStress []Event
 
 	// Cumulative loss tracking — independent of event windowing.
 	// prevFreshIDs holds per-domain unit IDs from the PREVIOUS tick (never merged).
@@ -132,8 +146,11 @@ func (s *Strategist) Reset() {
 	s.mu.Lock()
 	s.latest = nil
 	s.prevSnap = nil
+	s.prevCashSnapshot = 0
+	s.prevCashTick = 0
 	s.pending = nil
 	s.stressEvents = nil
+	s.burnStress = nil
 	s.history = nil
 	s.prevFreshIDs = nil
 	s.totalLosses = nil
@@ -443,8 +460,12 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	}
 	s.stressEvents = pruneStressEvents(s.stressEvents, currentTick)
 	s.stressEvents = appendStressEvents(s.stressEvents, events)
+	// burnStress accumulates the same kinds of events for the full match.
+	// Burn detection needs cross-match correlation between pivots and counter
+	// events, not just a 1500-tick sliding window.
+	s.burnStress = appendStressEvents(s.burnStress, events)
 	stressSnapshot := append([]Event(nil), s.stressEvents...)
-	burnedAxes := computeBurnedAxes(s.history, s.stressEvents)
+	burnedAxes := computeBurnedAxes(s.history, s.burnStress, currentTick)
 	beingRushed, harvesterHarassed := computePressureFlags(currentTick, gs, s.stressEvents)
 	s.mu.Unlock()
 
@@ -465,6 +486,34 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	situation.Burned_axes = burnedAxes
 	situation.Being_rushed = beingRushed
 	situation.Harvester_harassed = harvesterHarassed
+	// Situation signals paired with the new tempo knobs (commit_ratio etc.).
+	// Ready ratio comes from squad state in engine memory; cash burn rate
+	// from the delta since our last evaluation; enemy-reach estimate from
+	// distance to any known enemy base.
+	situation.Ground_squad_ready_ratio = groundSquadReadyRatio(s.engine.Memory, *gs)
+	situation.Cash_burn_rate = int64(s.computeCashBurnRate(gs))
+	situation.Time_to_reach_enemy_estimate = int64(timeToReachEnemyEstimate(s.engine.Memory, *gs))
+	// Push burned axes into engine memory so production rules can hard-gate
+	// on AxisBurned() — previously the constraint was prompt-only and the
+	// LLM kept committing aircraft despite repeated Flak counters (game 27).
+	burnedSet := make(map[string]bool, len(burnedAxes))
+	for _, a := range burnedAxes {
+		burnedSet[a] = true
+	}
+	s.engine.Memory["burnedAxes"] = burnedSet
+	// Push pressure flags into engine memory so production/defense rules can
+	// read them (mirrors burnedAxes). Lets the rule layer respond to a rush
+	// with cheaper cash gates and higher defense priority — the prompt-side
+	// rush response sets the doctrine shape but can't move the cash floors
+	// or rule priorities by itself.
+	s.engine.Memory["beingRushed"] = beingRushed
+	s.engine.Memory["harvesterHarassed"] = harvesterHarassed
+	// Doctrine-level repair budget cap (0 = disabled, current behavior).
+	if len(s.history) > 0 {
+		latest := s.history[len(s.history)-1].Doctrine
+		s.engine.Memory["repairBudgetRatio"] = latest.RepairBudgetRatio
+		s.engine.Memory["scoutReachPriority"] = latest.ScoutReachPriority
+	}
 	enemyBases, _ := s.engine.Memory["enemyBases"].(map[string]rules.EnemyBaseIntel)
 	hasEnemyIntel := len(enemyBases) > 0
 	s.engine.UnlockMemory()
@@ -580,6 +629,10 @@ func fromBAML(d types.Doctrine) rules.Doctrine {
 		PreferredVehicle:          d.Preferred_vehicle,
 		PreferredAircraft:         d.Preferred_aircraft,
 		PreferredNaval:            d.Preferred_naval,
+		CommitRatio:               d.Commit_ratio,
+		BaseDefenseFloor:          int(d.Base_defense_floor),
+		RepairBudgetRatio:         d.Repair_budget_ratio,
+		ScoutReachPriority:        d.Scout_reach_priority,
 	}
 }
 
@@ -699,14 +752,34 @@ func mergeStressEvents(fresh, persisted []Event) []Event {
 const axisDominantThreshold = 0.55
 
 // burnedAxisMinPivots is how many pivots-with-counter must occur before an
-// axis is marked burned for the rest of the match. Two confirmed counters
-// is the threshold the BURNED AXIS prompt rule already uses.
-const burnedAxisMinPivots = 2
+// axis is marked burned for the rest of the match. Per-axis because air
+// counters (SAM/Flak clusters) are essentially permanent — one confirmed
+// counter is enough to mark the axis. Infantry/vehicle/naval keep the 2-
+// counter threshold so we don't burn an axis off a single bad engagement
+// (rifles vs. one tesla doesn't mean abandon all infantry).
+var burnedAxisMinPivots = map[string]int{
+	"air":      1,
+	"infantry": 2,
+	"vehicle":  2,
+	"naval":    2,
+}
 
 // burnedAxisLookbackTicks limits how long after a pivot doctrine a counter
 // event "counts" against it. Roughly two evaluation intervals — the same
 // window stress events persist for under stressEventTTL.
 const burnedAxisLookbackTicks = 1500
+
+// burnedAxisRecoveryTicks lets an axis un-burn after a counter-free period.
+// 0 = no recovery (burns persist for the rest of the match). Air gets a
+// recovery window so an "air superiority" directive can resume committing
+// aircraft once SAMs have plausibly been cleared (post-SEAD). Without this,
+// one SAM kill in the first 10k ticks would neuter the directive for the
+// rest of a 100k+ tick match even after vimy successfully suppressed the AA
+// threat. Other axes keep persistent burn because counter-tech (Tesla, Flame
+// Tower) tends to keep stacking through the match.
+var burnedAxisRecoveryTicks = map[string]int{
+	"air": 5000,
+}
 
 // computeBurnedAxes inspects the FULL game history (not just the recent
 // window) and returns axes that have been pivoted to burnedAxisMinPivots+
@@ -717,11 +790,12 @@ const burnedAxisLookbackTicks = 1500
 // vimy-b9a: previously this detection lived only in the prompt and only
 // looked at the last 8 doctrines, missing repeat air pivots that were
 // 10-20 doctrines apart (game 21: 4 air pivots, none caught).
-func computeBurnedAxes(history []DoctrineRecord, stress []Event) []string {
+func computeBurnedAxes(history []DoctrineRecord, stress []Event, currentTick int) []string {
 	if len(history) == 0 {
 		return nil
 	}
 	axisCounts := map[string]int{}
+	axisLatestCounter := map[string]int{}
 	for _, rec := range history {
 		d := rec.Doctrine
 		var axis string
@@ -737,17 +811,70 @@ func computeBurnedAxes(history []DoctrineRecord, stress []Event) []string {
 		default:
 			continue
 		}
-		if axisCounteredAfter(rec.Tick, axis, stress) {
+		if t, ok := latestAxisCounter(rec.Tick, axis, stress); ok {
 			axisCounts[axis]++
+			if t > axisLatestCounter[axis] {
+				axisLatestCounter[axis] = t
+			}
 		}
 	}
 	var out []string
 	for axis, n := range axisCounts {
-		if n >= burnedAxisMinPivots {
-			out = append(out, axis)
+		threshold, ok := burnedAxisMinPivots[axis]
+		if !ok {
+			threshold = 2
 		}
+		if n < threshold {
+			continue
+		}
+		// Recovery window: if a recovery period is configured for this axis
+		// and the most recent counter is older than that, the axis un-burns.
+		if rt, has := burnedAxisRecoveryTicks[axis]; has && rt > 0 {
+			if currentTick-axisLatestCounter[axis] > rt {
+				continue
+			}
+		}
+		out = append(out, axis)
 	}
 	return out
+}
+
+// latestAxisCounter returns the tick of the latest stress event that
+// matches the given axis and fired within burnedAxisLookbackTicks ticks
+// AFTER pivotTick. Returns (0, false) when no matching event exists.
+func latestAxisCounter(pivotTick int, axis string, stress []Event) (int, bool) {
+	latest := 0
+	found := false
+	for _, e := range stress {
+		if e.Tick < pivotTick || e.Tick-pivotTick > burnedAxisLookbackTicks {
+			continue
+		}
+		if !eventMatchesAxis(e, axis) {
+			continue
+		}
+		if e.Tick > latest {
+			latest = e.Tick
+		}
+		found = true
+	}
+	return latest, found
+}
+
+// eventMatchesAxis is the same matching rule axisCounteredAfter uses,
+// factored out so latestAxisCounter and axisCounteredAfter can share it.
+func eventMatchesAxis(e Event, axis string) bool {
+	detail := strings.ToLower(e.Detail)
+	switch axis {
+	case "air":
+		return strings.Contains(detail, "aircraft") || strings.Contains(detail, "sam") || strings.Contains(detail, "flak")
+	case "infantry":
+		return strings.Contains(detail, "infantry") || strings.Contains(detail, "flame") || strings.Contains(detail, "tesla")
+	case "vehicle":
+		return e.Kind == EventArmyDevastated
+	case "naval":
+		return strings.Contains(detail, "naval") || strings.Contains(detail, "submarine") || strings.Contains(detail, "destroyer")
+	}
+	return false
 }
 
 // axisCounteredAfter reports whether a stress event matching the axis fired
@@ -801,12 +928,26 @@ func axisCounteredAfter(pivotTick int, axis string, stress []Event) bool {
 // Both flags are computed from the stress-event buffer (which already
 // persists harvester events for ~1500 ticks) plus current building count.
 const (
-	rushTickCutoff           = 6000 // rush window closes around mid-game
-	rushMaxBuildingCount     = 6    // small base = vulnerable to rush
-	harassTickFloor          = 6000 // harassment is a mid/late phenomenon
-	harassMinBuildingCount   = 8    // established base
-	harassMinHarvesterEvents = 2    // need sustained, not one-off
-	pressureLookbackTicks    = 2000 // window for "recent" stress events
+	// rushTickCutoff was 6000 — too tight for slow-paced rushes. Game 33's
+	// first harvester attack came at tick 9980 against a still-small base
+	// (<=6 buildings), but being_rushed was false because the tick window
+	// had already closed, so the soft harvester_harassed rule fired
+	// instead of the stronger rush response. Widening to 10500 lets the
+	// rush rule catch this tempo.
+	rushTickCutoff = 10500
+	// Building-count gates removed (was 6, then 12, never fired): even at 12
+	// the count was routinely exceeded by tick 9-10k because vimy builds
+	// power + refinery + barracks + WF + radar + a few defenses + helipad
+	// before raids arrive. The tick window already encodes "early game";
+	// adding a building-count condition just made the flag silently false.
+	// The rush-mode rules themselves cap their output (cap = 2x infantryCap
+	// for rifles, normal defenseCap for pillboxes) so leaving the flag on
+	// throughout the rush window can't produce runaway output — it just
+	// lets cheap defenders spawn when the doctrine doctrine would normally
+	// be cash-gated.
+	harassTickFloor          = 10500
+	harassMinHarvesterEvents = 2    // sustained pressure, not one-off
+	pressureLookbackTicks    = 2000 // "recent" stress events window
 )
 
 // computePressureFlags returns (beingRushed, harvesterHarassed) from the
@@ -817,7 +958,6 @@ func computePressureFlags(currentTick int, gs *model.GameState, stress []Event) 
 	if gs == nil {
 		return false, false
 	}
-	buildingCount := len(gs.Buildings)
 
 	harvesterAttackEvents := 0
 	harvesterLostEvents := 0
@@ -834,14 +974,93 @@ func computePressureFlags(currentTick int, gs *model.GameState, stress []Event) 
 	}
 
 	beingRushed := currentTick < rushTickCutoff &&
-		buildingCount <= rushMaxBuildingCount &&
 		(harvesterAttackEvents >= 1 || harvesterLostEvents >= 1)
 
 	harvesterHarassed := currentTick >= harassTickFloor &&
-		buildingCount >= harassMinBuildingCount &&
 		(harvesterAttackEvents >= harassMinHarvesterEvents || harvesterLostEvents >= 1)
 
 	return beingRushed, harvesterHarassed
+}
+
+// recentDoctrineSummaries returns the last n doctrines from history as
+// compact shape fingerprints for the strategist prompt. Passing these back to
+// groundSquadReadyRatio returns idle/target ratio for the ground-attack squad,
+// or 0.0 if the squad hasn't formed yet. Paired with the doctrine's
+// commit_ratio knob so the LLM can gauge whether its intended commit threshold
+// is achievable this tick.
+func groundSquadReadyRatio(memory map[string]any, gs model.GameState) float64 {
+	squads, ok := memory["squads"].(map[string]*rules.Squad)
+	if !ok {
+		return 0
+	}
+	sq, ok := squads["ground-attack"]
+	if !ok || sq.TargetSize <= 0 {
+		return 0
+	}
+	idleSet := make(map[int]bool)
+	for _, u := range gs.Units {
+		if u.Idle {
+			idleSet[u.ID] = true
+		}
+	}
+	idle := 0
+	for _, id := range sq.UnitIDs {
+		if idleSet[id] {
+			idle++
+		}
+	}
+	return float64(idle) / float64(sq.TargetSize)
+}
+
+// computeCashBurnRate returns the net cash delta since the last strategist
+// evaluation. Positive = income exceeds spending; negative = losing cash.
+// First eval returns 0 (no prior snapshot). Stores current cash for next
+// eval's diff.
+func (s *Strategist) computeCashBurnRate(gs *model.GameState) int {
+	if gs == nil {
+		return 0
+	}
+	burn := 0
+	if s.prevCashTick > 0 && gs.Tick > s.prevCashTick {
+		burn = gs.Player.Cash - s.prevCashSnapshot
+	}
+	s.prevCashSnapshot = gs.Player.Cash
+	s.prevCashTick = gs.Tick
+	return burn
+}
+
+// timeToReachEnemyEstimate returns a rough tick-count estimate for a ground
+// unit to walk from our base centroid to the nearest known enemy base. Uses
+// a straight-line distance and a per-tick step size approximation. Returns
+// -1 when no enemy base intel exists.
+func timeToReachEnemyEstimate(memory map[string]any, gs model.GameState) int {
+	bases, ok := memory["enemyBases"].(map[string]rules.EnemyBaseIntel)
+	if !ok || len(bases) == 0 {
+		return -1
+	}
+	if len(gs.Buildings) == 0 {
+		return -1
+	}
+	var sumX, sumY int
+	for _, b := range gs.Buildings {
+		sumX += b.X
+		sumY += b.Y
+	}
+	cx := sumX / len(gs.Buildings)
+	cy := sumY / len(gs.Buildings)
+
+	best := math.MaxFloat64
+	for _, b := range bases {
+		dx := float64(b.X - cx)
+		dy := float64(b.Y - cy)
+		d := math.Sqrt(dx*dx + dy*dy)
+		if d < best {
+			best = d
+		}
+	}
+	// Rifle walks ~0.25 cells per tick in RA. Convert map distance to ticks.
+	const ticksPerMapUnit = 4.0
+	return int(best * ticksPerMapUnit)
 }
 
 // recentDoctrineSummaries returns the last n doctrines from history as

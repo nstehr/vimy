@@ -2277,3 +2277,116 @@ func TestCompileDoctrineBridgeInfantry(t *testing.T) {
 		t.Errorf("heavy tank bridge infantry should check for missing war_factory, got: %s", tankBridge.ConditionSrc)
 	}
 }
+
+func TestCompileDoctrine_CommitRatio(t *testing.T) {
+	// commit_ratio > 0 overrides the aggression-derived activation threshold.
+	d := DefaultDoctrine()
+	d.Aggression = 0.5
+	d.CommitRatio = 0.3
+	compiled := CompileDoctrine(d)
+	byName := map[string]*Rule{}
+	for _, r := range compiled {
+		byName[r.Name] = r
+	}
+	sa := byName["squad-attack"]
+	if sa == nil {
+		t.Fatal("squad-attack rule missing")
+	}
+	if !strings.Contains(sa.ConditionSrc, `>= 0.30`) {
+		t.Errorf("expected commit_ratio 0.30 in squad-attack condition, got: %s", sa.ConditionSrc)
+	}
+}
+
+func TestCompileDoctrine_CommitRatioZeroUsesDefault(t *testing.T) {
+	d := DefaultDoctrine()
+	d.Aggression = 0.5
+	// CommitRatio zero → default lerp(0.6, 1.0, 1 - 0.5) = 0.8
+	compiled := CompileDoctrine(d)
+	byName := map[string]*Rule{}
+	for _, r := range compiled {
+		byName[r.Name] = r
+	}
+	sa := byName["squad-attack"]
+	if sa == nil {
+		t.Fatal("squad-attack rule missing")
+	}
+	if strings.Contains(sa.ConditionSrc, `>= 0.30`) {
+		t.Errorf("commit_ratio should NOT be 0.30 when unset, got: %s", sa.ConditionSrc)
+	}
+}
+
+func TestCompileDoctrine_BaseDefenseFloorGates(t *testing.T) {
+	d := DefaultDoctrine()
+	d.BaseDefenseFloor = 4
+	compiled := CompileDoctrine(d)
+	byName := map[string]*Rule{}
+	for _, r := range compiled {
+		byName[r.Name] = r
+	}
+	sa := byName["squad-attack"]
+	sakb := byName["squad-attack-known-base"]
+	if sa == nil || sakb == nil {
+		t.Fatal("squad-attack or squad-attack-known-base missing")
+	}
+	if !strings.Contains(sa.ConditionSrc, `>= 4`) {
+		t.Errorf("squad-attack should gate on defense floor 4, got: %s", sa.ConditionSrc)
+	}
+	if !strings.Contains(sakb.ConditionSrc, `>= 4`) {
+		t.Errorf("squad-attack-known-base should gate on defense floor 4, got: %s", sakb.ConditionSrc)
+	}
+}
+
+func TestCompileDoctrine_BaseDefenseFloorZeroDoesNotGate(t *testing.T) {
+	d := DefaultDoctrine()
+	d.BaseDefenseFloor = 0
+	compiled := CompileDoctrine(d)
+	byName := map[string]*Rule{}
+	for _, r := range compiled {
+		byName[r.Name] = r
+	}
+	sa := byName["squad-attack"]
+	if sa == nil {
+		t.Fatal("squad-attack missing")
+	}
+	if strings.Contains(sa.ConditionSrc, `RoleCount("pillbox")`) {
+		t.Errorf("squad-attack should not gate on defense floor when 0, got: %s", sa.ConditionSrc)
+	}
+}
+
+func TestCompileDoctrine_ExtraAirfieldFiresAtAirEnabled(t *testing.T) {
+	// Was gated on DoctrineExtreme (0.4). Lowered to DoctrineEnabled (0.1)
+	// so modest air-doctrines can still build enough pads.
+	d := DefaultDoctrine()
+	d.AirWeight = 0.20
+	compiled := CompileDoctrine(d)
+	byName := map[string]*Rule{}
+	for _, r := range compiled {
+		byName[r.Name] = r
+	}
+	if byName["build-extra-airfield"] == nil {
+		t.Fatal("build-extra-airfield should compile when AirWeight > DoctrineEnabled")
+	}
+}
+
+func TestCompileDoctrine_ExtraAirfieldGatesOnPhysicalCapacity(t *testing.T) {
+	d := DefaultDoctrine()
+	d.AirWeight = 0.7
+	compiled := CompileDoctrine(d)
+	byName := map[string]*Rule{}
+	for _, r := range compiled {
+		byName[r.Name] = r
+	}
+	r := byName["build-extra-airfield"]
+	if r == nil {
+		t.Fatal("build-extra-airfield missing")
+	}
+	if !strings.Contains(r.ConditionSrc, "AircraftCapacity() <") {
+		t.Errorf("extra-airfield should gate on doctrinal cap via AircraftCapacity, got: %s", r.ConditionSrc)
+	}
+	if !strings.Contains(r.ConditionSrc, "CombatAircraftCount() >= AircraftCapacity() - 1") {
+		t.Errorf("extra-airfield should gate on near-full pads, got: %s", r.ConditionSrc)
+	}
+	if strings.Contains(r.ConditionSrc, `RoleCount("airfield") <`) {
+		t.Errorf("extra-airfield should no longer use RoleCount cap, got: %s", r.ConditionSrc)
+	}
+}

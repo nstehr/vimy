@@ -373,16 +373,78 @@ func (e RuleEnv) ServiceDepotOrCentroid() (int, int) {
 	return 0, 0
 }
 
+// AircraftCapacity returns the physical aircraft slot count from our pads:
+// 4 per Airfield (yak/MiG bays) plus 1 per Helipad (single helicopter pad).
+// Used to gate produce-aircraft so we don't queue planes beyond available
+// pads — without this, completed aircraft sit at 100% with nowhere to
+// spawn and cancel-stuck-aircraft just churns the queue (vimy-rmb follow-up
+// from game 29: 120 cancel-stuck firings on 137 produce-aircraft, ~87%
+// of production wasted).
+func (e RuleEnv) AircraftCapacity() int {
+	var airfields, helipads int
+	for _, b := range e.State.Buildings {
+		if matchesType(b.Type, Airfield) {
+			airfields++
+		} else if matchesType(b.Type, Helipad) {
+			helipads++
+		}
+	}
+	return 4*airfields + helipads
+}
+
+// IsRushed reports whether the strategist's pressure detector has flagged
+// this match as an early-game rush (small base + recent harvester pressure
+// before tick ~10500). Production rules can use this to drop savings
+// reserves and lower cash floors so cheap defenders spawn faster — without
+// the prompt-side rush response can't translate into actual unit output.
+func (e RuleEnv) IsRushed() bool {
+	v, _ := e.Memory["beingRushed"].(bool)
+	return v
+}
+
+// IsHarvesterHarassed reports whether the strategist has flagged sustained
+// harvester pressure (mid-game, established base, 2+ harvester events in
+// the last ~2000 ticks). Available for rules that want to differentiate
+// rush-time vs. raid-time responses.
+func (e RuleEnv) IsHarvesterHarassed() bool {
+	v, _ := e.Memory["harvesterHarassed"].(bool)
+	return v
+}
+
+// AxisBurned reports whether the strategist has marked a unit axis (air,
+// infantry, vehicle, naval) as burned — i.e. the doctrine has pivoted to
+// this axis 2+ times this match and each pivot was followed by domain-
+// specific counter events. Production rules can gate on this so the bot
+// stops feeding a hard-countered domain regardless of what doctrine the
+// LLM picks. Set by the strategist after computeBurnedAxes runs each
+// evaluation (vimy-w13 follow-up: promoting burned axes from soft prompt
+// constraint to a hard rule-engine gate after game 27 showed aircraft
+// kept being committed despite 4 separate Flak counter events).
+func (e RuleEnv) AxisBurned(axis string) bool {
+	m, ok := e.Memory["burnedAxes"].(map[string]bool)
+	if !ok {
+		return false
+	}
+	return m[axis]
+}
+
 // OverextendedSquadMembers returns idle squad members whose distance from
 // base centroid exceeds leashPct fraction of the map diagonal AND who are
-// not currently near a known enemy base. The enemy-base exemption (vimy-91b)
-// prevents the recall rule from yanking units away from the enemy base mid-
-// attack — when a unit finishes a kill inside the enemy base it goes idle,
-// and without this exemption it gets walked all the way home, re-formed
-// into a squad, ordered back to the enemy base, finishes another kill, and
-// the cycle repeats. In game 23 (126k-tick loss) this fired 764 times,
-// which fully explains the user's observation that vimy 'held tactically'
-// but never closed the deal.
+// not making forward progress toward any known enemy base. A unit counts
+// as forward-progressing when its distance to the nearest enemy base is
+// less than its distance to our base centroid — that catches:
+//   - units staging at a BestApproachAxis flank waypoint (vimy-b14)
+//   - units in transit toward the enemy
+//   - units mid-engagement at the enemy base
+//
+// Without the exemption (or with a too-tight enemy-base radius), the recall
+// cycle yanks staged units back to base, where they re-form into the squad,
+// get attack-moved toward the waypoint again, arrive idle, get recalled,
+// and so on. Game 23 (126k-tick loss) had 764 recall firings before the
+// initial enemy-base exemption (vimy-91b); game 29 had 554 firings after,
+// because the 20% radius didn't cover the flank waypoints introduced by
+// vimy-b14. The 'forward progress' rule (vimy-rmb) generalizes the
+// exemption to cover staging anywhere closer to the enemy than to home.
 func (e RuleEnv) OverextendedSquadMembers(name string, leashPct float64) []model.Unit {
 	squads := getSquads(e.Memory)
 	sq, ok := squads[name]
@@ -395,11 +457,6 @@ func (e RuleEnv) OverextendedSquadMembers(name string, leashPct float64) []model
 	diagonal := math.Sqrt(mw*mw + mh*mh)
 	leashDist := diagonal * leashPct
 	leashSq := leashDist * leashDist
-
-	// Forward-deployed units near a remembered enemy base are NOT overextended.
-	// 20% of diagonal is roughly the engagement radius around a base.
-	const enemyBaseExemptPct = 0.20
-	enemyExemptSq := (diagonal * enemyBaseExemptPct) * (diagonal * enemyBaseExemptPct)
 	bases := getEnemyBases(e.Memory)
 
 	idleSet := make(map[int]bool)
@@ -419,19 +476,23 @@ func (e RuleEnv) OverextendedSquadMembers(name string, leashPct float64) []model
 		u := unitMap[id]
 		dx := float64(u.X - centX)
 		dy := float64(u.Y - centY)
-		if dx*dx+dy*dy <= leashSq {
+		distToHomeSq := dx*dx + dy*dy
+		if distToHomeSq <= leashSq {
 			continue
 		}
-		nearEnemyBase := false
+		// Forward-progress exemption: if the unit is closer to any known
+		// enemy base than to our base centroid, treat it as in-transit or
+		// staging — not overextended.
+		forwardProgressing := false
 		for _, b := range bases {
 			ex := float64(u.X - b.X)
 			ey := float64(u.Y - b.Y)
-			if ex*ex+ey*ey <= enemyExemptSq {
-				nearEnemyBase = true
+			if ex*ex+ey*ey < distToHomeSq {
+				forwardProgressing = true
 				break
 			}
 		}
-		if nearEnemyBase {
+		if forwardProgressing {
 			continue
 		}
 		out = append(out, u)
@@ -1510,13 +1571,22 @@ func updateIntel(env RuleEnv) {
 		}
 	}
 
-	// Clear stale intel: when our units are near a known enemy base position
-	// and no enemies are visible nearby, the base has been scouted and cleared.
-	// Only consider intel older than 300 ticks to avoid clearing fresh sightings
-	// that might just be behind fog of war momentarily.
-	const intelClearRadius = 10  // cells
-	const intelMinAge      = 300 // ticks before intel is eligible for clearing
+	// Clear stale intel: when our units have been near a known enemy base
+	// position for a sustained period without seeing enemies, the base has
+	// been genuinely cleared. Prior behavior (single-tick check + 300-tick
+	// minAge) let a scout passing through wipe intel — game observed live:
+	// scout finds enemy at tick 6520, intel set, scout rotates back through
+	// the area 30 seconds later, at that instant enemy is behind fog →
+	// intel cleared → squad-attack-known-base can't fire → 6-rifle squad
+	// sits at home. Fix: (1) intelMinAge 300 → 3000 (intel persists past
+	// the rush window even without visits), (2) require intelClearSustain
+	// ticks of continuous "our unit near + no enemy visible" before clearing.
+	const intelClearRadius   = 10
+	const intelMinAge        = 3000
+	const intelClearSustain  = 500 // ticks of continuous confirmation
 	intelClearRadiusSq := intelClearRadius * intelClearRadius
+
+	sustain := memoryMap[string, int](env.Memory, "enemyBaseIntelClearSustain")
 
 	for owner, intel := range bases {
 		if !intel.FromBuildings {
@@ -1536,6 +1606,7 @@ func updateIntel(env RuleEnv) {
 			}
 		}
 		if !ourUnitNearby {
+			delete(sustain, owner) // reset counter when we leave
 			continue
 		}
 		// Our units are there — check if any enemies visible nearby.
@@ -1548,10 +1619,22 @@ func updateIntel(env RuleEnv) {
 				break
 			}
 		}
-		if !enemyNearby {
-			slog.Info("clearing stale enemy base intel", "owner", owner, "x", intel.X, "y", intel.Y)
-			delete(bases, owner)
+		if enemyNearby {
+			delete(sustain, owner) // reset counter when enemies appear
+			continue
 		}
+		// Sustain counter: track when this "our unit near + no enemy" run started.
+		startTick, ok := sustain[owner]
+		if !ok {
+			sustain[owner] = env.State.Tick
+			continue
+		}
+		if env.State.Tick-startTick < intelClearSustain {
+			continue // not sustained long enough yet
+		}
+		slog.Info("clearing stale enemy base intel", "owner", owner, "x", intel.X, "y", intel.Y, "sustainTicks", env.State.Tick-startTick)
+		delete(bases, owner)
+		delete(sustain, owner)
 	}
 
 	env.Memory["enemyBases"] = bases

@@ -21,24 +21,91 @@ func ActionProduceMCV(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
+// mcvDeployState tracks Deploy attempts per MCV so the rule can detect a
+// stuck MCV (Deploy silently rejected by the engine — usually no clear 3x3
+// footprint at the MCV's current position) and relocate it to a fresh spot
+// instead of spamming the same failing order forever. Game 32 (337k-tick
+// loss) saw 25898 deploy-mcv firings after CY was destroyed at tick 75930;
+// the recovered MCVs sat exposed and got picked off, repeat (vimy-rw8).
+type mcvDeployState struct {
+	Attempts int
+	Tick     int
+}
+
+const (
+	mcvDeployCooldownTicks = 50
+	mcvMaxDeployAttempts   = 3
+)
+
 func ActionDeployMCV(env RuleEnv, conn *ipc.Connection) error {
-	// Cooldown: the C# side needs time to process the deploy order.
-	// Without this, the sidecar would spam deploy commands every tick.
 	if lastTick, ok := env.Memory["deployMCVTick"].(int); ok {
-		if env.State.Tick-lastTick < 50 {
+		if env.State.Tick-lastTick < mcvDeployCooldownTicks {
 			return nil
 		}
 	}
-	for _, u := range env.State.Units {
+
+	var target *model.Unit
+	for i := range env.State.Units {
+		u := &env.State.Units[i]
 		if matchesType(u.Type, MCV) && u.Idle {
-			slog.Debug("deploying MCV", "id", u.ID)
-			env.Memory["deployMCVTick"] = env.State.Tick
-			return conn.Send(ipc.TypeDeploy, ipc.DeployCommand{
-				ActorID: uint32(u.ID),
-			})
+			target = u
+			break
 		}
 	}
-	return nil
+	if target == nil {
+		return nil
+	}
+
+	states := memoryMap[int, mcvDeployState](env.Memory, "mcvDeployState")
+	state := states[target.ID]
+	state.Tick = env.State.Tick
+
+	// After K failed deploys at this MCV's current spot, send it to a fresh
+	// nearby land tile and reset the counter. The next time it arrives idle,
+	// Deploy is retried at the new position.
+	if state.Attempts >= mcvMaxDeployAttempts {
+		fx, fy := mcvFallbackLocation(env)
+		state.Attempts = 0
+		states[target.ID] = state
+		env.Memory["deployMCVTick"] = env.State.Tick
+		slog.Info("relocating stuck MCV", "id", target.ID, "to_x", fx, "to_y", fy)
+		return conn.Send(ipc.TypeMove, ipc.MoveCommand{
+			ActorID: uint32(target.ID),
+			X:       fx,
+			Y:       fy,
+		})
+	}
+
+	state.Attempts++
+	states[target.ID] = state
+	env.Memory["deployMCVTick"] = env.State.Tick
+	slog.Debug("deploying MCV", "id", target.ID, "attempt", state.Attempts)
+	return conn.Send(ipc.TypeDeploy, ipc.DeployCommand{
+		ActorID: uint32(target.ID),
+	})
+}
+
+// mcvFallbackLocation picks a land tile near our existing infrastructure
+// where a fresh MCV deploy is likely to succeed. Tries 8 compass offsets
+// around the building centroid until one lands on Land; falls back to the
+// raw centroid when terrain is unknown or all offsets are blocked.
+func mcvFallbackLocation(env RuleEnv) (int, int) {
+	cx, cy := env.BuildingCentroid()
+	if env.Terrain == nil {
+		return cx, cy
+	}
+	offsets := [8][2]int{
+		{300, 0}, {-300, 0}, {0, 300}, {0, -300},
+		{200, 200}, {-200, 200}, {200, -200}, {-200, -200},
+	}
+	for _, o := range offsets {
+		tx := clampInt(cx+o[0], 0, env.State.MapWidth-1)
+		ty := clampInt(cy+o[1], 0, env.State.MapHeight-1)
+		if env.Terrain.AtMapPos(tx, ty) == model.Land {
+			return tx, ty
+		}
+	}
+	return cx, cy
 }
 
 func ActionProducePowerPlant(env RuleEnv, conn *ipc.Connection) error {
@@ -812,7 +879,14 @@ func ActionDefendBase(env RuleEnv, conn *ipc.Connection) error {
 	if enemy == nil {
 		return nil
 	}
-	idle := env.IdleGroundUnits()
+	// Only pull genuinely unassigned idle units. Ground-attack squad members
+	// stay with their squad — they're being held for the push, not for base
+	// defense. Otherwise a lone raider near base poaches the attack squad
+	// every tick and the squad never deploys (game 46: form-ground-attack
+	// fired 341x but squad-attack fired 1x). Base defense is the ground-
+	// defense squad's job; if that squad hasn't formed yet, it will when
+	// enough unassigned units accumulate.
+	idle := env.UnassignedIdleGround()
 	if len(idle) == 0 {
 		return nil
 	}
@@ -886,8 +960,81 @@ func ActionAirDefendBase(env RuleEnv, conn *ipc.Connection) error {
 	return nil
 }
 
+// repairToggleEntry tracks the last RepairBuilding toggle issued per building
+// so we don't re-toggle (cancel) an in-flight repair every eval. The repair
+// command in OpenRA is a toggle: send once to start, send again to STOP.
+// Without per-building idempotency, repair-buildings firing thousands of
+// times in a long match was constantly toggling repairs on and off, wasting
+// cash and never actually completing.
+type repairToggleEntry struct {
+	Tick int
+}
+
+// repairResendTicks is how long we trust an in-flight repair toggle. If the
+// building is still damaged this long after we issued, either the toggle was
+// lost or repair stopped — re-issue.
+const repairResendTicks = 1500
+
+// criticalRepairTypes are buildings worth repair-spending even when we're
+// under pressure (rush or sustained harassment). Production infrastructure
+// and economy nodes only — non-critical buildings (radar, helipad, tech
+// center, etc.) lose repair budget so cash flows to combat units instead.
+// vimy-rw8 follow-up after game 41 (4900 repair firings vs 122 produce-
+// infantry — repair budget was crushing production cash).
+func isCriticalRepairType(t string) bool {
+	switch baseTypeName(t) {
+	case ConstructionYard, WarFactory, AlliedBarracks, SovietBarracks, Refinery, PowerPlant, AdvancedPower:
+		return true
+	}
+	return false
+}
+
+// RepairBudgetRatio is exposed as an env memory value ("repairBudgetRatio",
+// float64) so ActionRepairDamagedBuildings can honor the doctrine-level
+// repair_budget_ratio knob. When set to a positive value <= 1.0, we only
+// initiate a NEW repair toggle if remaining cash after repair (approximated
+// as current cash) is above (1 - ratio) * currentCash — i.e. the doctrine
+// wants to keep (1 - ratio) fraction of cash reserved for production.
 func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
+	state := memoryMap[int, repairToggleEntry](env.Memory, "repairToggleSent")
+	underPressure := env.IsRushed() || env.IsHarvesterHarassed()
+	budgetRatio, _ := env.Memory["repairBudgetRatio"].(float64)
+	// Budget = fraction of cash the doctrine allows repair to touch. Zero
+	// disables (unlimited repair, current behavior). Values above 0 gate
+	// new repair starts on cash >= reserveThreshold.
+	reserveOK := true
+	if budgetRatio > 0 && budgetRatio < 1.0 {
+		// Reserve (1 - budgetRatio) of cash for production. A rush setting
+		// 0.2 keeps 80% of cash for units. Cheap approximation: allow
+		// starting new repairs only when current cash comfortably exceeds
+		// the reserve floor. Cash floor scales with number of damaged
+		// buildings (rough proxy for repair cost).
+		damagedCount := len(env.DamagedBuildings())
+		perBuildingRepairAllowance := 100 // rough estimate per damaged building
+		neededHeadroom := int(float64(damagedCount*perBuildingRepairAllowance) / budgetRatio)
+		if env.State.Player.Cash < neededHeadroom {
+			reserveOK = false
+		}
+	}
+
 	for _, b := range env.DamagedBuildings() {
+		// When under pressure, only spend cash on infrastructure that keeps
+		// us in the game. Radar/tech/helipad damage is acceptable; lost
+		// production is not.
+		if underPressure && !isCriticalRepairType(b.Type) {
+			continue
+		}
+		// Doctrine-level repair budget: skip new repairs when reserve isn't
+		// met. Already-issued repair toggles (idempotency check below) still
+		// let in-flight repairs complete.
+		prev, sent := state[b.ID]
+		if !reserveOK && !sent {
+			continue
+		}
+		if sent && env.State.Tick-prev.Tick < repairResendTicks {
+			continue
+		}
+		state[b.ID] = repairToggleEntry{Tick: env.State.Tick}
 		slog.Debug("repairing building", "id", b.ID, "type", b.Type)
 		if err := conn.Send(ipc.TypeRepairBuilding, ipc.RepairBuildingCommand{
 			ActorID: uint32(b.ID),
@@ -1008,6 +1155,14 @@ func ActionScoutPatrol(env RuleEnv, conn *ipc.Connection) error {
 	scouts := env.IdleScouts()
 	state := getScoutMoveState(env.Memory)
 
+	// scout_reach_priority doctrine knob: when > 0.5 AND we already have
+	// enemy base intel, override the round-robin patrol and send scouts
+	// directly to the enemy base (or on a direct probe toward its position).
+	// A rush needs the enemy base found FAST — perimeter patrol wastes ticks
+	// visiting corners we don't care about once we know where the enemy is.
+	scoutReach, _ := env.Memory["scoutReachPriority"].(float64)
+	targetKnownBase := scoutReach > 0.5 && env.NearestEnemyBase() != nil
+
 	for _, s := range scouts {
 		prev, assigned := state[s.ID]
 		// Stall check: if we've been telling this scout to go to the same
@@ -1025,6 +1180,13 @@ func ActionScoutPatrol(env RuleEnv, conn *ipc.Connection) error {
 			idx = takePatrolPoolIdx(env.Memory, "scoutPatrolIdx", len(waypoints))
 		}
 		wp := waypoints[idx%len(waypoints)]
+		// scout_reach override: point at the enemy base instead of the
+		// next patrol waypoint. Keeps the throttle/stall machinery working
+		// because destination is checked against prev.X/prev.Y as normal.
+		if targetKnownBase {
+			base := env.NearestEnemyBase()
+			wp = [2]int{base.X, base.Y}
+		}
 
 		// Throttle: if we issued the same destination recently, don't resend —
 		// the path is still valid and a fresh Move would cancel it.

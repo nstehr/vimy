@@ -394,6 +394,10 @@ type Doctrine struct {
 	Preferred_naval                []string `json:"preferred_naval"`
 	Ground_target_aa_priority      *float64 `json:"ground_target_aa_priority"`
 	Air_target_ground_def_priority *float64 `json:"air_target_ground_def_priority"`
+	Commit_ratio                   *float64 `json:"commit_ratio"`
+	Base_defense_floor             *int64   `json:"base_defense_floor"`
+	Repair_budget_ratio            *float64 `json:"repair_budget_ratio"`
+	Scout_reach_priority           *float64 `json:"scout_reach_priority"`
 }
 
 func (c *Doctrine) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -485,6 +489,18 @@ func (c *Doctrine) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		case "air_target_ground_def_priority":
 			c.Air_target_ground_def_priority = baml.Decode(valueHolder).Interface().(*float64)
 
+		case "commit_ratio":
+			c.Commit_ratio = baml.Decode(valueHolder).Interface().(*float64)
+
+		case "base_defense_floor":
+			c.Base_defense_floor = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "repair_budget_ratio":
+			c.Repair_budget_ratio = baml.Decode(valueHolder).Interface().(*float64)
+
+		case "scout_reach_priority":
+			c.Scout_reach_priority = baml.Decode(valueHolder).Interface().(*float64)
+
 		default:
 
 			panic(fmt.Sprintf("unexpected field: %s in class Doctrine", key))
@@ -546,6 +562,14 @@ func (c Doctrine) Encode() (*cffi.HostValue, error) {
 	fields["ground_target_aa_priority"] = c.Ground_target_aa_priority
 
 	fields["air_target_ground_def_priority"] = c.Air_target_ground_def_priority
+
+	fields["commit_ratio"] = c.Commit_ratio
+
+	fields["base_defense_floor"] = c.Base_defense_floor
+
+	fields["repair_budget_ratio"] = c.Repair_budget_ratio
+
+	fields["scout_reach_priority"] = c.Scout_reach_priority
 
 	return baml.EncodeClass("Doctrine", fields, nil)
 }
@@ -837,34 +861,37 @@ func (c GameReview) BamlTypeName() string {
 }
 
 type GameSituation struct {
-	Tick                 *int64               `json:"tick"`
-	Phase                *string              `json:"phase"`
-	Cash                 *int64               `json:"cash"`
-	Resources            *int64               `json:"resources"`
-	Resource_capacity    *int64               `json:"resource_capacity"`
-	Power                *PowerStatus         `json:"power"`
-	Buildings            []TypeCount          `json:"buildings"`
-	Units                []TypeCount          `json:"units"`
-	Idle_unit_count      *int64               `json:"idle_unit_count"`
-	Active_production    []ActiveProduction   `json:"active_production"`
-	Support_powers       []SupportPowerStatus `json:"support_powers"`
-	Superweapon_fires    []SuperweaponFire    `json:"superweapon_fires"`
-	Squads               []SquadInfo          `json:"squads"`
-	Enemies_visible      *int64               `json:"enemies_visible"`
-	Enemy_units          []TypeCount          `json:"enemy_units"`
-	Enemy_units_seen     []TypeCount          `json:"enemy_units_seen"`
-	Enemy_buildings      []TypeCount          `json:"enemy_buildings"`
-	Enemy_buildings_seen []TypeCount          `json:"enemy_buildings_seen"`
-	Known_enemy_bases    []EnemyBase          `json:"known_enemy_bases"`
-	Map_width            *int64               `json:"map_width"`
-	Map_height           *int64               `json:"map_height"`
-	Recent_events        []GameEvent          `json:"recent_events"`
-	Combat_stats         *CombatStats         `json:"combat_stats"`
-	Recent_doctrines     []RecentDoctrine     `json:"recent_doctrines"`
-	Burned_axes          []string             `json:"burned_axes"`
-	Capturables_visible  []TypeCount          `json:"capturables_visible"`
-	Being_rushed         *bool                `json:"being_rushed"`
-	Harvester_harassed   *bool                `json:"harvester_harassed"`
+	Tick                         *int64               `json:"tick"`
+	Phase                        *string              `json:"phase"`
+	Cash                         *int64               `json:"cash"`
+	Resources                    *int64               `json:"resources"`
+	Resource_capacity            *int64               `json:"resource_capacity"`
+	Power                        *PowerStatus         `json:"power"`
+	Buildings                    []TypeCount          `json:"buildings"`
+	Units                        []TypeCount          `json:"units"`
+	Idle_unit_count              *int64               `json:"idle_unit_count"`
+	Active_production            []ActiveProduction   `json:"active_production"`
+	Support_powers               []SupportPowerStatus `json:"support_powers"`
+	Superweapon_fires            []SuperweaponFire    `json:"superweapon_fires"`
+	Squads                       []SquadInfo          `json:"squads"`
+	Enemies_visible              *int64               `json:"enemies_visible"`
+	Enemy_units                  []TypeCount          `json:"enemy_units"`
+	Enemy_units_seen             []TypeCount          `json:"enemy_units_seen"`
+	Enemy_buildings              []TypeCount          `json:"enemy_buildings"`
+	Enemy_buildings_seen         []TypeCount          `json:"enemy_buildings_seen"`
+	Known_enemy_bases            []EnemyBase          `json:"known_enemy_bases"`
+	Map_width                    *int64               `json:"map_width"`
+	Map_height                   *int64               `json:"map_height"`
+	Recent_events                []GameEvent          `json:"recent_events"`
+	Combat_stats                 *CombatStats         `json:"combat_stats"`
+	Recent_doctrines             []RecentDoctrine     `json:"recent_doctrines"`
+	Burned_axes                  []string             `json:"burned_axes"`
+	Capturables_visible          []TypeCount          `json:"capturables_visible"`
+	Being_rushed                 *bool                `json:"being_rushed"`
+	Harvester_harassed           *bool                `json:"harvester_harassed"`
+	Ground_squad_ready_ratio     *float64             `json:"ground_squad_ready_ratio"`
+	Cash_burn_rate               *int64               `json:"cash_burn_rate"`
+	Time_to_reach_enemy_estimate *int64               `json:"time_to_reach_enemy_estimate"`
 }
 
 func (c *GameSituation) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -965,6 +992,15 @@ func (c *GameSituation) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap
 		case "harvester_harassed":
 			c.Harvester_harassed = baml.Decode(valueHolder).Interface().(*bool)
 
+		case "ground_squad_ready_ratio":
+			c.Ground_squad_ready_ratio = baml.Decode(valueHolder).Interface().(*float64)
+
+		case "cash_burn_rate":
+			c.Cash_burn_rate = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "time_to_reach_enemy_estimate":
+			c.Time_to_reach_enemy_estimate = baml.Decode(valueHolder).Interface().(*int64)
+
 		default:
 
 			panic(fmt.Sprintf("unexpected field: %s in class GameSituation", key))
@@ -1032,6 +1068,12 @@ func (c GameSituation) Encode() (*cffi.HostValue, error) {
 	fields["being_rushed"] = c.Being_rushed
 
 	fields["harvester_harassed"] = c.Harvester_harassed
+
+	fields["ground_squad_ready_ratio"] = c.Ground_squad_ready_ratio
+
+	fields["cash_burn_rate"] = c.Cash_burn_rate
+
+	fields["time_to_reach_enemy_estimate"] = c.Time_to_reach_enemy_estimate
 
 	return baml.EncodeClass("GameSituation", fields, nil)
 }

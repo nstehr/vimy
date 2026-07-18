@@ -387,6 +387,22 @@ func (t *DoctrineClassView) PropertyAir_target_ground_def_priority() (ClassPrope
 	return t.inner.Property("air_target_ground_def_priority")
 }
 
+func (t *DoctrineClassView) PropertyCommit_ratio() (ClassPropertyView, error) {
+	return t.inner.Property("commit_ratio")
+}
+
+func (t *DoctrineClassView) PropertyBase_defense_floor() (ClassPropertyView, error) {
+	return t.inner.Property("base_defense_floor")
+}
+
+func (t *DoctrineClassView) PropertyRepair_budget_ratio() (ClassPropertyView, error) {
+	return t.inner.Property("repair_budget_ratio")
+}
+
+func (t *DoctrineClassView) PropertyScout_reach_priority() (ClassPropertyView, error) {
+	return t.inner.Property("scout_reach_priority")
+}
+
 func (t *TypeBuilder) Doctrine() (*DoctrineClassView, error) {
 	bld, err := t.inner.Class("Doctrine")
 	if err != nil {
@@ -733,6 +749,18 @@ func (t *GameSituationClassView) PropertyBeing_rushed() (ClassPropertyView, erro
 
 func (t *GameSituationClassView) PropertyHarvester_harassed() (ClassPropertyView, error) {
 	return t.inner.Property("harvester_harassed")
+}
+
+func (t *GameSituationClassView) PropertyGround_squad_ready_ratio() (ClassPropertyView, error) {
+	return t.inner.Property("ground_squad_ready_ratio")
+}
+
+func (t *GameSituationClassView) PropertyCash_burn_rate() (ClassPropertyView, error) {
+	return t.inner.Property("cash_burn_rate")
+}
+
+func (t *GameSituationClassView) PropertyTime_to_reach_enemy_estimate() (ClassPropertyView, error) {
+	return t.inner.Property("time_to_reach_enemy_estimate")
 }
 
 func (t *TypeBuilder) GameSituation() (*GameSituationClassView, error) {

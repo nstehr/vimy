@@ -41,7 +41,7 @@ func (c *doctrineCompiler) addEconomyRules() {
 			Priority:     secondRefPriority,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("refinery") && RoleCount("refinery") == 1 && (HasRole("barracks") || HasRole("war_factory")) && Cash() >= %d`, secondRefCash),
+			ConditionSrc: fmt.Sprintf(`!IsRushed() && !QueueBusy("Building") && CanBuildRole("refinery") && RoleCount("refinery") == 1 && (HasRole("barracks") || HasRole("war_factory")) && Cash() >= %d`, secondRefCash),
 			Action:       ActionProduceRefinery,
 		})
 	}
@@ -55,7 +55,7 @@ func (c *doctrineCompiler) addEconomyRules() {
 			Priority:     extraRefPriority,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("refinery") && RoleCount("refinery") >= 2 && RoleCount("refinery") < %d && (HasRole("barracks") || HasRole("war_factory")) && Cash() >= %d`, refineryMax, refineryCashThreshold),
+			ConditionSrc: fmt.Sprintf(`!IsRushed() && !QueueBusy("Building") && CanBuildRole("refinery") && RoleCount("refinery") >= 2 && RoleCount("refinery") < %d && (HasRole("barracks") || HasRole("war_factory")) && Cash() >= %d`, refineryMax, refineryCashThreshold),
 			Action:       ActionProduceRefinery,
 		})
 	}
@@ -68,7 +68,7 @@ func (c *doctrineCompiler) addEconomyRules() {
 			Priority:     790,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("advanced_power") && PowerExcess() < %d && Cash() >= 500`, LowPowerHeadroom),
+			ConditionSrc: fmt.Sprintf(`!IsRushed() && !QueueBusy("Building") && CanBuildRole("advanced_power") && PowerExcess() < %d && Cash() >= 500`, LowPowerHeadroom),
 			Action:       ActionProduceAdvancedPower,
 		})
 	}
@@ -80,7 +80,7 @@ func (c *doctrineCompiler) addEconomyRules() {
 			Priority:     300,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("ore_silo") && ResourcesNearCap() && RoleCount("ore_silo") < %d && Cash() >= 150`, siloCap),
+			ConditionSrc: fmt.Sprintf(`!IsRushed() && !QueueBusy("Building") && CanBuildRole("ore_silo") && ResourcesNearCap() && RoleCount("ore_silo") < %d && Cash() >= 150`, siloCap),
 			Action:       ActionProduceOreSilo,
 		})
 	}

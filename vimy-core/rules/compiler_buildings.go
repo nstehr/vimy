@@ -42,7 +42,7 @@ func (c *doctrineCompiler) addBuildingRules() {
 			Priority:     radarPriority,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("radar") && !HasRole("radar") && !QueueProducingRole("radar") && (HasRole("barracks") || HasRole("war_factory")) && PowerExcess() >= 0 && Cash() >= 1000`,
+			ConditionSrc: `!IsRushed() && !QueueBusy("Building") && CanBuildRole("radar") && !HasRole("radar") && !QueueProducingRole("radar") && (HasRole("barracks") || HasRole("war_factory")) && PowerExcess() >= 0 && Cash() >= 1000`,
 			Action:       ActionProduceRadar,
 		})
 	}
@@ -158,7 +158,7 @@ func (c *doctrineCompiler) addBuildingRules() {
 			Priority:     airfieldPriority,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("airfield") && !HasRole("airfield") && PowerExcess() >= 0 && Cash() >= 500`,
+			ConditionSrc: `!IsRushed() && !QueueBusy("Building") && CanBuildRole("airfield") && !HasRole("airfield") && PowerExcess() >= 0 && Cash() >= 500`,
 			Action:       ActionProduceAirfield,
 		})
 	}
@@ -169,7 +169,7 @@ func (c *doctrineCompiler) addBuildingRules() {
 			Priority:     570,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("service_depot") && !HasRole("service_depot") && HasRole("war_factory") && PowerExcess() >= 0 && Cash() >= 1200`,
+			ConditionSrc: `!IsRushed() && !QueueBusy("Building") && CanBuildRole("service_depot") && !HasRole("service_depot") && HasRole("war_factory") && PowerExcess() >= 0 && Cash() >= 1200`,
 			Action:       ActionProduceServiceDepot,
 		})
 	}
@@ -181,7 +181,7 @@ func (c *doctrineCompiler) addBuildingRules() {
 			Priority:     navalYardPriority,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: `MapHasWater() && !QueueBusy("Building") && CanBuildRole("naval_yard") && !HasRole("naval_yard") && PowerExcess() >= 0 && Cash() >= 500`,
+			ConditionSrc: `!IsRushed() && MapHasWater() && !QueueBusy("Building") && CanBuildRole("naval_yard") && !HasRole("naval_yard") && PowerExcess() >= 0 && Cash() >= 500`,
 			Action:       ActionProduceNavalYard,
 		})
 	}
@@ -202,6 +202,26 @@ func (c *doctrineCompiler) addBuildingRules() {
 			Category:     "defense",
 			Exclusive:    true,
 			ConditionSrc: fmt.Sprintf(`!QueueBusy("Defense") && PowerExcess() >= 0 && (CanBuildRole("pillbox") || CanBuildRole("camo_pillbox") || CanBuildRole("turret") || CanBuildRole("flame_tower") || CanBuildRole("tesla_coil")) && (RoleCount("pillbox") + RoleCount("camo_pillbox") + RoleCount("turret") + RoleCount("flame_tower") + RoleCount("tesla_coil")) < %d && Cash() >= %d`, defenseCap, defenseCash),
+			Action:       ActionProduceDefense,
+		})
+
+		// Rush-mode variant (vimy-ovm follow-up): when being_rushed, lower the
+		// cash floor to 200 (a pillbox costs 400 — the floor is hold-back, not
+		// the build cost itself) and prioritize above other economy builds so
+		// defenses go up before the next refinery/power plant. Without this,
+		// build-base-defense competes with refineries on cost and loses; in
+		// game 33/34 only 9 defenses got built across 22-30k ticks of raids.
+		//
+		// No production-building reserves during rush (was in vimy-qp1,
+		// removed after game 47). Pillboxes matter for surviving the rush
+		// window; WF/airfield build after the rush clears via their own
+		// build rules.
+		c.rules = append(c.rules, &Rule{
+			Name:         "build-base-defense-rush",
+			Priority:     defensePriority + 100,
+			Category:     "defense",
+			Exclusive:    true,
+			ConditionSrc: fmt.Sprintf(`IsRushed() && !QueueBusy("Defense") && PowerExcess() >= 0 && (CanBuildRole("pillbox") || CanBuildRole("camo_pillbox") || CanBuildRole("turret") || CanBuildRole("flame_tower") || CanBuildRole("tesla_coil")) && (RoleCount("pillbox") + RoleCount("camo_pillbox") + RoleCount("turret") + RoleCount("flame_tower") + RoleCount("tesla_coil")) < %d && Cash() >= 200`, defenseCap),
 			Action:       ActionProduceDefense,
 		})
 	}
@@ -233,7 +253,7 @@ func (c *doctrineCompiler) addBuildingRules() {
 			Priority:     lerp(400, 550, c.d.GroundDefensePriority),
 			Category:     "defense",
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`!QueueBusy("Defense") && PowerExcess() >= 0 && CanBuildRole("gap_generator") && HasRole("tech_center") && RoleCount("gap_generator") < %d && Cash() >= 800`, gapCap),
+			ConditionSrc: fmt.Sprintf(`!IsRushed() && !QueueBusy("Defense") && PowerExcess() >= 0 && CanBuildRole("gap_generator") && HasRole("tech_center") && RoleCount("gap_generator") < %d && Cash() >= 800`, gapCap),
 			Action:       ActionProduceGapGenerator,
 		})
 	}
@@ -247,7 +267,7 @@ func (c *doctrineCompiler) addBuildingRules() {
 			Priority:     techCenterPriority,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: `!QueueBusy("Building") && CanBuildRole("tech_center") && !HasRole("tech_center") && HasRole("radar") && PowerExcess() >= 0 && Cash() >= 1500`,
+			ConditionSrc: `!IsRushed() && !QueueBusy("Building") && CanBuildRole("tech_center") && !HasRole("tech_center") && HasRole("radar") && PowerExcess() >= 0 && Cash() >= 1500`,
 			Action:       ActionProduceTechCenter,
 		})
 	}
@@ -260,7 +280,7 @@ func (c *doctrineCompiler) addBuildingRules() {
 			Priority:     650,
 			Category:     "superweapon_build",
 			Exclusive:    true,
-			ConditionSrc: `!QueueBusy("Defense") && CanBuildRole("missile_silo") && !HasRole("missile_silo") && HasRole("tech_center") && PowerExcess() >= 0 && Cash() >= 2500`,
+			ConditionSrc: `!IsRushed() && !QueueBusy("Defense") && CanBuildRole("missile_silo") && !HasRole("missile_silo") && HasRole("tech_center") && PowerExcess() >= 0 && Cash() >= 2500`,
 			Action:       ActionProduceMissileSilo,
 		})
 
@@ -269,7 +289,7 @@ func (c *doctrineCompiler) addBuildingRules() {
 			Priority:     640,
 			Category:     "superweapon_build",
 			Exclusive:    true,
-			ConditionSrc: `!QueueBusy("Defense") && CanBuildRole("iron_curtain") && !HasRole("iron_curtain") && HasRole("tech_center") && PowerExcess() >= 0 && Cash() >= 2500`,
+			ConditionSrc: `!IsRushed() && !QueueBusy("Defense") && CanBuildRole("iron_curtain") && !HasRole("iron_curtain") && HasRole("tech_center") && PowerExcess() >= 0 && Cash() >= 2500`,
 			Action:       ActionProduceIronCurtain,
 		})
 	}
@@ -283,7 +303,7 @@ func (c *doctrineCompiler) addBuildingRules() {
 			Priority:     500,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("barracks") && RoleCount("barracks") < %d && PowerExcess() >= 0 && Cash() >= 300`, extraBarracksCap),
+			ConditionSrc: fmt.Sprintf(`!IsRushed() && !QueueBusy("Building") && CanBuildRole("barracks") && RoleCount("barracks") < %d && PowerExcess() >= 0 && Cash() >= 300`, extraBarracksCap),
 			Action:       ActionProduceBarracks,
 		})
 	}
@@ -295,23 +315,31 @@ func (c *doctrineCompiler) addBuildingRules() {
 			Priority:     490,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("war_factory") && RoleCount("war_factory") < %d && PowerExcess() >= 0 && Cash() >= 2000`, extraWFCap),
+			ConditionSrc: fmt.Sprintf(`!IsRushed() && !QueueBusy("Building") && CanBuildRole("war_factory") && RoleCount("war_factory") < %d && PowerExcess() >= 0 && Cash() >= 2000`, extraWFCap),
 			Action:       ActionProduceWarFactory,
 		})
 	}
 
-	if c.d.AirWeight > DoctrineExtreme {
-		extraAirCap := lerp(1, 3, c.d.AirWeight)
-		// Only build extra airfields once existing ones are fully utilized
-		// (aircraft count near cap). Otherwise the building drains cash
-		// that should go to unit production at the existing airfield.
-		airCapForGate := lerp(2, 8, c.d.AirWeight)
+	// Extra airfield/helipad building. Compiled whenever the doctrine cares
+	// about air at all (was DoctrineExtreme=0.4, which was too high — a
+	// doctrine at air_weight 0.35 wanted 3 aircraft but only had 1 pad).
+	// Gated on physical AircraftCapacity vs the doctrinal aircraft cap: if
+	// physical pads can't hold the doctrine's aircraft count, keep building
+	// pads until they can. Fires only when existing pads are near-full so
+	// we don't overbuild speculatively.
+	if c.d.AirWeight > DoctrineEnabled {
+		airCap := lerp(2, 8, c.d.AirWeight)
 		c.rules = append(c.rules, &Rule{
-			Name:         "build-extra-airfield",
-			Priority:     480,
-			Category:     "economy",
-			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`!QueueBusy("Building") && CanBuildRole("airfield") && RoleCount("airfield") < %d && CombatAircraftCount() >= %d && PowerExcess() >= 0 && Cash() >= 500`, extraAirCap, airCapForGate-1),
+			Name:     "build-extra-airfield",
+			Priority: 480,
+			Category: "economy",
+			Exclusive: true,
+			// AircraftCapacity < doctrinal cap: still need more pads.
+			// CombatAircraftCount >= AircraftCapacity - 1: existing pads are
+			// actually filling up (don't build speculatively). Together this
+			// grows pads to match the doctrine's aircraft ambition without
+			// leaving Allied doctrines (1 pad per helipad) permanently short.
+			ConditionSrc: fmt.Sprintf(`!IsRushed() && !QueueBusy("Building") && CanBuildRole("airfield") && AircraftCapacity() < %d && CombatAircraftCount() >= AircraftCapacity() - 1 && PowerExcess() >= 0 && Cash() >= 500`, airCap),
 			Action:       ActionProduceAirfield,
 		})
 	}
@@ -325,7 +353,7 @@ func (c *doctrineCompiler) addBuildingRules() {
 			Priority:     470,
 			Category:     "economy",
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`MapHasWater() && !QueueBusy("Building") && CanBuildRole("naval_yard") && RoleCount("naval_yard") < %d && (RoleCount("submarine") + RoleCount("destroyer")) >= %d && PowerExcess() >= 0 && Cash() >= 500`, extraNavalCap, navalCapForGate-1),
+			ConditionSrc: fmt.Sprintf(`!IsRushed() && MapHasWater() && !QueueBusy("Building") && CanBuildRole("naval_yard") && RoleCount("naval_yard") < %d && (RoleCount("submarine") + RoleCount("destroyer")) >= %d && PowerExcess() >= 0 && Cash() >= 500`, extraNavalCap, navalCapForGate-1),
 			Action:       ActionProduceNavalYard,
 		})
 	}

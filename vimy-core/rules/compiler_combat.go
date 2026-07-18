@@ -74,7 +74,15 @@ func (c *doctrineCompiler) addCombatRules() {
 	// --- Ground attack ---
 
 	c.attackPriority = lerp(200, 400, c.d.Aggression)
+	// commit_ratio doctrine knob: LLM-set squad activation threshold. When
+	// non-zero, it overrides the aggression-derived default (lerp 0.6-1.0
+	// inverse of aggression). Lets rush doctrines commit at 0.3 (attack fast
+	// with partial squad) while turtle doctrines commit at 0.8 (full squad
+	// or nothing) — same knob, different values per style.
 	c.activationThreshold = lerpf(0.6, 1.0, 1.0-c.d.Aggression)
+	if c.d.CommitRatio > 0 {
+		c.activationThreshold = c.d.CommitRatio
+	}
 
 	// Squad-creation threshold: 60% of the requested group size, floor 3
 	// (computed above as formGroundAttackThreshold so the defense rule can
@@ -97,19 +105,49 @@ func (c *doctrineCompiler) addCombatRules() {
 		Action:       FormSquad("ground-attack", "ground", c.d.GroundAttackGroupSize, "attack"),
 	})
 
+	// Ground-attack action choice: squad-attack (chase visible enemy) and
+	// squad-attack-known-base (press the enemy base) are mutually exclusive
+	// via the "ground_attack_choice" category so we don't thrash between two
+	// destinations. Priority order determines which wins on a given tick.
+	//
+	// Aggressive doctrines (aggression >= DoctrineSignificant) with known-base
+	// intel PREFER the base attack over swatting local raiders — the base
+	// defenses (pillbox, ground-defense squad, emergency-base-defense) handle
+	// the raider while the ground-attack squad executes the strategic push.
+	// Non-aggressive doctrines keep the historical priority (visible enemy
+	// beats known base) so defensive postures don't over-commit forward.
+	//
+	// !EnemiesVisible removed from squad-attack-known-base (was blocking rush
+	// deployments: game 49 had 22 first_contact events but only 2 known-base
+	// firings — a persistent raider kept the visible-enemy check true and
+	// the base attack never fired despite intel being present).
+	knownBasePriority := c.attackPriority - KnownBaseDiscount
+	if c.d.Aggression >= DoctrineSignificant {
+		knownBasePriority = c.attackPriority + 5 // outrank squad-attack
+	}
+
+	// base_defense_floor doctrine knob: when non-zero, the ground-attack
+	// squad won't deploy until at least N static ground defenses exist. A
+	// rush sets 0-1 (no floor), a balanced push sets 2-3, a turtle 6-8.
+	// Prevents committing forward while the base is naked.
+	baseDefenseFloorClause := ""
+	if c.d.BaseDefenseFloor > 0 {
+		baseDefenseFloorClause = fmt.Sprintf(` && (RoleCount("pillbox") + RoleCount("camo_pillbox") + RoleCount("turret") + RoleCount("flame_tower") + RoleCount("tesla_coil")) >= %d`, c.d.BaseDefenseFloor)
+	}
+
 	c.rules = append(c.rules, &Rule{
 		Name:         "squad-attack",
 		Priority:     c.attackPriority,
-		Category:     "combat",
-		Exclusive:    false,
-		ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && (BestGroundTarget() != nil || NearestEnemy() != nil)`, c.activationThreshold),
+		Category:     "ground_attack_choice",
+		Exclusive:    true,
+		ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && (BestGroundTarget() != nil || NearestEnemy() != nil)%s`, c.activationThreshold, baseDefenseFloorClause),
 		Action:       SquadAttackMove("ground-attack"),
 	})
 
-	// Re-engage idle squad members already in the field — no ratio gate.
-	// The main squad-attack rule handles the initial coordinated launch;
-	// this handles the common case where some members finish their order
-	// while others are still fighting.
+	// Re-engage idle squad members already in the field — no ratio gate,
+	// non-exclusive so it fires alongside whichever ground_attack_choice
+	// rule won this tick (catches stragglers finishing an order while the
+	// squad presses forward).
 	c.rules = append(c.rules, &Rule{
 		Name:         "squad-reengage",
 		Priority:     c.attackPriority - ReengageDiscount,
@@ -119,13 +157,12 @@ func (c *doctrineCompiler) addCombatRules() {
 		Action:       SquadAttackMove("ground-attack"),
 	})
 
-	// Fallback: attack last-known enemy base when fog of war hides all enemies.
 	c.rules = append(c.rules, &Rule{
 		Name:         "squad-attack-known-base",
-		Priority:     c.attackPriority - KnownBaseDiscount,
-		Category:     "combat",
-		Exclusive:    false,
-		ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && !EnemiesVisible() && HasEnemyIntel()`, c.activationThreshold),
+		Priority:     knownBasePriority,
+		Category:     "ground_attack_choice",
+		Exclusive:    true,
+		ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && HasEnemyIntel()%s`, c.activationThreshold, baseDefenseFloorClause),
 		Action:       SquadAttackKnownBase("ground-attack", c.d.Aggression),
 	})
 
