@@ -902,6 +902,33 @@ func ActionDefendBase(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
+// ActionDefendCriticalBuilding pulls ALL nearby ground units — regardless
+// of squad membership or idle status — to attack the nearest enemy that's
+// engaging one of our critical buildings. This overrides the poach-
+// prevention in scramble/emergency-base-defense (vimy-d9q) because when
+// the CY / WF / refinery is actively taking damage, keeping the attack
+// squad "reserved" for a future push is worse than losing the critical
+// infrastructure. Game 59: 2 rocket launchers destroyed the CY while an
+// idle mammoth tank sat in the ground-attack squad, never engaged
+// because scramble excludes squad members and emergency needs zero idle.
+func ActionDefendCriticalBuilding(env RuleEnv, conn *ipc.Connection) error {
+	enemy := env.nearestEnemyAttackingCritical()
+	if enemy == nil {
+		return nil
+	}
+	// Pull all near-base ground units regardless of squad membership.
+	nearby := env.NearBaseGroundUnits()
+	if len(nearby) == 0 {
+		return nil
+	}
+	ids := make([]uint32, len(nearby))
+	for i, u := range nearby {
+		ids[i] = uint32(u.ID)
+	}
+	slog.Info("defending critical building — engaging attacker", "count", len(ids), "target", enemy.ID, "targetType", enemy.Type)
+	return sendAttackMove(env, conn, ids, enemy.X, enemy.Y)
+}
+
 // ActionEmergencyDefendBase redirects nearby ground units (regardless of idle
 // status) to defend the base. Used when no idle units are available but units
 // near the base have stale orders and aren't responding to the attack.
@@ -995,7 +1022,32 @@ func isCriticalRepairType(t string) bool {
 // initiate a NEW repair toggle if remaining cash after repair (approximated
 // as current cash) is above (1 - ratio) * currentCash — i.e. the doctrine
 // wants to keep (1 - ratio) fraction of cash reserved for production.
+// repairCashFloor: no new repairs or re-toggles if cash is below this
+// threshold. Diagnostic on game 62 showed cash pinned at 0 for the entire
+// mid-game because in-flight repairs were consuming income the instant it
+// converted from ore. Above-floor repairs still get through; at-floor
+// repairs stop entirely so cash can accumulate for production.
+const repairCashFloor = 500
+
+// repairMaxConcurrent caps how many buildings we simultaneously repair.
+// OpenRA drains cash per-tick per active repair. Uncapped means all N
+// damaged buildings drain simultaneously and the sum crushes income.
+// Cap of 2 keeps drain bounded so income can still support production.
+const repairMaxConcurrent = 2
+
+// RepairBudgetRatio is exposed as an env memory value ("repairBudgetRatio",
+// float64) so ActionRepairDamagedBuildings can honor the doctrine-level
+// repair_budget_ratio knob. When set to a positive value <= 1.0, we only
+// initiate a NEW repair toggle if remaining cash after repair (approximated
+// as current cash) is above (1 - ratio) * currentCash — i.e. the doctrine
+// wants to keep (1 - ratio) fraction of cash reserved for production.
 func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
+	// Hard cash floor. If we can't afford the floor, don't spend a dollar
+	// more on repairs — production and rebuild need what remains.
+	if env.State.Player.Cash < repairCashFloor {
+		return nil
+	}
+
 	state := memoryMap[int, repairToggleEntry](env.Memory, "repairToggleSent")
 	underPressure := env.IsRushed() || env.IsHarvesterHarassed()
 	budgetRatio, _ := env.Memory["repairBudgetRatio"].(float64)
@@ -1017,6 +1069,15 @@ func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
 		}
 	}
 
+	// Count currently-tracked active repairs so we can enforce a concurrency
+	// cap. Anything older than repairResendTicks is considered stale/complete.
+	activeRepairs := 0
+	for _, entry := range state {
+		if env.State.Tick-entry.Tick < repairResendTicks {
+			activeRepairs++
+		}
+	}
+
 	for _, b := range env.DamagedBuildings() {
 		// When under pressure, only spend cash on infrastructure that keeps
 		// us in the game. Radar/tech/helipad damage is acceptable; lost
@@ -1034,7 +1095,16 @@ func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
 		if sent && env.State.Tick-prev.Tick < repairResendTicks {
 			continue
 		}
+		// Concurrency cap: only initiate a new repair if we're below the
+		// cap. Existing tracked repairs (already counted above) will finish
+		// on their own; we're only rate-limiting new starts.
+		if !sent && activeRepairs >= repairMaxConcurrent {
+			continue
+		}
 		state[b.ID] = repairToggleEntry{Tick: env.State.Tick}
+		if !sent {
+			activeRepairs++
+		}
 		slog.Debug("repairing building", "id", b.ID, "type", b.Type)
 		if err := conn.Send(ipc.TypeRepairBuilding, ipc.RepairBuildingCommand{
 			ActorID: uint32(b.ID),
@@ -2390,6 +2460,27 @@ func huntOffset(step, radius int) (int, int) {
 	return int(r * math.Cos(angle)), int(r * math.Sin(angle))
 }
 
+// squadAttackState remembers whether a squad has already committed to a
+// specific target, so the rally-then-attack behavior only requires clumping
+// on the initial deploy, not on every eval mid-attack. Without this the
+// squad would oscillate: attack -> spread -> regroup -> attack -> spread.
+type squadAttackState struct {
+	TargetX, TargetY int
+	Attacking        bool // false = still regrouping to centroid
+	LastTick         int
+}
+
+const (
+	// squadAttackCommitTTL: how long a target commitment stays "sticky"
+	// before we re-evaluate clumping. Long enough to complete a typical
+	// engagement, short enough to re-regroup if the squad's next target
+	// is different and requires a fresh assembly.
+	squadAttackCommitTTL = 2000
+	// squadRallyRadius: 80% of squad members must be within this many map
+	// cells of the centroid before the squad is considered "clumped."
+	squadRallyRadius = 8
+)
+
 func SquadAttackMove(name string) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
 		enemy := env.BestGroundTarget()
@@ -2402,6 +2493,35 @@ func SquadAttackMove(name string) ActionFunc {
 		ids := squadIdleActorIDs(env, name)
 		if len(ids) == 0 {
 			return nil
+		}
+
+		// Rally-then-attack. On a fresh commit (target changed or stale
+		// state), if the squad is not clumped, issue AttackMove to the squad
+		// centroid so trailing units catch up and leading units halt/fall
+		// back. Only when 80% of members are within squadRallyRadius do we
+		// commit to the actual attack. Once committed, we don't re-regroup
+		// for squadAttackCommitTTL ticks — the squad fights as long as the
+		// target holds and we don't want mid-fight oscillation.
+		state := memoryMap[string, squadAttackState](env.Memory, "squadAttackState")
+		prev, hasPrev := state[name]
+		targetChanged := !hasPrev || prev.TargetX != enemy.X || prev.TargetY != enemy.Y
+		commitStale := hasPrev && env.State.Tick-prev.LastTick > squadAttackCommitTTL
+		if targetChanged || commitStale || !prev.Attacking {
+			if env.SquadClumped(name, squadRallyRadius) {
+				state[name] = squadAttackState{TargetX: enemy.X, TargetY: enemy.Y, Attacking: true, LastTick: env.State.Tick}
+			} else {
+				cx, cy, ok := squadCentroid(env, name)
+				if ok {
+					state[name] = squadAttackState{TargetX: enemy.X, TargetY: enemy.Y, Attacking: false, LastTick: env.State.Tick}
+					slog.Debug("squad rallying before attack", "squad", name, "count", len(ids), "target", enemy.ID, "centroid_x", cx, "centroid_y", cy)
+					return sendAttackMove(env, conn, ids, cx, cy)
+				}
+				// No centroid — fall through to direct attack.
+				state[name] = squadAttackState{TargetX: enemy.X, TargetY: enemy.Y, Attacking: true, LastTick: env.State.Tick}
+			}
+		} else {
+			prev.LastTick = env.State.Tick
+			state[name] = prev
 		}
 
 		// vimy-zyv: when there's a hot defense corridor between the squad and
@@ -2513,6 +2633,31 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 		ids := squadIdleActorIDs(env, name)
 		if len(ids) == 0 {
 			return nil
+		}
+
+		// Rally-then-attack (long-walk case). Base-attack is the biggest
+		// dispersal risk: squads walk far from home, fast units (tanks,
+		// dogs) arrive first and get picked off before rifles catch up.
+		// Same rally state as SquadAttackMove, keyed by the base position.
+		aState := memoryMap[string, squadAttackState](env.Memory, "squadAttackState")
+		prev, hasPrev := aState[name]
+		targetChanged := !hasPrev || prev.TargetX != base.X || prev.TargetY != base.Y
+		commitStale := hasPrev && env.State.Tick-prev.LastTick > squadAttackCommitTTL
+		if targetChanged || commitStale || !prev.Attacking {
+			if env.SquadClumped(name, squadRallyRadius) {
+				aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: true, LastTick: env.State.Tick}
+			} else {
+				cx, cy, ok := squadCentroid(env, name)
+				if ok {
+					aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: false, LastTick: env.State.Tick}
+					slog.Debug("squad rallying before base-attack", "squad", name, "count", len(ids), "base_x", base.X, "base_y", base.Y, "centroid_x", cx, "centroid_y", cy)
+					return sendAttackMove(env, conn, ids, cx, cy)
+				}
+				aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: true, LastTick: env.State.Tick}
+			}
+		} else {
+			prev.LastTick = env.State.Tick
+			aState[name] = prev
 		}
 
 		// Retrieve or initialize hunt state for this squad.

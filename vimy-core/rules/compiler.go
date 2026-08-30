@@ -185,15 +185,29 @@ func (c *doctrineCompiler) initSavings() {
 		})
 	}
 
-	// Vehicle-cost reservation: when the doctrine wants both infantry and
-	// vehicles, infantry rules save 800 cash headroom so vehicle production
-	// can start. The reservation releases once vehicles reach their cap.
+	// Vehicle-cost reservation: infantry rules save cash headroom so vehicle
+	// production can start. Historical bug (game 64): the fixed 800-cost
+	// reservation meant infantry needed cash >= 900 while vehicles fired at
+	// cash >= 800, so vehicle always drained cash first and infantry never
+	// spawned in combined-arms doctrines. Fix: scale reservation by
+	// max(0, vehicle_weight - infantry_weight), so balanced doctrines don't
+	// starve infantry. Pure-vehicle doctrines (infantry_weight=0.1) still
+	// get the full reservation; combined-arms (infantry=0.3, vehicle=0.6)
+	// get a proportional reduction; infantry-heavy (infantry>vehicle) gets
+	// zero reservation.
 	if c.d.VehicleWeight > DoctrineModerate {
 		vehicleCapForSaving := lerp(3, 10, c.d.VehicleWeight)
-		c.infantrySavings = append(c.infantrySavings, buildingSaving{
-			existsExpr: fmt.Sprintf("CombatVehicleCount() >= %d", vehicleCapForSaving),
-			cost:       800,
-		})
+		reserveScale := c.d.VehicleWeight - c.d.InfantryWeight
+		if reserveScale < 0 {
+			reserveScale = 0
+		}
+		reserveCost := int(800.0 * reserveScale)
+		if reserveCost > 0 {
+			c.infantrySavings = append(c.infantrySavings, buildingSaving{
+				existsExpr: fmt.Sprintf("CombatVehicleCount() >= %d", vehicleCapForSaving),
+				cost:       reserveCost,
+			})
+		}
 	}
 }
 

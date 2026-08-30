@@ -411,6 +411,54 @@ func (e RuleEnv) IsHarvesterHarassed() bool {
 	return v
 }
 
+// SquadClumped reports whether ≥80% of the named squad's living members
+// are within `radiusCells` map cells of the squad centroid. Used by the
+// rally-then-attack behavior so a fresh squad-attack fires only when the
+// squad has actually assembled — arriving together concentrates damage,
+// versus stringing out and getting picked off one at a time.
+func (e RuleEnv) SquadClumped(name string, radiusCells int) bool {
+	squads, ok := e.Memory["squads"].(map[string]*Squad)
+	if !ok {
+		return true // no squad map — trivially "clumped"
+	}
+	sq, ok := squads[name]
+	if !ok || len(sq.UnitIDs) == 0 {
+		return true // no squad — no dispersion to worry about
+	}
+
+	ids := make(map[int]bool, len(sq.UnitIDs))
+	for _, id := range sq.UnitIDs {
+		ids[id] = true
+	}
+	var sumX, sumY int
+	var members []model.Unit
+	for _, u := range e.State.Units {
+		if !ids[u.ID] {
+			continue
+		}
+		sumX += u.X
+		sumY += u.Y
+		members = append(members, u)
+	}
+	if len(members) < 2 {
+		return true // one unit is trivially clumped
+	}
+	cx := sumX / len(members)
+	cy := sumY / len(members)
+
+	radiusSq := radiusCells * radiusCells
+	near := 0
+	for _, u := range members {
+		dx := u.X - cx
+		dy := u.Y - cy
+		if dx*dx+dy*dy <= radiusSq {
+			near++
+		}
+	}
+	// 80% threshold.
+	return near*10 >= len(members)*8
+}
+
 // AxisBurned reports whether the strategist has marked a unit axis (air,
 // infantry, vehicle, naval) as burned — i.e. the doctrine has pivoted to
 // this axis 2+ times this match and each pivot was followed by domain-
@@ -2138,6 +2186,68 @@ func (e RuleEnv) approachWaypointWithField(destX, destY int, field *model.Threat
 	}
 	x, y := e.Terrain.ZoneCenter(wp[0], wp[1])
 	return x, y, true
+}
+
+// CriticalBuildingUnderAttack reports whether any of our critical
+// infrastructure (CY, WF, refinery, power plants, barracks, tech center) is
+// currently taking damage or has an enemy within close-range attack distance.
+// Used by the defend-critical-building rule to override normal squad-pool
+// filtering — when the CY is being shot at by rocket launchers, ALL nearby
+// ground units should engage, including committed ground-attack squad
+// members that would otherwise be excluded by scramble/emergency defense
+// (vimy-d9q's poach-prevention). Game 59 lost the CY to 2 rocket launchers
+// while an idle mammoth tank sat in the ground-attack squad, never poached
+// because scramble excludes squad members and emergency needs zero idle.
+func (e RuleEnv) CriticalBuildingUnderAttack() bool {
+	return e.nearestEnemyAttackingCritical() != nil
+}
+
+// nearestEnemyAttackingCritical returns the nearest enemy that's within
+// attack range of one of our critical buildings, or nil if no critical
+// building is under threat. Attack range is 10 map cells — tight enough
+// to exclude passing scouts, wide enough to catch attackers about to
+// engage.
+func (e RuleEnv) nearestEnemyAttackingCritical() *model.Enemy {
+	const attackRange = 10
+	attackRangeSq := attackRange * attackRange
+
+	var nearest *model.Enemy
+	var nearestDistSq int = 1<<31 - 1
+	for i := range e.State.Buildings {
+		b := &e.State.Buildings[i]
+		if !isCriticalRepairType(b.Type) {
+			continue
+		}
+		for j := range e.State.Enemies {
+			en := &e.State.Enemies[j]
+			// Skip harvesters, non-combat enemies, and husk wreckage.
+			// Husks persist briefly in State.Enemies after a unit dies
+			// (game 60: defend-critical-building fired 191 times mostly
+			// targeting heli.husk after the helicopter was already killed).
+			if matchesType(en.Type, Harvester) || matchesType(en.Type, MCV) || isHuskType(en.Type) {
+				continue
+			}
+			dx := en.X - b.X
+			dy := en.Y - b.Y
+			distSq := dx*dx + dy*dy
+			if distSq > attackRangeSq {
+				continue
+			}
+			if distSq < nearestDistSq {
+				nearestDistSq = distSq
+				nearest = en
+			}
+		}
+	}
+	return nearest
+}
+
+// isHuskType reports whether the type name is a wreckage/husk artifact
+// (e.g., "heli.husk"). OpenRA keeps husks in the actor list for a short
+// window after death; they're not attackable in a meaningful sense and
+// should not drive defensive engagement.
+func isHuskType(t string) bool {
+	return strings.HasSuffix(strings.ToLower(t), ".husk")
 }
 
 // BaseUnderAttack uses a 20% map-diagonal proximity threshold. This avoids

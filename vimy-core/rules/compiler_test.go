@@ -2390,3 +2390,94 @@ func TestCompileDoctrine_ExtraAirfieldGatesOnPhysicalCapacity(t *testing.T) {
 		t.Errorf("extra-airfield should no longer use RoleCount cap, got: %s", r.ConditionSrc)
 	}
 }
+
+func TestCompileDoctrine_BarracksBeatsRadarForRadarGatedPref(t *testing.T) {
+	// Game 63 pattern: preferred_vehicle=[medium_tank ...] pushed radar
+	// priority to 710, which beat un-floored barracks (670 at these
+	// weights). Barracks priority floor of 745 should now win.
+	d := DefaultDoctrine()
+	d.InfantryWeight = 0.3
+	d.VehicleWeight = 0.6
+	d.GroundDefensePriority = 0.7
+	d.EconomyPriority = 0.7
+	d.TechPriority = 0.5
+	d.PreferredVehicle = []string{"medium_tank", "heavy_tank"}
+	compiled := CompileDoctrine(d)
+	byName := map[string]*Rule{}
+	for _, r := range compiled {
+		byName[r.Name] = r
+	}
+	barr := byName["build-barracks"]
+	radar := byName["build-radar"]
+	if barr == nil || radar == nil {
+		t.Fatal("expected both build-barracks and build-radar")
+	}
+	if barr.Priority <= radar.Priority {
+		t.Errorf("build-barracks priority (%d) must beat build-radar (%d) for combined-arms doctrine with radar-gated preferred vehicle", barr.Priority, radar.Priority)
+	}
+}
+
+func TestCompileDoctrine_InfantrySavingsScalesWithInfantryWeight(t *testing.T) {
+	// Combined-arms: infantry=0.28, vehicle=0.62. Reservation scale =
+	// (0.62 - 0.28) = 0.34, so reserve = int(800 * 0.34) = 272. Infantry
+	// needs cash >= 100 + 272 = 372, not >= 900 (old bug).
+	d := DefaultDoctrine()
+	d.InfantryWeight = 0.28
+	d.VehicleWeight = 0.62
+	compiled := CompileDoctrine(d)
+	byName := map[string]*Rule{}
+	for _, r := range compiled {
+		byName[r.Name] = r
+	}
+	pi := byName["produce-infantry"]
+	if pi == nil {
+		t.Fatal("produce-infantry missing")
+	}
+	// Old bug: condition contained "Cash() >= 900". New: should be lower.
+	if strings.Contains(pi.ConditionSrc, "Cash() >= 900") {
+		t.Errorf("produce-infantry still uses full 800-reserve for combined-arms doctrine, got: %s", pi.ConditionSrc)
+	}
+}
+
+func TestCompileDoctrine_InfantryHeavyDoctrineHasNoVehicleReserve(t *testing.T) {
+	// Infantry-heavy: infantry=0.7, vehicle=0.4. Reservation scale =
+	// max(0, 0.4-0.7) = 0. Zero reservation should be present.
+	d := DefaultDoctrine()
+	d.InfantryWeight = 0.7
+	d.VehicleWeight = 0.4
+	compiled := CompileDoctrine(d)
+	byName := map[string]*Rule{}
+	for _, r := range compiled {
+		byName[r.Name] = r
+	}
+	pi := byName["produce-infantry"]
+	if pi == nil {
+		t.Fatal("produce-infantry missing")
+	}
+	// With reserve=0, the CombatVehicleCount clause should not be added.
+	if strings.Contains(pi.ConditionSrc, "CombatVehicleCount()") {
+		t.Errorf("infantry-heavy doctrine should NOT reserve for vehicles, got: %s", pi.ConditionSrc)
+	}
+}
+
+func TestCompileDoctrine_PureVehicleDoctrineKeepsFullReserve(t *testing.T) {
+	// Pure vehicle (infantry=0.1 doesn't compile infantry rule at all, so
+	// use 0.15 to keep the rule alive). vehicle=0.8. Reserve scale =
+	// (0.8 - 0.15) = 0.65, reserve = int(800 * 0.65) = 520.
+	d := DefaultDoctrine()
+	d.InfantryWeight = 0.15
+	d.VehicleWeight = 0.8
+	compiled := CompileDoctrine(d)
+	byName := map[string]*Rule{}
+	for _, r := range compiled {
+		byName[r.Name] = r
+	}
+	pi := byName["produce-infantry"]
+	if pi == nil {
+		t.Fatal("produce-infantry missing")
+	}
+	// Should have a meaningful vehicle reserve clause.
+	if !strings.Contains(pi.ConditionSrc, "CombatVehicleCount()") {
+		t.Errorf("vehicle-heavy doctrine should reserve for vehicles, got: %s", pi.ConditionSrc)
+	}
+}

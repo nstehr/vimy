@@ -167,6 +167,8 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	designateScout(env)
 	logMilitaryDiagnostics(env)
 	logProductionDiagnostics(env)
+	logProduceInfantryGate(env)
+	logCashFlow(env)
 	fired := make(map[string]bool) // category → exclusive rule already fired
 
 	anyFired := false
@@ -377,6 +379,91 @@ func logProductionDiagnostics(env RuleEnv) {
 		"powerState", gs.Player.PowerState,
 		"powerExcess", gs.Player.PowerProvided-gs.Player.PowerDrained,
 	)
+}
+
+// logProduceInfantryGate reports every N ticks WHICH gates of the
+// produce-infantry rule are currently blocking it from firing. Used to
+// answer "why is production throughput only 17% of theoretical?" — the
+// rule fire_count only shows successful fires, not why the rule didn't
+// fire. This dumps the state of each gate so we can see what's actually
+// blocking (cash / queue busy / unit cap / axis burned).
+var lastInfantryGateDiagTick int
+
+func logProduceInfantryGate(env RuleEnv) {
+	gs := env.State
+	if gs.Tick-lastInfantryGateDiagTick < 500 {
+		return
+	}
+	lastInfantryGateDiagTick = gs.Tick
+
+	// Evaluate each gate of the produce-infantry rule independently.
+	axisBurned := env.AxisBurned("infantry")
+	hasBarracks := env.HasRole("barracks")
+	queueBusy := env.QueueBusy("Infantry")
+	canBuildE1 := env.CanBuild("Infantry", "e1")
+	e1Count := env.UnitCount("e1")
+
+	// Also check the rush-variant gate.
+	isRushed := env.IsRushed()
+
+	// Total non-cash gate result: would the rule pass all non-cash gates?
+	gatesPassExceptCash := !axisBurned && hasBarracks && !queueBusy && canBuildE1
+	// Rush-variant: passes if rushed + others.
+	rushGatesPassExceptCash := isRushed && !axisBurned && hasBarracks && !queueBusy && canBuildE1
+
+	// Cash — we don't know the doctrine cap or exact reservations from here,
+	// but the base cash cost for a rifle is 100 (normal) or 50 (rush).
+	cash := gs.Player.Cash
+
+	slog.Info("produce-infantry gate diagnostic",
+		"tick", gs.Tick,
+		"cash", cash,
+		"axisBurned", axisBurned,
+		"hasBarracks", hasBarracks,
+		"queueBusy", queueBusy,
+		"canBuildE1", canBuildE1,
+		"e1Count", e1Count,
+		"isRushed", isRushed,
+		"gatesPassExceptCash", gatesPassExceptCash,
+		"rushGatesPassExceptCash", rushGatesPassExceptCash,
+	)
+}
+
+// logCashFlow tracks account balance (Cash + Resources) over time and
+// reports net delta per 500-tick window. Can't decompose income vs
+// spending without wiring up per-command cash tracking, but the net
+// delta tells us whether the economy is net-positive or net-negative,
+// and the pattern of spending vs harvester_return firings tells us
+// roughly whether income is the bottleneck (few returns) or spending is
+// (returns coming but cash still zero).
+var (
+	lastCashFlowTick      int
+	lastCashSnapshot      int
+	lastResourcesSnapshot int
+)
+
+func logCashFlow(env RuleEnv) {
+	gs := env.State
+	if gs.Tick-lastCashFlowTick < 500 {
+		return
+	}
+	cashDelta := gs.Player.Cash - lastCashSnapshot
+	resDelta := gs.Player.Resources - lastResourcesSnapshot
+	totalAvailable := gs.Player.Cash + gs.Player.Resources
+	totalDelta := cashDelta + resDelta
+	slog.Info("cash flow diagnostic",
+		"tick", gs.Tick,
+		"cash", gs.Player.Cash,
+		"resources", gs.Player.Resources,
+		"total_available", totalAvailable,
+		"cash_delta_500t", cashDelta,
+		"resources_delta_500t", resDelta,
+		"total_delta_500t", totalDelta,
+		"power_state", gs.Player.PowerState,
+	)
+	lastCashFlowTick = gs.Tick
+	lastCashSnapshot = gs.Player.Cash
+	lastResourcesSnapshot = gs.Player.Resources
 }
 
 func compileRules(rules []*Rule) ([]*Rule, error) {

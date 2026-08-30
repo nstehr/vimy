@@ -378,6 +378,19 @@ func (c *doctrineCompiler) addCoreRules() {
 		Action:       ActionDefendBase,
 	})
 
+	// defend-critical-building: overrides poach-prevention (vimy-d9q) when a
+	// critical building is actively taking damage. Pulls ALL near-base ground
+	// units regardless of squad membership. Higher priority than scramble
+	// and emergency so it wins category dispatch when both would fire.
+	c.rules = append(c.rules, &Rule{
+		Name:         "defend-critical-building",
+		Priority:     360,
+		Category:     "combat",
+		Exclusive:    false,
+		ConditionSrc: `CriticalBuildingUnderAttack() && len(NearBaseGroundUnits()) > 0`,
+		Action:       ActionDefendCriticalBuilding,
+	})
+
 	// Emergency recall: when the base is under attack and no idle ground
 	// units are available, redirect any nearby ground units (even those with
 	// active orders) to defend. This catches units that were given attack-

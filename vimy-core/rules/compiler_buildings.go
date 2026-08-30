@@ -63,6 +63,17 @@ func (c *doctrineCompiler) addBuildingRules() {
 		if c.d.GroundDefensePriority > DoctrineModerate {
 			barracksPriority = max(barracksPriority, lerp(600, 700, c.d.GroundDefensePriority))
 		}
+		// Barracks priority floor. Barracks is $300 and unblocks the entire
+		// infantry queue — it should always come before radar (710 max) and
+		// normal-cost war factory (680-730), but after power (800) and first
+		// refinery (750). Game 63 observed radar+advanced-power+WF beating
+		// barracks to the queue when medium_tank was preferred, leaving
+		// hasBarracks=false for 5000 ticks and blocking all rifle production.
+		// TA-boosted war factory (770+) can still legitimately outrank when
+		// the doctrine is truly APC-first, so the floor doesn't overreach.
+		if barracksPriority < 745 {
+			barracksPriority = 745
+		}
 		c.rules = append(c.rules, &Rule{
 			Name:         "build-barracks",
 			Priority:     barracksPriority,

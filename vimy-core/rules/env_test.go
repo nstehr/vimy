@@ -1210,6 +1210,157 @@ func TestIsRushedAndIsHarvesterHarassed(t *testing.T) {
 	}
 }
 
+func TestCriticalBuildingUnderAttack_DetectsEnemyNearCY(t *testing.T) {
+	// Enemy rocket launcher 5 cells from CY — well within 10-cell attack range.
+	env := RuleEnv{
+		State: model.GameState{
+			Buildings: []model.Building{
+				{ID: 1, Type: "fact", X: 100, Y: 100, HP: 800, MaxHP: 1000}, // damaged CY
+			},
+			Enemies: []model.Enemy{
+				{ID: 42, Type: "v2rl", X: 105, Y: 105, HP: 100, MaxHP: 150},
+			},
+		},
+	}
+	if !env.CriticalBuildingUnderAttack() {
+		t.Error("expected CriticalBuildingUnderAttack() = true with enemy 7 units from CY")
+	}
+}
+
+func TestCriticalBuildingUnderAttack_IgnoresDistantEnemies(t *testing.T) {
+	// Enemy 50 cells away — outside attack range.
+	env := RuleEnv{
+		State: model.GameState{
+			Buildings: []model.Building{
+				{ID: 1, Type: "fact", X: 100, Y: 100, HP: 1000, MaxHP: 1000},
+			},
+			Enemies: []model.Enemy{
+				{ID: 42, Type: "3tnk", X: 200, Y: 200, HP: 400, MaxHP: 400},
+			},
+		},
+	}
+	if env.CriticalBuildingUnderAttack() {
+		t.Error("expected false when enemy is far from any critical building")
+	}
+}
+
+func TestCriticalBuildingUnderAttack_IgnoresNearNoncriticalBuildings(t *testing.T) {
+	// Enemy near a radar dome (non-critical) — should not trigger.
+	env := RuleEnv{
+		State: model.GameState{
+			Buildings: []model.Building{
+				{ID: 1, Type: "dome", X: 100, Y: 100, HP: 500, MaxHP: 1000},
+			},
+			Enemies: []model.Enemy{
+				{ID: 42, Type: "3tnk", X: 102, Y: 100, HP: 400, MaxHP: 400},
+			},
+		},
+	}
+	if env.CriticalBuildingUnderAttack() {
+		t.Error("expected false when enemy is near a non-critical building only")
+	}
+}
+
+func TestCriticalBuildingUnderAttack_IgnoresHuskEnemies(t *testing.T) {
+	// heli.husk (dead helicopter wreckage) briefly persists in State.Enemies
+	// after the unit dies. Should NOT trigger defense engagement.
+	env := RuleEnv{
+		State: model.GameState{
+			Buildings: []model.Building{
+				{ID: 1, Type: "fact", X: 100, Y: 100, HP: 1000, MaxHP: 1000},
+			},
+			Enemies: []model.Enemy{
+				{ID: 42, Type: "heli.husk", X: 105, Y: 105, HP: 1, MaxHP: 500},
+			},
+		},
+	}
+	if env.CriticalBuildingUnderAttack() {
+		t.Error("expected false when nearby enemy is a husk (wreckage)")
+	}
+}
+
+func TestCriticalBuildingUnderAttack_IgnoresEnemyHarvester(t *testing.T) {
+	// Enemy harvester near CY — not an attacker.
+	env := RuleEnv{
+		State: model.GameState{
+			Buildings: []model.Building{
+				{ID: 1, Type: "fact", X: 100, Y: 100, HP: 1000, MaxHP: 1000},
+			},
+			Enemies: []model.Enemy{
+				{ID: 42, Type: "harv", X: 105, Y: 105, HP: 800, MaxHP: 800},
+			},
+		},
+	}
+	if env.CriticalBuildingUnderAttack() {
+		t.Error("expected false when the nearby enemy is just a harvester")
+	}
+}
+
+func TestSquadClumped_TightGroup(t *testing.T) {
+	env := RuleEnv{
+		State: model.GameState{
+			Units: []model.Unit{
+				{ID: 1, X: 100, Y: 100},
+				{ID: 2, X: 102, Y: 100},
+				{ID: 3, X: 100, Y: 103},
+				{ID: 4, X: 101, Y: 101},
+				{ID: 5, X: 99, Y: 99},
+			},
+		},
+		Memory: map[string]any{
+			"squads": map[string]*Squad{
+				"ground-attack": {Name: "ground-attack", Domain: "ground", UnitIDs: []int{1, 2, 3, 4, 5}, TargetSize: 5},
+			},
+		},
+	}
+	if !env.SquadClumped("ground-attack", 8) {
+		t.Error("expected clumped when all units within 8 cells of centroid")
+	}
+}
+
+func TestSquadClumped_Dispersed(t *testing.T) {
+	env := RuleEnv{
+		State: model.GameState{
+			Units: []model.Unit{
+				{ID: 1, X: 100, Y: 100},
+				{ID: 2, X: 300, Y: 100}, // 200 cells away
+				{ID: 3, X: 500, Y: 200}, // even further
+				{ID: 4, X: 700, Y: 300}, // further still
+				{ID: 5, X: 100, Y: 100},
+			},
+		},
+		Memory: map[string]any{
+			"squads": map[string]*Squad{
+				"ground-attack": {Name: "ground-attack", Domain: "ground", UnitIDs: []int{1, 2, 3, 4, 5}, TargetSize: 5},
+			},
+		},
+	}
+	if env.SquadClumped("ground-attack", 8) {
+		t.Error("expected NOT clumped when units are hundreds of cells apart")
+	}
+}
+
+func TestSquadClumped_SingletonTriviallyClumped(t *testing.T) {
+	env := RuleEnv{
+		State: model.GameState{Units: []model.Unit{{ID: 1, X: 100, Y: 100}}},
+		Memory: map[string]any{
+			"squads": map[string]*Squad{
+				"ground-attack": {Name: "ground-attack", Domain: "ground", UnitIDs: []int{1}, TargetSize: 1},
+			},
+		},
+	}
+	if !env.SquadClumped("ground-attack", 8) {
+		t.Error("expected single-unit squad to be trivially clumped")
+	}
+}
+
+func TestSquadClumped_MissingSquadNotAProblem(t *testing.T) {
+	env := RuleEnv{Memory: map[string]any{}}
+	if !env.SquadClumped("nonexistent", 8) {
+		t.Error("expected true (no dispersion to worry about) for missing squad")
+	}
+}
+
 func TestAxisBurned(t *testing.T) {
 	env := RuleEnv{Memory: map[string]any{}}
 	if env.AxisBurned("air") {
