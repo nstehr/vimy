@@ -40,9 +40,44 @@ type manifestMethod struct {
 	// the exported surface is action-only and unusable in a condition, so
 	// deciding that here beats maintaining the list on the other side.
 	Used bool `json:"used"`
+	// The exact keys a projection records for this method, for every argument
+	// combination rules pass. vimyc builds the same strings when it looks a
+	// predicate up, and a mismatch means it silently reads a zero default —
+	// which is how `0.10` versus `0.1` hid a wrong answer.
+	Keys []string `json:"keys"`
 	// Every literal any rule passes at each position, so the other side can
 	// check its tables cover what real play produces.
 	Literals [][]string `json:"literals,omitempty"`
+}
+
+// projectionKeysFor is every key `project` records for a method, which is what
+// vimyc must reproduce to find the value.
+func projectionKeysFor(method string, lits map[string][]map[string]bool) []string {
+	positions := lits[method]
+	if len(positions) == 0 {
+		return []string{goKebab(method)}
+	}
+	combos := [][]string{{}}
+	for _, vals := range positions {
+		var sorted []string
+		for v := range vals {
+			sorted = append(sorted, v)
+		}
+		sort.Strings(sorted)
+		var next [][]string
+		for _, base := range combos {
+			for _, v := range sorted {
+				next = append(next, append(append([]string{}, base...), normaliseLiteral(v)))
+			}
+		}
+		combos = next
+	}
+	out := make([]string, 0, len(combos))
+	for _, c := range combos {
+		out = append(out, callKey(goKebab(method), c...))
+	}
+	sort.Strings(out)
+	return out
 }
 
 func TestDumpEnvManifest(t *testing.T) {
@@ -90,6 +125,7 @@ func TestDumpEnvManifest(t *testing.T) {
 			mm.Domains = append(mm.Domains, d)
 			mm.Literals = append(mm.Literals, vals)
 		}
+		mm.Keys = projectionKeysFor(m.Name, lits)
 		methods = append(methods, mm)
 	}
 	sort.Slice(methods, func(i, j int) bool { return methods[i].Name < methods[j].Name })

@@ -189,16 +189,18 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	logCashFlow(env)
 	fired := make(map[string]bool) // category → exclusive rule already fired
 
-	// Projected once per evaluation, before any action has run. A live shadow
-	// harness would want it per rule, since actions mutate Memory as the loop
-	// goes — but that costs a projection per rule, and this is a sampled
-	// recorder rather than a live comparison.
+	// Re-projected after each firing rather than once per evaluation: an
+	// action mutates Memory, and later rules in the same tick see it.
 	stateIdx := exporter.begin(env, rules)
+	ruleSetID := ""
+	if stateIdx >= 0 {
+		ruleSetID = RuleSetID(rules)
+	}
 
 	anyFired := false
 	for _, r := range rules {
 		if fired[r.Category] {
-			exporter.record(stateIdx, gs.Tick, r.Name, false, true)
+			exporter.record(stateIdx, gs.Tick, ruleSetID, r.Name, false, true)
 			continue
 		}
 
@@ -209,7 +211,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 		}
 
 		match, ok := result.(bool)
-		exporter.record(stateIdx, gs.Tick, r.Name, ok && match, false)
+		exporter.record(stateIdx, gs.Tick, ruleSetID, r.Name, ok && match, false)
 		if !ok || !match {
 			continue
 		}
@@ -221,6 +223,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 		if err := r.Action(env, conn); err != nil {
 			slog.Error("rule action error", "rule", r.Name, "error", err)
 		}
+		stateIdx = exporter.refresh(stateIdx, env, rules)
 
 		if r.Exclusive {
 			fired[r.Category] = true

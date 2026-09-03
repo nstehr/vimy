@@ -1,11 +1,14 @@
 package rules
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -24,10 +27,19 @@ import (
 // moment. Per rule rather than per tick because actions mutate Memory as the
 // loop runs and later rules read it — see vimyc/docs/design.md.
 type ExportedCase struct {
-	Tick  int    `json:"tick"`
-	Rule  string `json:"rule"`
-	State int    `json:"state"`
-	Fired bool   `json:"fired"`
+	Tick int    `json:"tick"`
+	Rule string `json:"rule"`
+	// Identifies the rule set in force, so a recording can be paired with the
+	// conditions that produced it.
+	//
+	// Inferring it afterwards does not quite work: a doctrine is archived when
+	// generated and takes effect once the LLM call lands, and matching on rule
+	// names or on the questions a state asks cannot separate two doctrines whose
+	// only difference is a threshold inside a comparison. That left one
+	// disagreement in 12,442 that was pairing noise rather than a real one.
+	RuleSet string `json:"rule_set"`
+	State   int    `json:"state"`
+	Fired   bool   `json:"fired"`
 	// Blocked by an exclusive rule in the same category, so it was never
 	// evaluated. Recorded anyway: "would this have fired had the category been
 	// free?" is exactly the counterfactual worth asking, and it cannot be
@@ -89,8 +101,8 @@ func expandHome(path string) string {
 	return filepath.Join(home, strings.TrimPrefix(path, "~"))
 }
 
-// begin decides whether this evaluation is sampled, and if so projects the env
-// once and returns the state's index. A negative result means skip.
+// begin decides whether this evaluation is sampled. A negative result means
+// skip; otherwise `snapshot` gives the state to record against.
 //
 // Projects against the rules actually loaded, not against everything a doctrine
 // could emit. The union asks about 38 different `overextended-squad-members`
@@ -107,18 +119,43 @@ func (e *StateExporter) begin(env RuleEnv, rules []*Rule) int {
 	if e.seen%e.every != 0 || len(e.cases) >= e.maxCases {
 		return -1
 	}
+	return e.snapshot(env, rules)
+}
+
+// snapshot records the env as it stands and returns the state's index.
+//
+// Called again after a rule fires. An action mutates Memory — FormSquad assigns
+// units, so UnassignedIdleGround drops — and every later rule in the tick sees
+// the change. Recording one state per evaluation made vimyc disagree with expr
+// on 36 of 19,925 real evaluations, every one a rule that ran after a firing.
+//
+// Only a firing can change anything, so this costs one projection per firing
+// rather than one per rule: two or three a tick, not eighty.
+func (e *StateExporter) snapshot(env RuleEnv, rules []*Rule) int {
 	e.states = append(e.states, projectFor(env, rules))
 	return len(e.states) - 1
 }
 
-func (e *StateExporter) record(stateIdx, tick int, rule string, fired, skipped bool) {
+// refresh re-projects after a rule has fired, if this evaluation is being
+// recorded. Callers pass the previous index and use whatever comes back.
+func (e *StateExporter) refresh(prev int, env RuleEnv, rules []*Rule) int {
+	if e == nil || prev < 0 {
+		return prev
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.snapshot(env, rules)
+}
+
+func (e *StateExporter) record(stateIdx, tick int, ruleSet, rule string, fired, skipped bool) {
 	if e == nil || stateIdx < 0 {
 		return
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.cases = append(e.cases, ExportedCase{
-		Tick: tick, Rule: rule, State: stateIdx, Fired: fired, Skipped: skipped,
+		Tick: tick, Rule: rule, RuleSet: ruleSet, State: stateIdx,
+		Fired: fired, Skipped: skipped,
 	})
 }
 
@@ -145,6 +182,31 @@ func (e *StateExporter) Writable() error {
 		return err
 	}
 	return os.Remove(probe)
+}
+
+// RuleSetID fingerprints a rule set by everything that decides how it behaves.
+//
+// Names alone are not enough: two doctrines routinely emit the same rules with
+// different thresholds. Conditions are, and priority and exclusivity go in too
+// since they decide what runs and what gets blocked.
+//
+// Order-independent, because it has to be. `compileRules` sorts by priority
+// with `sort.Slice`, so the engine holds a different ordering from what
+// `CompileDoctrine` returned — and the sort is not stable, so two sorts of the
+// same rules need not even agree with each other.
+func RuleSetID(rules []*Rule) string {
+	lines := make([]string, 0, len(rules))
+	for _, r := range rules {
+		lines = append(lines, fmt.Sprintf("%s\x00%d\x00%s\x00%t\x00%s\x00%s",
+			r.Name, r.Priority, r.Category, r.Exclusive, r.ConditionSrc, r.ActionSrc))
+	}
+	sort.Strings(lines)
+
+	h := sha256.New()
+	for _, l := range lines {
+		fmt.Fprintf(h, "%s\x1e", l)
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
 // Flush writes what was recorded. Safe to call with nothing recorded.

@@ -62,6 +62,15 @@ var (
 
 func kebab(s string) string { return strings.ReplaceAll(s, "_", "-") }
 
+// normaliseLiteral renders an argument the way both sides agree on: roles kebab,
+// numbers in their shortest exact form.
+func normaliseLiteral(s string) string {
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		return strconv.FormatFloat(f, 'g', -1, 64)
+	}
+	return kebab(s)
+}
+
 func callKey(name string, args ...string) string {
 	if len(args) == 0 {
 		return name
@@ -201,10 +210,13 @@ func projectWith(env RuleEnv, lits map[string][]map[string]bool, used map[string
 			}
 			out := rv.Method(i).Call(in)[0]
 
-			// Roles are snake on this side, kebab in the language.
+			// Roles are snake on this side, kebab in the language. Numbers
+			// are normalised, because these come from the literal text in a
+			// condition while the other side has parsed them: Go's `0.10` and
+			// vimyc's `0.1` are the same threshold and must key the same.
 			wire := make([]string, len(combo))
 			for k, a := range combo {
-				wire[k] = kebab(a)
+				wire[k] = normaliseLiteral(a)
 			}
 			key := callKey(goKebab(mt.Name), wire...)
 
@@ -350,6 +362,13 @@ func argLiterals() (map[string][]map[string]bool, map[string]bool) {
 	out := map[string][]map[string]bool{}
 	seen := map[string]bool{}
 	record := func(cond string) { recordCallArgs(cond, out, seen) }
+
+	// The seed rules too: the engine runs them before the first doctrine swap,
+	// and they are the only user of `HasBuilding` and `BuildingCount`.
+	for _, r := range DefaultRules() {
+		record(r.ConditionSrc)
+	}
+
 	// Real doctrines rather than synthetic ones: what a predicate is called
 	// with depends on which rule blocks the compiler emits, and randomly
 	// sampled doctrines emit blocks real play never reaches.

@@ -16,7 +16,7 @@ func TestNilExporterIsInert(t *testing.T) {
 	if idx := e.begin(RuleEnv{}, nil); idx != -1 {
 		t.Fatalf("nil exporter began a recording: %d", idx)
 	}
-	e.record(-1, 0, "r", true, false)
+	e.record(-1, 0, "id", "r", true, false)
 	if err := e.Flush(); err != nil {
 		t.Fatalf("nil exporter flush: %v", err)
 	}
@@ -48,10 +48,10 @@ func TestExporterSamplesAndRecords(t *testing.T) {
 		firedCategories := map[string]bool{}
 		for _, r := range rules {
 			if firedCategories[r.Category] {
-				exp.record(idx, gs.Tick, r.Name, false, true)
+				exp.record(idx, gs.Tick, "id", r.Name, false, true)
 				continue
 			}
-			exp.record(idx, gs.Tick, r.Name, false, false)
+			exp.record(idx, gs.Tick, "id", r.Name, false, false)
 		}
 	}
 
@@ -102,7 +102,7 @@ func TestExporterRespectsItsCap(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		env := RuleEnv{State: generateState(rng), Faction: "soviet", Memory: map[string]any{}}
 		if idx := exp.begin(env, nil); idx >= 0 {
-			exp.record(idx, i, "r", true, false)
+			exp.record(idx, i, "id", "r", true, false)
 		}
 	}
 	if len(exp.cases) > 5 {
@@ -181,7 +181,7 @@ func TestEachGameWritesItsOwnFile(t *testing.T) {
 	for game := 0; game < 2; game++ {
 		env := RuleEnv{State: generateState(rng), Faction: "soviet", Memory: map[string]any{}}
 		if idx := exp.begin(env, nil); idx >= 0 {
-			exp.record(idx, game, "r", true, false)
+			exp.record(idx, game, "id", "r", true, false)
 		}
 		if err := exp.Flush(); err != nil {
 			t.Fatal(err)
@@ -222,6 +222,93 @@ func TestProjectsOnlyWhatTheRulesAsk(t *testing.T) {
 	for k := range narrow.Collections {
 		if _, ok := wide.Collections[k]; !ok {
 			t.Errorf("narrow projection asked %q, which the union did not", k)
+		}
+	}
+}
+
+// The fingerprint separates rule sets that differ only in a threshold. Names
+// cannot: two doctrines routinely emit the same rules with different numbers,
+// which is what left a disagreement in the first real differential run.
+func TestRuleSetIDSeparatesThresholds(t *testing.T) {
+	real, err := RealDoctrines()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ids := map[string]bool{}
+	names := map[string]bool{}
+	for _, d := range real[:200] {
+		rs := CompileDoctrine(d)
+		ids[RuleSetID(rs)] = true
+
+		var joined string
+		for _, r := range rs {
+			joined += r.Name + ","
+		}
+		names[joined] = true
+	}
+	if len(ids) <= len(names) {
+		t.Errorf("fingerprint distinguished %d rule sets, bare names %d — it should see more",
+			len(ids), len(names))
+	}
+	t.Logf("200 doctrines: %d distinct fingerprints, %d distinct name lists", len(ids), len(names))
+}
+
+// The engine sorts by priority when it swaps, so the set it holds is ordered
+// differently from what CompileDoctrine returned. A fingerprint that depended on
+// order matched 1 of 47 real rule sets — the one whose source order already
+// happened to be sorted.
+func TestRuleSetIDIgnoresOrder(t *testing.T) {
+	rs := CompileDoctrine(DefaultDoctrine())
+	before := RuleSetID(rs)
+
+	shuffled := append([]*Rule(nil), rs...)
+	for i := range shuffled {
+		j := (i * 7) % len(shuffled)
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	}
+	if after := RuleSetID(shuffled); after != before {
+		t.Errorf("reordering changed the fingerprint: %s then %s", before, after)
+	}
+
+	sorted, err := compileRules(append([]*Rule(nil), rs...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after := RuleSetID(sorted); after != before {
+		t.Errorf("the engine's own sort changed the fingerprint: %s then %s", before, after)
+	}
+}
+
+func TestRuleSetIDIsStable(t *testing.T) {
+	d := DefaultDoctrine()
+	a, b := RuleSetID(CompileDoctrine(d)), RuleSetID(CompileDoctrine(d))
+	if a != b {
+		t.Errorf("same doctrine gave %q then %q", a, b)
+	}
+	d.GroundAttackGroupSize += 2
+	if c := RuleSetID(CompileDoctrine(d)); c == a {
+		t.Errorf("changing a threshold did not change the fingerprint")
+	}
+}
+
+// A projection key is built from the literal text in a condition, while vimyc
+// has parsed the same literal into a float. `0.10` and `0.1` are one threshold
+// and must key the same, or vimyc looks up a key that is not there, reads the
+// zero default, and disagrees.
+func TestProjectionKeysNormaliseNumbers(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"0.10", "0.1"},
+		{"0.1", "0.1"},
+		{"0.38", "0.38"},
+		{"2.50", "2.5"},
+		{"1.0", "1"},
+		{"8", "8"},
+		{"ground-attack", "ground-attack"},
+		{"war_factory", "war-factory"},
+	} {
+		if got := normaliseLiteral(c.in); got != c.want {
+			t.Errorf("normaliseLiteral(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
 }
