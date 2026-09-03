@@ -62,4 +62,23 @@ var ActionRegistry = map[string]ActionFunc{
 	"lay-mines":                   ActionLayMines,
 	"produce-flame-tower":         ActionProduceFlameTower,
 	"produce-tesla-coil":          ActionProduceTeslaCoil,
+
+	// Used by compiled rules but absent until the vimyc port needed to name
+	// them. Nothing reads this map yet, which is how they went unnoticed.
+	"cancel-stuck-aircraft":      ActionCancelStuckAircraft,
+	"defend-critical-building":   ActionDefendCriticalBuilding,
+	"deliver-assault-apc":        ActionDeliverAssaultAPC,
+	"load-combat-infantry":       ActionLoadCombatInfantry,
+	"load-engineer-into-apc":     ActionLoadEngineerIntoAPC,
+	"naval-defend-base":          ActionNavalDefendBase,
+	"produce-apc":                ActionProduceAPC,
+	"produce-basic-aircraft":     ActionProduceBasicAircraft,
+	"produce-flak-truck":         ActionProduceFlakTruck,
+	"produce-gap-generator":      ActionProduceGapGenerator,
+	"produce-gunboat":            ActionProduceGunboat,
+	"produce-scout-vehicle":      ActionProduceScoutVehicle,
+	"produce-siege-vehicle":      ActionProduceSiegeVehicle,
+	"scout-patrol":               ActionScoutPatrol,
+	"unblock-war-factory-egress": ActionUnblockWarFactoryEgress,
+	"unload-apc-near-target":     ActionUnloadAPCNearTarget,
 }
