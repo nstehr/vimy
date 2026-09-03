@@ -27,14 +27,14 @@ func TestCompileDoctrineBalanced(t *testing.T) {
 
 	// Check core rules are present
 	coreNames := map[string]bool{
-		"deploy-mcv":               false,
-		"place-ready-building":     false,
-		"place-ready-defense":      false,
-		"cancel-stuck-aircraft":    false,
-		"scramble-base-defense":    false,
-		"scramble-naval-defense":   false,
-		"repair-buildings":         false,
-		"return-idle-harvesters":   false,
+		"deploy-mcv":             false,
+		"place-ready-building":   false,
+		"place-ready-defense":    false,
+		"cancel-stuck-aircraft":  false,
+		"scramble-base-defense":  false,
+		"scramble-naval-defense": false,
+		"repair-buildings":       false,
+		"return-idle-harvesters": false,
 	}
 	for _, r := range rules {
 		if _, ok := coreNames[r.Name]; ok {
@@ -1382,11 +1382,11 @@ func TestSiegeVehiclePriorityWhenPreferred(t *testing.T) {
 
 func TestExtraHarvesterPriorityAndCashGate(t *testing.T) {
 	d := DefaultDoctrine()
-	d.EconomyPriority = 0.7     // > DoctrineDominant so rule compiles
-	d.CapturePriority = 0.8     // produce-apc + savings active
-	d.TransportAssault = 0.8    // produce-assault-apc active
-	d.VehicleWeight = 0.45      // produce-vehicle active
-	d.AirDefensePriority = 0.5  // produce-flak-truck active
+	d.EconomyPriority = 0.7    // > DoctrineDominant so rule compiles
+	d.CapturePriority = 0.8    // produce-apc + savings active
+	d.TransportAssault = 0.8   // produce-assault-apc active
+	d.VehicleWeight = 0.45     // produce-vehicle active
+	d.AirDefensePriority = 0.5 // produce-flak-truck active
 
 	byName := compileToMap(d)
 	harv := byName["produce-extra-harvester"]
@@ -2008,7 +2008,7 @@ func TestDoctrineConvergence(t *testing.T) {
 			Name: "Specialist Force", EconomyPriority: 0.5, Aggression: 0.6,
 			InfantryWeight: 0.5, VehicleWeight: 0.5, TechPriority: 0.5,
 			SpecializedInfantryWeight: 0.7,
-			GroundDefensePriority: 0.3, AirDefensePriority: 0.3,
+			GroundDefensePriority:     0.3, AirDefensePriority: 0.3,
 			ScoutPriority: 0.5, GroundAttackGroupSize: 6, AirAttackGroupSize: 2, NavalAttackGroupSize: 3,
 			PreferredInfantry: []string{"flamethrower", "shock_trooper"},
 		},

@@ -12,11 +12,18 @@ type ActionFunc func(env RuleEnv, conn *ipc.Connection) error
 // The engine evaluates rules by priority and uses Category + Exclusive
 // to prevent conflicting actions on the same production queue.
 type Rule struct {
-	Name         string       // human-readable identifier
-	Priority     int          // higher = evaluated first
-	Category     string       // grouping for exclusive semantics
-	Exclusive    bool         // if true, blocks lower-priority rules in same category
-	ConditionSrc string       // expr source (preserved for serialization)
-	program      *vm.Program  // compiled bytecode
+	Name         string      // human-readable identifier
+	Priority     int         // higher = evaluated first
+	Category     string      // grouping for exclusive semantics
+	Exclusive    bool        // if true, blocks lower-priority rules in same category
+	ConditionSrc string      // expr source (preserved for serialization)
+	program      *vm.Program // compiled bytecode
 	Action       ActionFunc
+	// How vimyc spells this action, for actions built by a factory. Empty for
+	// the rest, which are named by their ActionRegistry id.
+	//
+	// Needed because a closure cannot be identified at runtime: every
+	// `FormSquad(...)` shares one code pointer, so the arguments it captured
+	// are unrecoverable once it is built.
+	ActionSrc string
 }

@@ -92,10 +92,10 @@ func (c *doctrineCompiler) addCoreRules() {
 	})
 
 	c.rules = append(c.rules, &Rule{
-		Name:         "load-engineer-into-apc",
-		Priority:     845,
-		Category:     "capture",
-		Exclusive:    false,
+		Name:      "load-engineer-into-apc",
+		Priority:  845,
+		Category:  "capture",
+		Exclusive: false,
 		// Don't re-load an engineer that's already within capture range of a
 		// target — otherwise capture-building (priority 850) loses the race
 		// to this rule (priority 845) on the tick after unload.
@@ -186,10 +186,10 @@ func (c *doctrineCompiler) addCoreRules() {
 		// monopolize the Vehicle queue and starve APC production.
 		assaultAPCPri := lerp(475, 490, c.d.TransportAssault)
 		c.rules = append(c.rules, &Rule{
-			Name:         "produce-assault-apc",
-			Priority:     assaultAPCPri,
-			Category:     CatProduceVehicle,
-			Exclusive:    true,
+			Name:      "produce-assault-apc",
+			Priority:  assaultAPCPri,
+			Category:  CatProduceVehicle,
+			Exclusive: true,
 			ConditionSrc: fmt.Sprintf(`HasRole("war_factory") && !QueueBusy("Vehicle") && CanBuildTransport() && TransportCount() < %d && %s`,
 				assaultAPCCap, buildCashCondition(800, c.savings)),
 			Action: ActionProduceAPC,
@@ -366,10 +366,10 @@ func (c *doctrineCompiler) addCoreRules() {
 	// squad members, unassigned units, and any other idle stragglers that
 	// would otherwise sit at the base while it's being destroyed.
 	c.rules = append(c.rules, &Rule{
-		Name:         "scramble-base-defense",
-		Priority:     350,
-		Category:     "combat",
-		Exclusive:    false,
+		Name:      "scramble-base-defense",
+		Priority:  350,
+		Category:  "combat",
+		Exclusive: false,
 		// Condition uses UnassignedIdleGround so we don't fire when only
 		// squad members are idle (the action wouldn't do anything anyway
 		// after the poaching fix). Emergency-base-defense remains as the

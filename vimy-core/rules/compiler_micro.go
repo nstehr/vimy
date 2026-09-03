@@ -20,6 +20,7 @@ func (c *doctrineCompiler) addMicroRules() {
 		Exclusive:    false,
 		ConditionSrc: fmt.Sprintf(`len(DamagedCombatUnits(%.2f)) > 0`, retreatThreshold),
 		Action:       RetreatDamagedUnits(retreatThreshold),
+		ActionSrc:    actionSrc("retreat-damaged-units", retreatThreshold),
 	})
 
 	// Clear healed units from retreating set — runs every tick so healed
@@ -31,6 +32,7 @@ func (c *doctrineCompiler) addMicroRules() {
 		Exclusive:    false,
 		ConditionSrc: "HasRetreatingUnits()",
 		Action:       ClearHealedUnits(retreatThreshold),
+		ActionSrc:    actionSrc("clear-healed-units", retreatThreshold),
 	})
 
 	// Chase leash — recall overextended squad members that wandered off after kills.
@@ -44,6 +46,7 @@ func (c *doctrineCompiler) addMicroRules() {
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`SquadExists("%s") && len(OverextendedSquadMembers("%s", %.2f)) > 0`, squadName, squadName, leashPct),
 			Action:       RecallOverextended(squadName, leashPct),
+			ActionSrc:    actionSrc("recall-overextended", squadName, leashPct),
 		})
 	}
 
@@ -61,6 +64,7 @@ func (c *doctrineCompiler) addMicroRules() {
 				Exclusive:    false,
 				ConditionSrc: fmt.Sprintf(`SquadExists("%s") && SquadAwayFromBase("%s", %.2f) && SquadThreatRatio("%s", %.2f) > %.2f`, squadName, squadName, checkRadius, squadName, checkRadius, threatThreshold),
 				Action:       SquadDisengage(squadName),
+				ActionSrc:    actionSrc("squad-disengage", squadName),
 			})
 		}
 	}
@@ -74,6 +78,7 @@ func (c *doctrineCompiler) addMicroRules() {
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && BestGroundTarget() != nil`, c.activationThreshold),
 			Action:       SquadFocusFire("ground-attack"),
+			ActionSrc:    actionSrc("squad-focus-fire", "ground-attack"),
 		})
 	}
 
@@ -88,6 +93,7 @@ func (c *doctrineCompiler) addMicroRules() {
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`EnemiesVisible() && len(HarvestersInDanger(%.2f)) > 0`, dangerPct),
 			Action:       FleeHarvesters(dangerPct),
+			ActionSrc:    actionSrc("flee-harvesters", dangerPct),
 		})
 	}
 

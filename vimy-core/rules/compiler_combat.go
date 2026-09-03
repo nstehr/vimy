@@ -38,6 +38,7 @@ func (c *doctrineCompiler) addCombatRules() {
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`((!SquadExists("ground-defense") && len(UnassignedIdleGround()) >= %d) || (SquadNeedsReinforcement("ground-defense") && len(UnassignedIdleGround()) >= 1)) && (BaseUnderAttack() || len(UnassignedIdleGround()) >= %d)`, defenseSize, surplusThreshold),
 			Action:       FormSquad("ground-defense", "ground", defenseSize, "defend"),
+			ActionSrc:    actionSrc("form-squad", "ground-defense", "ground", defenseSize, "defend"),
 		})
 
 		c.rules = append(c.rules, &Rule{
@@ -47,6 +48,7 @@ func (c *doctrineCompiler) addCombatRules() {
 			Exclusive:    false,
 			ConditionSrc: `SquadExists("ground-defense") && SquadIdleCount("ground-defense") > 0 && BaseUnderAttack()`,
 			Action:       SquadDefend("ground-defense"),
+			ActionSrc:    actionSrc("squad-defend", "ground-defense"),
 		})
 	} else {
 		// Low defense: no reserved squad, just scramble all idle ground units.
@@ -103,6 +105,7 @@ func (c *doctrineCompiler) addCombatRules() {
 		Exclusive:    false,
 		ConditionSrc: fmt.Sprintf(`(!SquadExists("ground-attack") && len(UnassignedIdleGround()) >= %d) || (SquadNeedsReinforcement("ground-attack") && len(UnassignedIdleGround()) >= 1)`, formGroundAttackThreshold),
 		Action:       FormSquad("ground-attack", "ground", c.d.GroundAttackGroupSize, "attack"),
+		ActionSrc:    actionSrc("form-squad", "ground-attack", "ground", c.d.GroundAttackGroupSize, "attack"),
 	})
 
 	// Ground-attack action choice: squad-attack (chase visible enemy) and
@@ -142,6 +145,7 @@ func (c *doctrineCompiler) addCombatRules() {
 		Exclusive:    true,
 		ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && (BestGroundTarget() != nil || NearestEnemy() != nil)%s`, c.activationThreshold, baseDefenseFloorClause),
 		Action:       SquadAttackMove("ground-attack"),
+		ActionSrc:    actionSrc("squad-attack-move", "ground-attack"),
 	})
 
 	// Re-engage idle squad members already in the field — no ratio gate,
@@ -155,6 +159,7 @@ func (c *doctrineCompiler) addCombatRules() {
 		Exclusive:    false,
 		ConditionSrc: `SquadExists("ground-attack") && SquadIdleCount("ground-attack") > 0 && (BestGroundTarget() != nil || NearestEnemy() != nil)`,
 		Action:       SquadAttackMove("ground-attack"),
+		ActionSrc:    actionSrc("squad-attack-move", "ground-attack"),
 	})
 
 	c.rules = append(c.rules, &Rule{
@@ -164,6 +169,7 @@ func (c *doctrineCompiler) addCombatRules() {
 		Exclusive:    true,
 		ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && HasEnemyIntel()%s`, c.activationThreshold, baseDefenseFloorClause),
 		Action:       SquadAttackKnownBase("ground-attack", c.d.Aggression),
+		ActionSrc:    actionSrc("squad-attack-known-base", "ground-attack", c.d.Aggression),
 	})
 
 	// --- Air attack ---
@@ -183,6 +189,7 @@ func (c *doctrineCompiler) addCombatRules() {
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`(!SquadExists("air-attack") && len(UnassignedIdleAir()) >= %d) || (SquadNeedsReinforcement("air-attack") && len(UnassignedIdleAir()) >= 1)`, airFormThreshold),
 			Action:       FormSquad("air-attack", "air", c.d.AirAttackGroupSize, "attack"),
+			ActionSrc:    actionSrc("form-squad", "air-attack", "air", c.d.AirAttackGroupSize, "attack"),
 		})
 
 		c.rules = append(c.rules, &Rule{
@@ -192,6 +199,7 @@ func (c *doctrineCompiler) addCombatRules() {
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`SquadExists("air-attack") && SquadReadyRatio("air-attack") >= %.2f && BestAirTarget() != nil`, c.activationThreshold),
 			Action:       SquadAirStrike("air-attack"),
+			ActionSrc:    actionSrc("squad-air-strike", "air-attack"),
 		})
 
 		c.rules = append(c.rules, &Rule{
@@ -201,6 +209,7 @@ func (c *doctrineCompiler) addCombatRules() {
 			Exclusive:    false,
 			ConditionSrc: `SquadExists("air-attack") && SquadIdleCount("air-attack") > 0 && BestAirTarget() != nil`,
 			Action:       SquadAirStrike("air-attack"),
+			ActionSrc:    actionSrc("squad-air-strike", "air-attack"),
 		})
 
 		c.rules = append(c.rules, &Rule{
@@ -210,6 +219,7 @@ func (c *doctrineCompiler) addCombatRules() {
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`SquadExists("air-attack") && SquadReadyRatio("air-attack") >= %.2f && !EnemiesVisible() && HasEnemyIntel()`, c.activationThreshold),
 			Action:       SquadAttackKnownBase("air-attack", c.d.Aggression),
+			ActionSrc:    actionSrc("squad-attack-known-base", "air-attack", c.d.Aggression),
 		})
 	}
 
@@ -230,6 +240,7 @@ func (c *doctrineCompiler) addCombatRules() {
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`MapHasWater() && ((!SquadExists("naval-attack") && len(UnassignedIdleNaval()) >= %d) || (SquadNeedsReinforcement("naval-attack") && len(UnassignedIdleNaval()) >= 1))`, navalFormThreshold),
 			Action:       FormSquad("naval-attack", "naval", c.d.NavalAttackGroupSize, "attack"),
+			ActionSrc:    actionSrc("form-squad", "naval-attack", "naval", c.d.NavalAttackGroupSize, "attack"),
 		})
 
 		c.rules = append(c.rules, &Rule{
@@ -239,6 +250,7 @@ func (c *doctrineCompiler) addCombatRules() {
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`MapHasWater() && SquadExists("naval-attack") && SquadReadyRatio("naval-attack") >= %.2f && NearestEnemy() != nil`, c.activationThreshold),
 			Action:       SquadAttackMove("naval-attack"),
+			ActionSrc:    actionSrc("squad-attack-move", "naval-attack"),
 		})
 
 		c.rules = append(c.rules, &Rule{
@@ -248,6 +260,7 @@ func (c *doctrineCompiler) addCombatRules() {
 			Exclusive:    false,
 			ConditionSrc: `MapHasWater() && SquadExists("naval-attack") && SquadIdleCount("naval-attack") > 0 && NearestEnemy() != nil`,
 			Action:       SquadAttackMove("naval-attack"),
+			ActionSrc:    actionSrc("squad-attack-move", "naval-attack"),
 		})
 
 		// Fallback: attack last-known enemy base when fog hides all enemies.
@@ -258,6 +271,7 @@ func (c *doctrineCompiler) addCombatRules() {
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`MapHasWater() && SquadExists("naval-attack") && SquadReadyRatio("naval-attack") >= %.2f && !EnemiesVisible() && HasEnemyIntel()`, c.activationThreshold),
 			Action:       SquadAttackKnownBase("naval-attack", c.d.Aggression),
+			ActionSrc:    actionSrc("squad-attack-known-base", "naval-attack", c.d.Aggression),
 		})
 	}
 

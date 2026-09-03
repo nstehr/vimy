@@ -341,9 +341,9 @@ func (c *doctrineCompiler) addBuildingRules() {
 	if c.d.AirWeight > DoctrineEnabled {
 		airCap := lerp(2, 8, c.d.AirWeight)
 		c.rules = append(c.rules, &Rule{
-			Name:     "build-extra-airfield",
-			Priority: 480,
-			Category: "economy",
+			Name:      "build-extra-airfield",
+			Priority:  480,
+			Category:  "economy",
 			Exclusive: true,
 			// AircraftCapacity < doctrinal cap: still need more pads.
 			// CombatAircraftCount >= AircraftCapacity - 1: existing pads are
