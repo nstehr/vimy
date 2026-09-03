@@ -37,6 +37,8 @@ type Engine struct {
 	// Per-rule firing counters for the current doctrine window. Reset by
 	// FlushFiringStats when a doctrine swap occurs or the game ends.
 	// Only populated when traceFirings is true.
+	exporter *StateExporter
+
 	statsMu      sync.Mutex
 	traceFirings bool
 	fireCounts   map[string]int
@@ -65,6 +67,21 @@ func NewEngine(rules []*Rule) (*Engine, error) {
 		firstTick:  make(map[string]int),
 		lastTick:   make(map[string]int),
 	}, nil
+}
+
+// SetExporter attaches a recorder for vimyc's differential corpus. Nil disables
+// it, which is the default — projecting costs roughly 60x what evaluating does.
+func (e *Engine) SetExporter(x *StateExporter) {
+	e.mu.Lock()
+	e.exporter = x
+	e.mu.Unlock()
+}
+
+// Exporter returns the attached recorder, or nil.
+func (e *Engine) Exporter() *StateExporter {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.exporter
 }
 
 // SetTraceFirings enables or disables per-rule firing instrumentation.
@@ -154,6 +171,7 @@ func (e *Engine) RuleNames() []string {
 func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connection) error {
 	e.mu.RLock()
 	rules := e.rules
+	exporter := e.exporter
 	e.mu.RUnlock()
 
 	e.memMu.Lock()
@@ -171,9 +189,16 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	logCashFlow(env)
 	fired := make(map[string]bool) // category → exclusive rule already fired
 
+	// Projected once per evaluation, before any action has run. A live shadow
+	// harness would want it per rule, since actions mutate Memory as the loop
+	// goes — but that costs a projection per rule, and this is a sampled
+	// recorder rather than a live comparison.
+	stateIdx := exporter.begin(env, rules)
+
 	anyFired := false
 	for _, r := range rules {
 		if fired[r.Category] {
+			exporter.record(stateIdx, gs.Tick, r.Name, false, true)
 			continue
 		}
 
@@ -184,6 +209,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 		}
 
 		match, ok := result.(bool)
+		exporter.record(stateIdx, gs.Tick, r.Name, ok && match, false)
 		if !ok || !match {
 			continue
 		}

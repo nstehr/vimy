@@ -110,6 +110,13 @@ func (a *Agent) HandleGameEnd(env ipc.Envelope) (*ipc.Envelope, error) {
 		}
 	}
 
+	// Written before Reset: the exporter accumulates in memory, and a game that
+	// ends without flushing leaves nothing behind. A failure here must not stop
+	// the game ending, so it is logged rather than returned.
+	if err := a.Engine.Exporter().Flush(); err != nil {
+		slog.Error("failed to export rule evaluations", "error", err)
+	}
+
 	a.Engine.Reset()
 
 	ack, err := ipc.NewEnvelope(ipc.TypeAck, ipc.AckMessage{Status: "ok"})

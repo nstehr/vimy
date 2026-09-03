@@ -28,15 +28,23 @@ const banner = `
 Doctrine-Driven RTS Intelligence`
 
 var (
-	directive   string
-	addr        string
-	traceRules  bool
+	directive    string
+	addr         string
+	traceRules   bool
+	exportStates bool
+	exportDir    string
+	exportEvery  int
+	exportMax    int
 )
 
 func main() {
 	flag.StringVar(&directive, "doctrine", "", "initial doctrine directive (e.g. \"Blitzkrieg\", \"guerrilla warfare\")")
 	flag.StringVar(&addr, "addr", ":8080", "HTTP dashboard listen address")
 	flag.BoolVar(&traceRules, "trace-rules", false, "record per-rule firing counters per doctrine window; archives rule_firings rows on game end and exposes live counters to the dashboard")
+	flag.BoolVar(&exportStates, "export-states", false, "record sampled rule evaluations for vimyc's differential corpus, one file per game under -export-dir")
+	flag.StringVar(&exportDir, "export-dir", "", "where -export-states writes; defaults to ~/.vimy/exports, alongside the database")
+	flag.IntVar(&exportEvery, "export-every", 5, "with -export-states, record one evaluation in this many")
+	flag.IntVar(&exportMax, "export-max", 20000, "with -export-states, stop after this many recorded cases")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
@@ -59,6 +67,25 @@ func main() {
 
 	if traceRules {
 		engine.SetTraceFirings(true)
+	}
+
+	// Off by default: projecting a state costs roughly 60x what evaluating the
+	// rules does, so this samples and is opt-in. See rules/export.go.
+	if exportStates {
+		exporter, err := rules.NewStateExporter(exportDir, exportEvery, exportMax)
+		if err != nil {
+			slog.Error("cannot set up the state exporter", "error", err)
+			os.Exit(1)
+		}
+		// Checked now rather than at game end: a bad location discovered after
+		// the game loses the recording it was meant to save.
+		if err := exporter.Writable(); err != nil {
+			slog.Error("cannot write to the export directory", "error", err)
+			os.Exit(1)
+		}
+		engine.SetExporter(exporter)
+		slog.Info("recording rule evaluations",
+			"dir", exporter.Dir(), "every", exportEvery, "max", exportMax)
 	}
 
 	var strategist *agent.Strategist
