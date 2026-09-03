@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"math/rand"
 	"os"
+	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -24,36 +26,31 @@ import (
 //
 // Not part of the normal suite: it writes files and only exists to feed vimyc.
 
-// vimycState mirrors vimyc's `State`. Field names and spellings must match
-// exactly — vimyc deserializes with deny_unknown_fields, so a rename here is a
-// loud failure there rather than a silent default.
+// vimycState mirrors vimyc's `State`. Keyed by predicate rather than by field,
+// so adding a predicate to the manifest needs no change here — see
+// vimyc/src/state.rs.
 type vimycState struct {
-	Cash            int                `json:"cash"`
-	PowerExcess     int                `json:"power_excess"`
-	BaseUnderAttack bool               `json:"base_under_attack"`
-	EnemiesVisible  bool               `json:"enemies_visible"`
-	HasEnemyIntel   bool               `json:"has_enemy_intel"`
-	NearestEnemy    bool               `json:"nearest_enemy"`
-	Units           map[string]int     `json:"units"`
-	Buildings       map[string]int     `json:"buildings"`
-	Roles           []string           `json:"roles"`
-	BuildableRoles  []string           `json:"buildable_roles"`
-	QueuesBusy      []string           `json:"queues_busy"`
-	QueuesReady     []string           `json:"queues_ready"`
-	CanBuild        []string           `json:"can_build"`
-	Collections     map[string]int     `json:"collections"`
-	SquadReady      map[string]float64 `json:"squad_ready"`
+	Scalars     map[string]float64 `json:"scalars"`
+	Flags       []string           `json:"flags"`
+	Collections map[string]int     `json:"collections"`
+	Present     []string           `json:"present"`
+	CallsBool   []string           `json:"calls_bool"`
+	CallsInt    map[string]int     `json:"calls_int"`
+	CallsFloat  map[string]float64 `json:"calls_float"`
+	TypeCounts  map[string]int     `json:"type_counts"`
 }
 
-// One rule's evaluation, with the state as it stood at that moment.
-//
-// Per rule rather than per tick because Go's loop is stateful within a tick:
-// actions mutate Memory and later rules read it. Projecting once per tick would
-// make every squad rule disagree for a reason that is not a bug. See
-// vimyc/docs/design.md, "Evaluation semantics".
+// States are stored once and referenced by index: only 400 are distinct, and
+// inlining each into all thirteen of its cases made the file 21MB instead of
+// under two.
+type differentialCorpus struct {
+	States []vimycState       `json:"states"`
+	Cases  []differentialCase `json:"cases"`
+}
+
 type differentialCase struct {
-	Rule  string     `json:"rule"`
-	State vimycState `json:"state"`
+	Rule  string `json:"rule"`
+	State int    `json:"state"`
 	Fired bool       `json:"fired"`
 	// Blocked by an exclusive rule in the same category. Go skips these without
 	// evaluating, so `fired` is false by definition — but the state is recorded
@@ -62,84 +59,150 @@ type differentialCase struct {
 	Skipped bool `json:"skipped"`
 }
 
-// The vocabulary vimyc knows. Anything outside this is invisible to it, so
-// projecting it would only produce disagreements that are not bugs.
+// The argument values worth projecting, per domain. A predicate taking a role is
+// projected once per role, and so on — the state records answers, so every
+// argument a rule might use has to be asked in advance.
 var (
 	dumpQueues    = []string{"Building", "Defense", "Vehicle", "Infantry", "Ship", "Aircraft"}
 	dumpBuildings = []string{"fact", "powr", "proc", "weap"}
+	dumpUnits     = []string{"e1", "mcv"}
+	dumpSquads    = []string{"ground-attack", "ground-defense", "air-attack", "naval-attack"}
+	dumpAxes      = []string{"air", "infantry", "naval", "vehicle"}
+	dumpPowers    = []string{"GrantExternalConditionPowerInfoOrder", "NukePowerInfoOrder",
+		"SovietParatroopers", "SovietSpyPlane", "UkraineParabombs"}
+	// Every float argument any rule passes. Projecting arbitrary floats is
+	// impossible, so this is the closed set the compiler actually emits.
+	dumpFloats = []float64{0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 1.0, 1.5, 2.0}
+
 	// Actor types the generator may place. Wider than dumpBuildings on purpose:
 	// `barr` is what gives the `barracks` role, without which produce-infantry
 	// can never fire and the corpus never exercises it.
 	spawnBuildings = []string{"fact", "powr", "proc", "weap", "barr"}
-	dumpUnits     = []string{"e1", "mcv"}
-	dumpSquads    = []string{"ground-attack", "ground-defense", "air-attack", "naval-attack"}
-	dumpColls     = []string{"idle-ground-units", "idle-harvesters", "damaged-buildings"}
 )
 
-// kebab converts Go's snake role names to the language's spelling.
 func kebab(s string) string { return strings.ReplaceAll(s, "_", "-") }
 
+func callKey(name string, args ...string) string {
+	if len(args) == 0 {
+		return name
+	}
+	return name + "(" + strings.Join(args, ",") + ")"
+}
+
+func fmtFloat(f float64) string {
+	return strconv.FormatFloat(f, 'g', -1, 64)
+}
+
+// project asks the env every question a rule could ask, and writes the answers
+// down. Driven by reflection over the manifest's shape rather than by a
+// hand-written line per predicate, so a new predicate needs no change here.
 func project(env RuleEnv) vimycState {
 	s := vimycState{
-		Cash:            env.Cash(),
-		PowerExcess:     env.PowerExcess(),
-		BaseUnderAttack: env.BaseUnderAttack(),
-		EnemiesVisible:  env.EnemiesVisible(),
-		HasEnemyIntel:   env.HasEnemyIntel(),
-		NearestEnemy:    env.NearestEnemy() != nil,
-		Units:           map[string]int{},
-		Buildings:       map[string]int{},
-		Collections:     map[string]int{},
-		SquadReady:      map[string]float64{},
-		Roles:           []string{},
-		BuildableRoles:  []string{},
-		QueuesBusy:      []string{},
-		QueuesReady:     []string{},
-		CanBuild:        []string{},
+		Scalars: map[string]float64{}, Collections: map[string]int{},
+		CallsInt: map[string]int{}, CallsFloat: map[string]float64{},
+		TypeCounts: map[string]int{},
+		Flags:      []string{}, Present: []string{}, CallsBool: []string{},
 	}
 
-	for _, t := range dumpUnits {
-		s.Units[t] = env.UnitCount(t)
-	}
-	for _, t := range dumpBuildings {
-		s.Buildings[t] = env.BuildingCount(t)
-	}
+	rv := reflect.ValueOf(env)
+	// The argument values rules actually pass, per method and position. Asking
+	// every value in a domain instead would be millions of calls per corpus —
+	// 52 roles times 10 thresholds times 5200 projections — and would answer
+	// questions nothing asks. The state records answers, so the right set is
+	// exactly the set of questions.
+	lits, used := argLiterals()
 
-	var names []string
-	for name := range roles {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		if env.HasRole(name) {
-			s.Roles = append(s.Roles, kebab(name))
+	for i := 0; i < rv.NumMethod(); i++ {
+		mt := rv.Type().Method(i)
+		if !used[mt.Name] {
+			continue
 		}
-		if env.CanBuildRole(name) {
-			s.BuildableRoles = append(s.BuildableRoles, kebab(name))
-		}
-	}
+		ft := mt.Type
+		nIn := ft.NumIn() - 1
 
-	for _, q := range dumpQueues {
-		if env.QueueBusy(q) {
-			s.QueuesBusy = append(s.QueuesBusy, q)
+		var combos [][]string
+		var build func(int, []string)
+		build = func(p int, acc []string) {
+			if p == nIn {
+				combos = append(combos, append([]string{}, acc...))
+				return
+			}
+			seen, ok := lits[mt.Name]
+			if !ok || p >= len(seen) || len(seen[p]) == 0 {
+				return // no rule passes anything here, so nothing to record
+			}
+			var vals []string
+			for v := range seen[p] {
+				vals = append(vals, v)
+			}
+			sort.Strings(vals)
+			for _, v := range vals {
+				build(p+1, append(acc, v))
+			}
 		}
-		if env.QueueReady(q) {
-			s.QueuesReady = append(s.QueuesReady, q)
-		}
-		for _, item := range append(append([]string{}, dumpBuildings...), dumpUnits...) {
-			if env.CanBuild(q, item) {
-				s.CanBuild = append(s.CanBuild, q+"/"+item)
+		build(0, nil)
+
+		for _, combo := range combos {
+			in := make([]reflect.Value, nIn)
+			for k, a := range combo {
+				if ft.In(k+1).String() == "float64" {
+					f, _ := strconv.ParseFloat(a, 64)
+					in[k] = reflect.ValueOf(f)
+				} else {
+					in[k] = reflect.ValueOf(a)
+				}
+			}
+			out := rv.Method(i).Call(in)[0]
+
+			// Roles are snake on this side, kebab in the language.
+			wire := make([]string, len(combo))
+			for k, a := range combo {
+				wire[k] = kebab(a)
+			}
+			key := callKey(goKebab(mt.Name), wire...)
+
+			switch out.Kind() {
+			case reflect.Bool:
+				if out.Bool() {
+					if nIn == 0 {
+						s.Flags = append(s.Flags, key)
+					} else {
+						s.CallsBool = append(s.CallsBool, key)
+					}
+				}
+			case reflect.Int:
+				if nIn == 0 {
+					s.Scalars[key] = float64(out.Int())
+				} else {
+					s.CallsInt[key] = int(out.Int())
+				}
+			case reflect.Float64:
+				if nIn == 0 {
+					s.Scalars[key] = out.Float()
+				} else {
+					s.CallsFloat[key] = out.Float()
+				}
+			case reflect.Slice:
+				s.Collections[key] = out.Len()
+			case reflect.Ptr:
+				if !out.IsNil() {
+					s.Present = append(s.Present, key)
+				}
 			}
 		}
 	}
 
-	s.Collections["idle-ground-units"] = len(env.IdleGroundUnits())
-	s.Collections["idle-harvesters"] = len(env.IdleHarvesters())
-	s.Collections["damaged-buildings"] = len(env.DamagedBuildings())
-
-	for _, name := range dumpSquads {
-		s.SquadReady[name] = env.SquadReadyRatio(name)
+	// `count(e1)` names a type rather than calling a predicate.
+	for _, t := range dumpBuildings {
+		s.TypeCounts[t] = env.BuildingCount(t)
 	}
+	for _, t := range dumpUnits {
+		s.TypeCounts[t] = env.UnitCount(t)
+	}
+
+	sort.Strings(s.Flags)
+	sort.Strings(s.Present)
+	sort.Strings(s.CallsBool)
 	return s
 }
 
@@ -235,7 +298,7 @@ func TestDumpDifferential(t *testing.T) {
 	}
 
 	rng := rand.New(rand.NewSource(20260902))
-	var cases []differentialCase
+	var corpus differentialCorpus
 
 	for i := 0; i < 400; i++ {
 		gs := generateState(rng)
@@ -260,14 +323,21 @@ func TestDumpDifferential(t *testing.T) {
 		updateSquads(env)
 		designateScout(env)
 
+		// Projected once, not once per rule. The record stays per rule because
+		// that is what a live shadow harness needs, but no action runs here so
+		// Memory does not change between rules and all thirteen snapshots would
+		// be identical. Recomputing them costs 13x for nothing.
+		stateIdx := len(corpus.States)
+		corpus.States = append(corpus.States, project(env))
+
 		// Mirrors Evaluate's loop, including the exclusivity skip.
 		firedCategories := map[string]bool{}
 		for _, r := range rules {
-			c := differentialCase{Rule: r.Name, State: project(env)}
+			c := differentialCase{Rule: r.Name, State: stateIdx}
 
 			if firedCategories[r.Category] {
 				c.Skipped = true
-				cases = append(cases, c)
+				corpus.Cases = append(corpus.Cases, c)
 				continue
 			}
 
@@ -280,7 +350,7 @@ func TestDumpDifferential(t *testing.T) {
 				t.Fatalf("rule %q did not return a bool", r.Name)
 			}
 			c.Fired = b
-			cases = append(cases, c)
+			corpus.Cases = append(corpus.Cases, c)
 
 			// Actions are not run, which is the point: this answers which
 			// rules fire, and therefore which actions *would* run. Executing
@@ -299,28 +369,23 @@ func TestDumpDifferential(t *testing.T) {
 
 	}
 
-	var lines []string
-	for _, c := range cases {
-		b, err := json.Marshal(c)
-		if err != nil {
-			t.Fatal(err)
-		}
-		lines = append(lines, string(b))
+	b, err := json.Marshal(corpus)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	path := out + "/differential.jsonl"
-	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+	path := out + "/differential.json"
+	if err := os.WriteFile(path, append(b, '\n'), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	fired, skipped := 0, 0
-	for _, c := range cases {
+	for _, c := range corpus.Cases {
 		if c.Skipped {
 			skipped++
 		} else if c.Fired {
 			fired++
 		}
 	}
-	t.Logf("wrote %d cases to %s (%d fired, %d skipped, %d rules)",
-		len(cases), path, fired, skipped, len(rules))
+	t.Logf("wrote %d states and %d cases to %s (%d fired, %d skipped, %d rules)",
+		len(corpus.States), len(corpus.Cases), path, fired, skipped, len(rules))
 }
