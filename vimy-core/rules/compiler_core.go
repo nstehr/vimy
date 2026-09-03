@@ -47,7 +47,7 @@ func (c *doctrineCompiler) addCoreRules() {
 	c.rules = append(c.rules, &Rule{
 		Name:         "cancel-stuck-aircraft",
 		Priority:     891,
-		Category:     "aircraft_maintenance",
+		Category:     "aircraft-maintenance",
 		Exclusive:    true,
 		ConditionSrc: `QueueReady("Aircraft")`,
 		Action:       ActionCancelStuckAircraft,
@@ -60,7 +60,7 @@ func (c *doctrineCompiler) addCoreRules() {
 	c.rules = append(c.rules, &Rule{
 		Name:         "unblock-war-factory-egress",
 		Priority:     892,
-		Category:     "vehicle_maintenance",
+		Category:     "vehicle-maintenance",
 		Exclusive:    true,
 		ConditionSrc: `HasRole("war_factory") && QueueReady("Vehicle")`,
 		Action:       ActionUnblockWarFactoryEgress,
@@ -399,7 +399,7 @@ func (c *doctrineCompiler) addCoreRules() {
 	c.rules = append(c.rules, &Rule{
 		Name:         "emergency-base-defense",
 		Priority:     349,
-		Category:     "emergency_defense",
+		Category:     "emergency-defense",
 		Exclusive:    false,
 		ConditionSrc: `BaseUnderAttack() && len(IdleGroundUnits()) == 0 && len(NearBaseGroundUnits()) > 0`,
 		Action:       ActionEmergencyDefendBase,
@@ -408,7 +408,7 @@ func (c *doctrineCompiler) addCoreRules() {
 	c.rules = append(c.rules, &Rule{
 		Name:         "scramble-naval-defense",
 		Priority:     350,
-		Category:     "naval_combat",
+		Category:     "naval-combat",
 		Exclusive:    false,
 		ConditionSrc: `MapHasWater() && BaseUnderAttack() && len(IdleNavalUnits()) > 0`,
 		Action:       ActionNavalDefendBase,

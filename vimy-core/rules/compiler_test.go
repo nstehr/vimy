@@ -267,7 +267,7 @@ func TestCompileDoctrineReengageRules(t *testing.T) {
 	if ar.Priority != airAttack.Priority-ReengageDiscount {
 		t.Errorf("squad-air-reengage priority = %d, want %d", ar.Priority, airAttack.Priority-ReengageDiscount)
 	}
-	if ar.Category != "air_combat" {
+	if ar.Category != "air-combat" {
 		t.Errorf("squad-air-reengage category = %q, want \"air_combat\"", ar.Category)
 	}
 	if strings.Contains(ar.ConditionSrc, "SquadReadyRatio") {
@@ -286,7 +286,7 @@ func TestCompileDoctrineReengageRules(t *testing.T) {
 	if nr.Priority != navalAttack.Priority-ReengageDiscount {
 		t.Errorf("squad-naval-reengage priority = %d, want %d", nr.Priority, navalAttack.Priority-ReengageDiscount)
 	}
-	if nr.Category != "naval_combat" {
+	if nr.Category != "naval-combat" {
 		t.Errorf("squad-naval-reengage category = %q, want \"naval_combat\"", nr.Category)
 	}
 	if strings.Contains(nr.ConditionSrc, "SquadReadyRatio") {

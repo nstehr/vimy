@@ -34,7 +34,7 @@ func (c *doctrineCompiler) addCombatRules() {
 		c.rules = append(c.rules, &Rule{
 			Name:         "form-defense-squad",
 			Priority:     defendPriority + SquadFormBonus,
-			Category:     "squad_form",
+			Category:     "squad-form",
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`((!SquadExists("ground-defense") && len(UnassignedIdleGround()) >= %d) || (SquadNeedsReinforcement("ground-defense") && len(UnassignedIdleGround()) >= 1)) && (BaseUnderAttack() || len(UnassignedIdleGround()) >= %d)`, defenseSize, surplusThreshold),
 			Action:       FormSquad("ground-defense", "ground", defenseSize, "defend"),
@@ -65,7 +65,7 @@ func (c *doctrineCompiler) addCombatRules() {
 	c.rules = append(c.rules, &Rule{
 		Name:         "defend-base-air",
 		Priority:     airDefendPriority,
-		Category:     "air_combat",
+		Category:     "air-combat",
 		Exclusive:    false,
 		ConditionSrc: `BaseUnderAttack() && len(IdleCombatAircraft()) > 0`,
 		Action:       ActionAirDefendBase,
@@ -99,7 +99,7 @@ func (c *doctrineCompiler) addCombatRules() {
 	c.rules = append(c.rules, &Rule{
 		Name:         "form-ground-attack",
 		Priority:     c.attackPriority + SquadFormBonus,
-		Category:     "squad_form",
+		Category:     "squad-form",
 		Exclusive:    false,
 		ConditionSrc: fmt.Sprintf(`(!SquadExists("ground-attack") && len(UnassignedIdleGround()) >= %d) || (SquadNeedsReinforcement("ground-attack") && len(UnassignedIdleGround()) >= 1)`, formGroundAttackThreshold),
 		Action:       FormSquad("ground-attack", "ground", c.d.GroundAttackGroupSize, "attack"),
@@ -138,7 +138,7 @@ func (c *doctrineCompiler) addCombatRules() {
 	c.rules = append(c.rules, &Rule{
 		Name:         "squad-attack",
 		Priority:     c.attackPriority,
-		Category:     "ground_attack_choice",
+		Category:     "ground-attack-choice",
 		Exclusive:    true,
 		ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && (BestGroundTarget() != nil || NearestEnemy() != nil)%s`, c.activationThreshold, baseDefenseFloorClause),
 		Action:       SquadAttackMove("ground-attack"),
@@ -160,7 +160,7 @@ func (c *doctrineCompiler) addCombatRules() {
 	c.rules = append(c.rules, &Rule{
 		Name:         "squad-attack-known-base",
 		Priority:     knownBasePriority,
-		Category:     "ground_attack_choice",
+		Category:     "ground-attack-choice",
 		Exclusive:    true,
 		ConditionSrc: fmt.Sprintf(`SquadExists("ground-attack") && SquadReadyRatio("ground-attack") >= %.2f && HasEnemyIntel()%s`, c.activationThreshold, baseDefenseFloorClause),
 		Action:       SquadAttackKnownBase("ground-attack", c.d.Aggression),
@@ -179,7 +179,7 @@ func (c *doctrineCompiler) addCombatRules() {
 		c.rules = append(c.rules, &Rule{
 			Name:         "form-air-attack",
 			Priority:     airAttackPriority + SquadFormBonus,
-			Category:     "squad_form",
+			Category:     "squad-form",
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`(!SquadExists("air-attack") && len(UnassignedIdleAir()) >= %d) || (SquadNeedsReinforcement("air-attack") && len(UnassignedIdleAir()) >= 1)`, airFormThreshold),
 			Action:       FormSquad("air-attack", "air", c.d.AirAttackGroupSize, "attack"),
@@ -188,7 +188,7 @@ func (c *doctrineCompiler) addCombatRules() {
 		c.rules = append(c.rules, &Rule{
 			Name:         "squad-air-attack",
 			Priority:     airAttackPriority,
-			Category:     "air_combat",
+			Category:     "air-combat",
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`SquadExists("air-attack") && SquadReadyRatio("air-attack") >= %.2f && BestAirTarget() != nil`, c.activationThreshold),
 			Action:       SquadAirStrike("air-attack"),
@@ -197,7 +197,7 @@ func (c *doctrineCompiler) addCombatRules() {
 		c.rules = append(c.rules, &Rule{
 			Name:         "squad-air-reengage",
 			Priority:     airAttackPriority - ReengageDiscount,
-			Category:     "air_combat",
+			Category:     "air-combat",
 			Exclusive:    false,
 			ConditionSrc: `SquadExists("air-attack") && SquadIdleCount("air-attack") > 0 && BestAirTarget() != nil`,
 			Action:       SquadAirStrike("air-attack"),
@@ -206,7 +206,7 @@ func (c *doctrineCompiler) addCombatRules() {
 		c.rules = append(c.rules, &Rule{
 			Name:         "squad-air-attack-known-base",
 			Priority:     airAttackPriority - KnownBaseDiscount,
-			Category:     "air_combat",
+			Category:     "air-combat",
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`SquadExists("air-attack") && SquadReadyRatio("air-attack") >= %.2f && !EnemiesVisible() && HasEnemyIntel()`, c.activationThreshold),
 			Action:       SquadAttackKnownBase("air-attack", c.d.Aggression),
@@ -226,7 +226,7 @@ func (c *doctrineCompiler) addCombatRules() {
 		c.rules = append(c.rules, &Rule{
 			Name:         "form-naval-attack",
 			Priority:     navalAttackPriority + SquadFormBonus,
-			Category:     "squad_form",
+			Category:     "squad-form",
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`MapHasWater() && ((!SquadExists("naval-attack") && len(UnassignedIdleNaval()) >= %d) || (SquadNeedsReinforcement("naval-attack") && len(UnassignedIdleNaval()) >= 1))`, navalFormThreshold),
 			Action:       FormSquad("naval-attack", "naval", c.d.NavalAttackGroupSize, "attack"),
@@ -235,7 +235,7 @@ func (c *doctrineCompiler) addCombatRules() {
 		c.rules = append(c.rules, &Rule{
 			Name:         "squad-naval-attack",
 			Priority:     navalAttackPriority,
-			Category:     "naval_combat",
+			Category:     "naval-combat",
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`MapHasWater() && SquadExists("naval-attack") && SquadReadyRatio("naval-attack") >= %.2f && NearestEnemy() != nil`, c.activationThreshold),
 			Action:       SquadAttackMove("naval-attack"),
@@ -244,7 +244,7 @@ func (c *doctrineCompiler) addCombatRules() {
 		c.rules = append(c.rules, &Rule{
 			Name:         "squad-naval-reengage",
 			Priority:     navalAttackPriority - ReengageDiscount,
-			Category:     "naval_combat",
+			Category:     "naval-combat",
 			Exclusive:    false,
 			ConditionSrc: `MapHasWater() && SquadExists("naval-attack") && SquadIdleCount("naval-attack") > 0 && NearestEnemy() != nil`,
 			Action:       SquadAttackMove("naval-attack"),
@@ -254,7 +254,7 @@ func (c *doctrineCompiler) addCombatRules() {
 		c.rules = append(c.rules, &Rule{
 			Name:         "squad-naval-attack-known-base",
 			Priority:     navalAttackPriority - KnownBaseDiscount,
-			Category:     "naval_combat",
+			Category:     "naval-combat",
 			Exclusive:    false,
 			ConditionSrc: fmt.Sprintf(`MapHasWater() && SquadExists("naval-attack") && SquadReadyRatio("naval-attack") >= %.2f && !EnemiesVisible() && HasEnemyIntel()`, c.activationThreshold),
 			Action:       SquadAttackKnownBase("naval-attack", c.d.Aggression),

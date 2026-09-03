@@ -289,7 +289,7 @@ func (c *doctrineCompiler) addBuildingRules() {
 		c.rules = append(c.rules, &Rule{
 			Name:         "build-missile-silo",
 			Priority:     650,
-			Category:     "superweapon_build",
+			Category:     "superweapon-build",
 			Exclusive:    true,
 			ConditionSrc: `!IsRushed() && !QueueBusy("Defense") && CanBuildRole("missile_silo") && !HasRole("missile_silo") && HasRole("tech_center") && PowerExcess() >= 0 && Cash() >= 2500`,
 			Action:       ActionProduceMissileSilo,
@@ -298,7 +298,7 @@ func (c *doctrineCompiler) addBuildingRules() {
 		c.rules = append(c.rules, &Rule{
 			Name:         "build-iron-curtain",
 			Priority:     640,
-			Category:     "superweapon_build",
+			Category:     "superweapon-build",
 			Exclusive:    true,
 			ConditionSrc: `!IsRushed() && !QueueBusy("Defense") && CanBuildRole("iron_curtain") && !HasRole("iron_curtain") && HasRole("tech_center") && PowerExcess() >= 0 && Cash() >= 2500`,
 			Action:       ActionProduceIronCurtain,

@@ -31,10 +31,10 @@ const (
 // queued on the Infantry queue in one tick) and ensures army composition
 // matches doctrine priority ordering.
 const (
-	CatProduceInfantry = "produce_infantry"
-	CatProduceVehicle  = "produce_vehicle"
-	CatProduceAircraft = "produce_aircraft"
-	CatProduceShip     = "produce_ship"
+	CatProduceInfantry = "produce-infantry"
+	CatProduceVehicle  = "produce-vehicle"
+	CatProduceAircraft = "produce-aircraft"
+	CatProduceShip     = "produce-ship"
 )
 
 // Gameplay thresholds used inside expr condition strings (require fmt.Sprintf).
