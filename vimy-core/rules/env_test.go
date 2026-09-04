@@ -209,7 +209,7 @@ func TestSquadThreatRatio(t *testing.T) {
 				{ID: 2, Type: "3tnk", X: 510, Y: 500, HP: 100, MaxHP: 100},
 			},
 			Enemies: []model.Enemy{
-				{ID: 10, X: 520, Y: 500, HP: 400, MaxHP: 400}, // nearby, big HP
+				{ID: 10, X: 520, Y: 500, HP: 400, MaxHP: 400},   // nearby, big HP
 				{ID: 11, X: 900, Y: 900, HP: 9999, MaxHP: 9999}, // far away
 			},
 		},
@@ -629,7 +629,7 @@ func TestBestCapturable_SkipsWater(t *testing.T) {
 			},
 			Capturables: []model.Enemy{
 				{ID: 10, Type: "oilb", X: 250, Y: 50},  // on water — should be skipped
-				{ID: 11, Type: "hosp", X: 150, Y: 150},  // on land — should be picked
+				{ID: 11, Type: "hosp", X: 150, Y: 150}, // on land — should be picked
 			},
 		},
 		Terrain: grid,
@@ -1435,5 +1435,55 @@ func TestUpdateDefenseIntel_RemembersVisible(t *testing.T) {
 	}
 	if _, ok := defs[43]; !ok {
 		t.Error("expected tesla ID=43 remembered")
+	}
+}
+
+// The generic vehicle rule must not build what a dedicated rule caps.
+//
+// `produce-vehicle` caps on CombatVehicleCount, so anything it can pick is
+// built past whatever cap the role's own rule computed. Game 68: flak trucks
+// peaked at 5 alive against a cap of 2, and nine of twelve vehicles came from
+// produce-vehicle rather than produce-flak-truck (vimy-77s).
+func TestGenericVehicleProductionSkipsCappedRoles(t *testing.T) {
+	// A Vehicle queue offering only what the reported game offered: no radar,
+	// so every tank is gated out and a flak truck is all that is left.
+	env := RuleEnv{
+		State: model.GameState{
+			ProductionQueues: []model.ProductionQueue{
+				{Type: "Vehicle", Buildable: []string{"harv", "apc", "ftrk"}},
+			},
+		},
+		Faction: "soviet",
+		Memory:  map[string]any{},
+	}
+
+	if env.CanBuildRole("flak_truck") != true {
+		t.Fatal("the fixture should offer a flak truck")
+	}
+	if env.CanBuildAnyCombatVehicle() {
+		t.Error("produce-vehicle would fire with only a flak truck to build")
+	}
+	if got := env.BestBuildableVehicle(); got != "" {
+		t.Errorf("generic production chose %q", got)
+	}
+
+	// It is still chosen through the preference list, which is the path the
+	// reported game actually took — flak_truck was the doctrine's third
+	// preference and won every firing.
+	env.Preferences.Vehicle = []string{"heavy_tank", "medium_tank", "flak_truck"}
+	if got := env.BestBuildableVehicle(); got != "" {
+		t.Errorf("a preferred flak truck was chosen: %q", got)
+	}
+
+	// And a role without a rule of its own is still reachable, or nothing
+	// would ever build it.
+	env.State.ProductionQueues[0].Buildable = append(
+		env.State.ProductionQueues[0].Buildable, "dtrk")
+	if !env.CanBuildRole("demo_truck") {
+		t.Skip("this faction cannot build a demo truck")
+	}
+	// The item name, which is what the queue takes.
+	if got := env.BestBuildableVehicle(); got != "dtrk" {
+		t.Errorf("demo truck not reachable: %q", got)
 	}
 }

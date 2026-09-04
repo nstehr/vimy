@@ -267,8 +267,37 @@ var combatVehicleRoles = []string{
 	"v2_launcher", "artillery", "ranger",
 	"flak_truck", "demo_truck", "mad_tank",
 }
+
 // Note: minelayer is excluded from combatVehicleRoles — it has dedicated
 // production and mine-laying rules gated on GroundDefensePriority.
+
+// cappedVehicleRoles have a production rule of their own, with a cap derived
+// from the doctrine weight that governs them. The generic `produce-vehicle`
+// fallback must not build these: it caps on CombatVehicleCount instead, so
+// whatever the dedicated rule computed is laundered past.
+//
+// Observed in game 68 (vimy-77s): flak trucks peaked at 5 alive against a cap
+// of 2, and nine of the twelve vehicles built came from produce-vehicle rather
+// than produce-flak-truck. AirDefensePriority — a knob the LLM was retuning
+// every 700 ticks — had essentially no influence on how many were built.
+//
+// demo_truck is deliberately absent: it has no rule of its own, so excluding it
+// would mean nothing builds it at all.
+var cappedVehicleRoles = map[string]bool{
+	"flak_truck": true,
+	"mad_tank":   true,
+}
+
+// genericVehicleRoles is what `produce-vehicle` may choose from.
+func genericVehicleRoles(roles []string) []string {
+	out := make([]string, 0, len(roles))
+	for _, r := range roles {
+		if !cappedVehicleRoles[r] {
+			out = append(out, r)
+		}
+	}
+	return out
+}
 
 // combatAircraftRoles: advanced (longbow/MiG) preferred over basic (blackhawk/yak).
 var combatAircraftRoles = []string{

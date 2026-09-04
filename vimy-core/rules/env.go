@@ -37,9 +37,9 @@ func biasOr1(b float64) float64 {
 }
 
 func (e RuleEnv) HasUnit(t string) bool      { return containsType(e.State.Units, t) }
-func (e RuleEnv) HasBuilding(t string) bool   { return containsType(e.State.Buildings, t) }
-func (e RuleEnv) UnitCount(t string) int      { return countType(e.State.Units, t) }
-func (e RuleEnv) BuildingCount(t string) int  { return countType(e.State.Buildings, t) }
+func (e RuleEnv) HasBuilding(t string) bool  { return containsType(e.State.Buildings, t) }
+func (e RuleEnv) UnitCount(t string) int     { return countType(e.State.Units, t) }
+func (e RuleEnv) BuildingCount(t string) int { return countType(e.State.Buildings, t) }
 
 func (e RuleEnv) QueueBusy(q string) bool {
 	found := false
@@ -1186,9 +1186,10 @@ const groundTargetValueDefault = 1.0 // mobile units / unknown types
 // val      = type value from groundTargetValue (dominant factor)
 // hpBonus  = 2.0 - hpRatio — gentle tiebreaker favoring damaged targets
 // distance = soft decay so a high-value building across the map can still
-//            beat a value-1 mobile unit at the squad's doorstep. The old
-//            1/dist decay caused squads to chase trash units forever instead
-//            of pressing enemy infrastructure (vimy-68x).
+//
+//	beat a value-1 mobile unit at the squad's doorstep. The old
+//	1/dist decay caused squads to chase trash units forever instead
+//	of pressing enemy infrastructure (vimy-68x).
 const groundDistanceScale = 50.0
 
 func (e RuleEnv) BestGroundTarget() *model.Enemy {
@@ -1629,9 +1630,9 @@ func updateIntel(env RuleEnv) {
 	// sits at home. Fix: (1) intelMinAge 300 → 3000 (intel persists past
 	// the rush window even without visits), (2) require intelClearSustain
 	// ticks of continuous "our unit near + no enemy visible" before clearing.
-	const intelClearRadius   = 10
-	const intelMinAge        = 3000
-	const intelClearSustain  = 500 // ticks of continuous confirmation
+	const intelClearRadius = 10
+	const intelMinAge = 3000
+	const intelClearSustain = 500 // ticks of continuous confirmation
 	intelClearRadiusSq := intelClearRadius * intelClearRadius
 
 	sustain := memoryMap[string, int](env.Memory, "enemyBaseIntelClearSustain")
@@ -2274,8 +2275,16 @@ func (e RuleEnv) BaseUnderAttack() bool {
 	return false
 }
 
+// CanBuildAnyCombatVehicle reports whether the generic production rule has
+// anything worth building.
+//
+// Excludes the roles with their own capped rules, so that when a flak truck is
+// the only option `produce-vehicle` holds rather than firing and picking one —
+// which is the whole failure in vimy-77s. Holding is the right answer: the
+// dedicated rule still builds them up to its cap, and the cash stays available
+// for the radar that would unlock a real combat vehicle.
 func (e RuleEnv) CanBuildAnyCombatVehicle() bool {
-	for _, r := range combatVehicleRoles {
+	for _, r := range genericVehicleRoles(combatVehicleRoles) {
 		if e.CanBuildRole(r) {
 			return true
 		}
@@ -2295,10 +2304,14 @@ func (e RuleEnv) CombatVehicleCount() int {
 // Checks LLM preferences first, then falls back to combatVehicleRoles.
 // Uses round-robin fairness so preferred roles don't starve others.
 func (e RuleEnv) BestBuildableVehicle() string {
-	if item := e.bestBuildableFrom(e.Preferences.Vehicle, nil); item != "" {
+	// The preference list is filtered too, not just the fallback. In the game
+	// that reported this the doctrine listed flak_truck third, so walking
+	// preferences found heavy and medium tanks unbuildable and landed on it
+	// every time — the fallback was never even reached.
+	if item := e.bestBuildableFrom(genericVehicleRoles(e.Preferences.Vehicle), nil); item != "" {
 		return item
 	}
-	return e.bestBuildableFrom(combatVehicleRoles, nil)
+	return e.bestBuildableFrom(genericVehicleRoles(combatVehicleRoles), nil)
 }
 
 func (e RuleEnv) CanBuildAnyCombatAircraft() bool {
