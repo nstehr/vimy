@@ -50,7 +50,102 @@ func doctrineParams(d Doctrine) map[string]float64 {
 			out[name] = float64(v.Field(i).Int())
 		}
 	}
+	// Facts a rule needs from the []string preference lists. vimyc has no
+	// string type and does not need one: what the compiler actually asks of
+	// those lists is five yes/no questions, so they cross as 0 or 1 and the
+	// lists stay here.
+	for name, yes := range map[string]bool{
+		"prefers-radar-gated-primary": prefersRadarGatedPrimary(d.PreferredVehicle),
+		"prefers-v2-launcher":         c(d).prefersVehicle("v2_launcher"),
+		"prefers-artillery":           c(d).prefersVehicle("artillery"),
+		"prefers-shock-trooper":       c(d).prefersInfantry("shock_trooper"),
+		"prefers-flamethrower":        c(d).prefersInfantry("flamethrower"),
+		"specialist-infantry-first":   specialistFirst(d.PreferredInfantry),
+		"siege-vehicle-first":         first(d.PreferredVehicle, "v2_launcher", "artillery"),
+		"tech-naval-first":            first(d.PreferredNaval, "missile_sub", "cruiser", "destroyer"),
+	} {
+		if yes {
+			out[name] = 1
+		} else {
+			out[name] = 0
+		}
+	}
 	return out
+}
+
+// first reports whether the list's head is one of `want` — the "this is the
+// plan" test the compiler applies to the ordered preference lists.
+func first(list []string, want ...string) bool {
+	if len(list) == 0 {
+		return false
+	}
+	for _, w := range want {
+		if list[0] == w {
+			return true
+		}
+	}
+	return false
+}
+
+func specialistFirst(list []string) bool {
+	return first(list, specialistInfantryRoles...)
+}
+
+// c is a compiler holding just the doctrine, for the `prefers*` helpers.
+func c(d Doctrine) *doctrineCompiler { return &doctrineCompiler{d: d} }
+
+// boundaryDoctrines covers the gate thresholds that real doctrines miss.
+//
+// The archived 500 are what an LLM actually emits, which clusters: not one has
+// an Aggression between 0.3 and 0.4, so the reserve gated on
+// `Aggression < DoctrineSignificant` never changes sides and a port could get
+// its threshold wrong unnoticed. These sweep every weight across and between
+// all six thresholds, and stagger two of them so the differences the compiler
+// takes are non-zero.
+func boundaryDoctrines() []Doctrine {
+	steps := []float64{
+		0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35,
+		0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.9, 1.0,
+	}
+	var out []Doctrine
+	for _, v := range steps {
+		for _, skew := range []float64{0, 0.2} {
+			d := Doctrine{
+				Name:                      "boundary",
+				EconomyPriority:           v,
+				Aggression:                v,
+				GroundDefensePriority:     v,
+				AirDefensePriority:        v,
+				TechPriority:              v,
+				InfantryWeight:            clamp01(v - skew),
+				VehicleWeight:             v,
+				AirWeight:                 v,
+				NavalWeight:               v,
+				ScoutPriority:             v,
+				SpecializedInfantryWeight: v,
+				SuperweaponPriority:       v,
+				CapturePriority:           v,
+				TransportAssault:          clamp01(v + skew),
+				BaseDefenseFloor:          int(v * 8),
+				CommitRatio:               v,
+				GroundAttackGroupSize:     4,
+				AirAttackGroupSize:        3,
+				NavalAttackGroupSize:      3,
+			}
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
 }
 
 func TestDumpAcceptanceCorpus(t *testing.T) {
@@ -62,6 +157,8 @@ func TestDumpAcceptanceCorpus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	doctrines = append(doctrines, boundaryDoctrines()...)
 
 	cases := make([]acceptanceCase, 0, len(doctrines))
 	for _, d := range doctrines {
