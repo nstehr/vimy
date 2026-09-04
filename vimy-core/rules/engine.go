@@ -20,6 +20,7 @@ type RuleSummary struct {
 	Category     string
 	Exclusive    bool
 	ConditionSrc string
+	Because      string
 }
 
 // Engine runs compiled rules against game state each tick.
@@ -302,6 +303,7 @@ func (e *Engine) Rules() []RuleSummary {
 			Category:     r.Category,
 			Exclusive:    r.Exclusive,
 			ConditionSrc: r.ConditionSrc,
+			Because:      r.Because,
 		}
 	}
 	return out

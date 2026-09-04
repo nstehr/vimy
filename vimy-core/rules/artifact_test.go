@@ -256,3 +256,40 @@ func TestDoctrineArtifactLoadsIntoAnEngine(t *testing.T) {
 	}
 	t.Logf("%d rules loaded and compiled", len(loaded))
 }
+
+// `because` reaches the dashboard.
+//
+// It is the one field in the language that exists purely to be read later, and
+// it was being dropped at lowering — parsed, stored, and thrown away before it
+// reached Go. The whole chain is short and every link had to be added, so this
+// walks all of it.
+func TestBecauseReachesTheRuleSummary(t *testing.T) {
+	const why = "the first refinery is the whole economy, so it outranks everything but power"
+	loaded, err := LoadArtifact([]byte(`[{"name":"build-refinery","priority":750,
+	  "category":"economy","exclusive":true,"because":"` + why + `",
+	  "action":"produce-refinery","condition":"Cash() >= 1160"}]`))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	engine, err := NewEngine(loaded)
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	summaries := engine.Rules()
+	if len(summaries) != 1 {
+		t.Fatalf("%d summaries", len(summaries))
+	}
+	if summaries[0].Because != why {
+		t.Errorf("Because is %q", summaries[0].Because)
+	}
+
+	// A rule set that says nothing leaves it empty rather than inventing one.
+	quiet, err := LoadArtifact([]byte(`[{"name":"r","priority":1,"category":"economy",
+	  "exclusive":false,"action":"scout","condition":"true"}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quiet[0].Because != "" {
+		t.Errorf("Because is %q, want empty", quiet[0].Because)
+	}
+}

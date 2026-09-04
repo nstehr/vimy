@@ -211,6 +211,9 @@ templ RulesPanel(summaries []rules.RuleSummary) {
 												<span class="text-xs font-medium text-amber-400 bg-amber-400/10 px-1.5 py-0 rounded">excl</span>
 											}
 										</div>
+										if r.Because != "" {
+											<p class="mt-0.5 text-xs text-gray-400 italic">{ r.Because }</p>
+										}
 										<code class="block mt-1 text-xs text-gray-500 break-all">{ r.ConditionSrc }</code>
 									</div>
 								</div>

@@ -17,6 +17,10 @@ type Rule struct {
 	Category     string      // grouping for exclusive semantics
 	Exclusive    bool        // if true, blocks lower-priority rules in same category
 	ConditionSrc string      // expr source (preserved for serialization)
+	// Why the rule exists, when the rule set said. A condition explains what a
+	// rule tests; this explains what it is for, which is what someone reading a
+	// game back actually wants.
+	Because string
 	program      *vm.Program // compiled bytecode
 	Action       ActionFunc
 	// How vimyc spells this action, for actions built by a factory. Empty for

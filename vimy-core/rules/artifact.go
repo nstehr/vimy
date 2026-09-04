@@ -36,6 +36,7 @@ type artifactRule struct {
 	Priority  int    `json:"priority"`
 	Category  string `json:"category"`
 	Exclusive bool   `json:"exclusive"`
+	Because   string `json:"because,omitempty"`
 	Action    string `json:"action"`
 	Condition string `json:"condition"`
 }
@@ -62,6 +63,7 @@ func LoadArtifact(data []byte) ([]*Rule, error) {
 			Category:     a.Category,
 			Exclusive:    a.Exclusive,
 			ConditionSrc: a.Condition,
+			Because:      a.Because,
 			Action:       action,
 		}
 		// Only a factory-built action needs this; a registry id names itself.
