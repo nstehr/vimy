@@ -212,7 +212,7 @@ func (c *doctrineCompiler) addBuildingRules() {
 			Priority:     defensePriority,
 			Category:     "defense",
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`!QueueBusy("Defense") && PowerExcess() >= 0 && (CanBuildRole("pillbox") || CanBuildRole("camo_pillbox") || CanBuildRole("turret") || CanBuildRole("flame_tower") || CanBuildRole("tesla_coil")) && (RoleCount("pillbox") + RoleCount("camo_pillbox") + RoleCount("turret") + RoleCount("flame_tower") + RoleCount("tesla_coil")) < %d && Cash() >= %d`, defenseCap, defenseCash),
+			ConditionSrc: fmt.Sprintf(`!QueueBusy("Defense") && PowerExcess() >= 0 && (CanBuildRole("pillbox") || CanBuildRole("camo_pillbox") || CanBuildRole("turret") || CanBuildRole("flame_tower") || CanBuildRole("tesla_coil")) && (RoleCount("pillbox") + RoleCount("camo_pillbox") + RoleCount("turret") + RoleCount("flame_tower") + RoleCount("tesla_coil")) < %d && %s`, defenseCap, c.buildingCashCondition(defenseCash)),
 			Action:       ActionProduceDefense,
 		})
 
@@ -250,7 +250,7 @@ func (c *doctrineCompiler) addBuildingRules() {
 			Priority:     aaPriority,
 			Category:     "defense",
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`!QueueBusy("Defense") && PowerExcess() >= 0 && CanBuildRole("aa_defense") && RoleCount("aa_defense") < %d && Cash() >= %d`, aaCap, aaCash),
+			ConditionSrc: fmt.Sprintf(`!QueueBusy("Defense") && PowerExcess() >= 0 && CanBuildRole("aa_defense") && RoleCount("aa_defense") < %d && %s`, aaCap, c.buildingCashCondition(aaCash)),
 			Action:       ActionProduceAADefense,
 		})
 	}
@@ -264,7 +264,7 @@ func (c *doctrineCompiler) addBuildingRules() {
 			Priority:     lerp(400, 550, c.d.GroundDefensePriority),
 			Category:     "defense",
 			Exclusive:    true,
-			ConditionSrc: fmt.Sprintf(`!IsRushed() && !QueueBusy("Defense") && PowerExcess() >= 0 && CanBuildRole("gap_generator") && HasRole("tech_center") && RoleCount("gap_generator") < %d && Cash() >= 800`, gapCap),
+			ConditionSrc: fmt.Sprintf(`!IsRushed() && !QueueBusy("Defense") && PowerExcess() >= 0 && CanBuildRole("gap_generator") && HasRole("tech_center") && RoleCount("gap_generator") < %d && %s`, gapCap, c.buildingCashCondition(800)),
 			Action:       ActionProduceGapGenerator,
 		})
 	}

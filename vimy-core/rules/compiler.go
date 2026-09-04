@@ -39,8 +39,9 @@ const (
 
 // Gameplay thresholds used inside expr condition strings (require fmt.Sprintf).
 const (
-	LowPowerHeadroom    = 50 // PowerExcess below this triggers advanced power
-	IronCurtainMinUnits = 3  // minimum idle ground units to fire iron curtain
+	LowPowerHeadroom    = 50   // PowerExcess below this triggers advanced power
+	IronCurtainMinUnits = 3    // minimum idle ground units to fire iron curtain
+	RadarCost           = 1000 // what build-radar needs, and so what a reserve must leave
 )
 
 // buildingSaving prevents unit production from consuming cash needed for
@@ -90,6 +91,26 @@ func buildCashConditionScaled(unitCost int, savings []buildingSaving, scale floa
 			continue
 		}
 		cond += fmt.Sprintf(` && (%s || Cash() >= %d)`, s.existsExpr, unitCost+scaledCost)
+	}
+	return cond
+}
+
+// radarReserve is the cash a building rule must leave untouched so the radar can
+// still be afforded.
+//
+// The savings stack protects the radar from unit production, because only the
+// produce-* rules call buildCashCondition. Nothing protected it from buildings:
+// with groundDefense 0.75 the defense rule spends at a 600 floor while
+// build-radar needs 1000, they sit in different categories so exclusivity cannot
+// arbitrate, and the cheaper rule wins the race every tick. Games 71 and 72 both
+// spent their income on tesla coils and never teched — the doctrine asked for a
+// fortified perimeter AND heavy tanks and got only the perimeter (vimy-4j5).
+//
+// Only while the doctrine wants vehicles, and only until the radar exists.
+func (c *doctrineCompiler) buildingCashCondition(cost int) string {
+	cond := fmt.Sprintf("Cash() >= %d", cost)
+	if c.d.VehicleWeight > DoctrineEnabled {
+		cond += fmt.Sprintf(` && (HasRole("radar") || Cash() >= %d)`, cost+RadarCost)
 	}
 	return cond
 }
