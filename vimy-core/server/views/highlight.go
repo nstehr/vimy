@@ -8,19 +8,10 @@ import (
 // Syntax highlighting for `.vy` in the rules panel.
 //
 // Prism from a CDN, matching how Tailwind, htmx and Chart.js already arrive —
-// no build step. The language definition is generated from the token tables
-// below rather than written out, and `vimyc --tokens` prints the compiler's own
-// copies of them so a test can compare: a token added to the language cannot
-// quietly stop being highlighted.
-
-// The language's vocabulary, mirroring `TokenKind::{KEYWORDS,OPERATORS,
-// PUNCTUATION}`. Operators are longest-first, which a regex alternation
-// requires — otherwise `<` matches before `<=` and the `=` is left over.
-var (
-	vyKeywords    = strings.Fields("rule priority category exclusive do require because let and or not exists param def int float")
-	vyOperators   = strings.Fields("<= >= == != < > + - * / =")
-	vyPunctuation = strings.Fields("{ } ( ) , :")
-)
+// no build step. The vocabulary comes from `vy_tokens.go`, which `make rules`
+// generates from `vimyc --tokens`, so adding a keyword or an operator to the
+// language needs no edit here. `TestVyTokensMatchTheCompiler` fails when the
+// generated file is stale.
 
 // VyPrismGrammar is the Prism language definition, as JavaScript.
 //

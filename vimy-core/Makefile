@@ -18,6 +18,10 @@ rules:
 		rules/seed.vy --json > $(CURDIR)/rules/seed_rules.json.tmp
 	mv $(CURDIR)/rules/seed_rules.json.tmp $(CURDIR)/rules/seed_rules.json
 	cp $(VIMYC)/rules/doctrine.vy $(CURDIR)/rules/doctrine.vy
+	cd $(VIMYC) && PATH="$(HOME)/.cargo/bin:$(PATH)" cargo build --release --quiet
+	./server/views/gen_tokens.sh $(VIMYC)/target/release/vimyc \
+		$(CURDIR)/server/views/vy_tokens.go
+	gofmt -w server/views/vy_tokens.go
 
 build:
 	go build -o bin/vimy .
