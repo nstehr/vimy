@@ -28,6 +28,11 @@ import (
 type realCorpus struct {
 	// One vimyc source file per distinct doctrine window the export covers.
 	RuleSets []string `json:"rule_sets"`
+	// The conditions those rule sets came from, per rule name. Lets the other
+	// side check that emitting expr lands back on what Go compiled — a stronger
+	// check than comparing evaluations, since it catches differences that
+	// happen not to matter on the states recorded.
+	Conditions []map[string]string `json:"conditions"`
 	// Verbatim from the export.
 	States []json.RawMessage `json:"states"`
 	Cases  []realCase        `json:"cases"`
@@ -127,6 +132,7 @@ func TestBuildRealDifferential(t *testing.T) {
 	// effect after it is archived and two doctrines can differ only in a
 	// threshold inside a comparison. The recording now says which set it ran.
 	byID := map[string]string{} // fingerprint -> vimyc source
+	condsByID := map[string]map[string]string{}
 	addCandidate := func(rs []*Rule) {
 		src, err := ToVimyc(rs)
 		if err != nil {
@@ -134,6 +140,11 @@ func TestBuildRealDifferential(t *testing.T) {
 			return
 		}
 		byID[RuleSetID(rs)] = src
+		conds := make(map[string]string, len(rs))
+		for _, r := range rs {
+			conds[r.Name] = r.ConditionSrc
+		}
+		condsByID[RuleSetID(rs)] = conds
 	}
 	addCandidate(DefaultRules()) // the engine starts here, before the first swap
 	for _, w := range windows {
@@ -151,6 +162,7 @@ func TestBuildRealDifferential(t *testing.T) {
 		idx, seen := kept[c.RuleSet]
 		if !seen {
 			corpus.RuleSets = append(corpus.RuleSets, src)
+			corpus.Conditions = append(corpus.Conditions, condsByID[c.RuleSet])
 			idx = len(corpus.RuleSets) - 1
 			kept[c.RuleSet] = idx
 		}
