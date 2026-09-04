@@ -74,7 +74,7 @@ type Strategist struct {
 	// to the LLM as a "is this build order sustainable?" signal.
 	prevCashSnapshot int
 	prevCashTick     int
-	// Compiles doctrines through vimyc when set; nil uses CompileDoctrine.
+	// Compiles doctrines. Required — there is no other compiler.
 	compiler *rules.VimycCompiler
 	cooldown int              // minimum ticks between event-driven evaluations
 	pending  []Event          // events accumulated since last evaluation
@@ -587,7 +587,7 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	compiled, err := s.compile(doctrine)
 	if err != nil {
 		// The engine keeps the rule set it has. Falling back to
-		// CompileDoctrine would be worse than doing nothing: it would hide
+		// Anything else would be worse than doing nothing: it would hide
 		// exactly the failure this path exists to expose.
 		slog.Error("doctrine did not compile; keeping the current rules",
 			"doctrine", doctrine.Name, "error", err)
@@ -613,20 +613,20 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	s.mu.Unlock()
 }
 
-// UseVimyc routes doctrine compilation through the vimyc binary.
+// UseVimyc sets the compiler doctrines go through. Required: a strategist
+// without one cannot turn a doctrine into anything.
 func (s *Strategist) UseVimyc(c *rules.VimycCompiler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.compiler = c
 }
 
-// compile turns a doctrine into rules, by whichever compiler is configured.
 func (s *Strategist) compile(d rules.Doctrine) ([]*rules.Rule, error) {
 	s.mu.Lock()
 	c := s.compiler
 	s.mu.Unlock()
 	if c == nil {
-		return rules.CompileDoctrine(d), nil
+		return nil, fmt.Errorf("no compiler configured")
 	}
 	return c.Compile(d)
 }

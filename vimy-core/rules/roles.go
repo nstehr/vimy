@@ -267,6 +267,7 @@ var combatVehicleRoles = []string{
 	"v2_launcher", "artillery", "ranger",
 	"flak_truck", "demo_truck", "mad_tank",
 }
+
 // Note: minelayer is excluded from combatVehicleRoles — it has dedicated
 // production and mine-laying rules gated on GroundDefensePriority.
 

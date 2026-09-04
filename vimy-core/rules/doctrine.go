@@ -3,7 +3,8 @@ package rules
 import "math"
 
 // Doctrine is the LLM's output — a strategic posture expressed as continuous
-// 0–1 weights. CompileDoctrine translates these into discrete rule sets.
+// 0–1 weights. vimyc compiles them into a rule set: `DoctrineParams` renders
+// this struct as the numbers a `.vy` file declares.
 type Doctrine struct {
 	Name                  string  `json:"name"`
 	Rationale             string  `json:"rationale"`
