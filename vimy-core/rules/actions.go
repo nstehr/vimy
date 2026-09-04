@@ -2806,6 +2806,51 @@ func SquadDefend(name string) ActionFunc {
 	}
 }
 
+// SquadGuardHarvesters sends a squad to whichever harvester is under threat.
+//
+// The gap this closes: every other defensive action is anchored at the base —
+// they gate on BaseUnderAttack() or CriticalBuildingUnderAttack() — so a
+// harvester shot at an ore patch summoned nobody, and the only response was to
+// run it home and abandon the ore. Across games 71, 73, 74 and 76 that lost the
+// economy every time, and 35% of the archived lessons ask for escorts that could
+// not exist (vimy-tiw).
+//
+// Attack-move rather than move: the point is to engage what is shooting the
+// harvester, not to stand next to it.
+func SquadGuardHarvesters(name string, dangerPct float64) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		threatened := env.HarvestersInDanger(dangerPct)
+		if len(threatened) == 0 {
+			return nil
+		}
+		ids := squadIdleActorIDs(env, name)
+		if len(ids) == 0 {
+			return nil
+		}
+
+		// The one nearest the squad, so a guard does not cross the map past a
+		// closer harvester in the same trouble.
+		target := threatened[0]
+		if cx, cy, ok := squadCentroid(env, name); ok {
+			best := math.MaxFloat64
+			for _, h := range threatened {
+				dx, dy := float64(h.X-cx), float64(h.Y-cy)
+				if d := dx*dx + dy*dy; d < best {
+					best, target = d, h
+				}
+			}
+		}
+
+		slog.Debug("squad guarding harvester",
+			"squad", name, "count", len(ids), "harvester", target.ID)
+		return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
+			ActorIDs: ids,
+			X:        target.X,
+			Y:        target.Y,
+		})
+	}
+}
+
 // squadCentroid returns the average position of all living squad members,
 // and false if the squad is empty or unknown.
 func squadCentroid(env RuleEnv, name string) (int, int, bool) {

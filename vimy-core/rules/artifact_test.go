@@ -276,3 +276,32 @@ func TestBecauseReachesTheRuleSummary(t *testing.T) {
 		t.Errorf("Because is %q, want empty", quiet[0].Because)
 	}
 }
+
+// The guard action resolves and takes its arguments in order.
+//
+// It is the first action written after CompileDoctrine was deleted, so nothing
+// generates a corpus containing it — the differential that covered every other
+// action cannot see this one.
+func TestSquadGuardHarvestersResolves(t *testing.T) {
+	fn, err := resolveAction("squad-guard-harvesters(harvester-guard, 0.13)")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if fn == nil {
+		t.Fatal("no action")
+	}
+
+	name, args, err := parseActionSrc("squad-guard-harvesters(harvester-guard, 0.13)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name != "squad-guard-harvesters" || len(args) != 2 ||
+		args[0] != "harvester-guard" || args[1] != "0.13" {
+		t.Errorf("parsed %q %q", name, args)
+	}
+
+	// A squad name where the radius belongs must not be accepted.
+	if _, err := resolveAction("squad-guard-harvesters(0.13, harvester-guard)"); err == nil {
+		t.Error("arguments were accepted in the wrong order")
+	}
+}

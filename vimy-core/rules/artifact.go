@@ -152,6 +152,7 @@ var actionFactories = map[string]func([]string) (ActionFunc, error){
 	"squad-focus-fire":        squadAction(SquadFocusFire),
 	"squad-disengage":         squadAction(SquadDisengage),
 	"squad-defend":            squadAction(SquadDefend),
+	"squad-guard-harvesters":  squadFloatAction(SquadGuardHarvesters),
 	"squad-attack-known-base": squadFloatAction(SquadAttackKnownBase),
 	"recall-overextended":     squadFloatAction(RecallOverextended),
 	"retreat-damaged-units":   floatAction(RetreatDamagedUnits),
