@@ -32,6 +32,7 @@ var (
 	addr         string
 	traceRules   bool
 	vimycRules   bool
+	rulesFile    string
 	exportStates bool
 	exportDir    string
 	exportEvery  int
@@ -43,6 +44,7 @@ func main() {
 	flag.StringVar(&addr, "addr", ":8080", "HTTP dashboard listen address")
 	flag.BoolVar(&traceRules, "trace-rules", false, "record per-rule firing counters per doctrine window; archives rule_firings rows on game end and exposes live counters to the dashboard")
 	flag.BoolVar(&vimycRules, "vimyc-rules", false, "start from the vimyc-compiled rule set (rules/seed_rules.json) rather than DefaultRules; the same rules by a different route. A -doctrine swaps them out once the first doctrine lands, so use it without one to play a whole game on them")
+	flag.StringVar(&rulesFile, "rules-file", "", "load a rule set compiled by vimyc from this file, instead of the built-in rules. Pair with no -doctrine: the strategist replaces the rule set as soon as its first doctrine lands")
 	flag.BoolVar(&exportStates, "export-states", false, "record sampled rule evaluations for vimyc's differential corpus, one file per game under -export-dir")
 	flag.StringVar(&exportDir, "export-dir", "", "where -export-states writes; defaults to ~/.vimy/exports, alongside the database")
 	flag.IntVar(&exportEvery, "export-every", 5, "with -export-states, record one evaluation in this many")
@@ -62,7 +64,19 @@ func main() {
 	// before a game connection arrives.
 	startingRules := rules.DefaultRules()
 	ruleSource := "go"
-	if vimycRules {
+	if rulesFile != "" {
+		data, err := os.ReadFile(rulesFile)
+		if err != nil {
+			slog.Error("cannot read the rule set", "path", rulesFile, "error", err)
+			os.Exit(1)
+		}
+		compiled, err := rules.LoadArtifact(data)
+		if err != nil {
+			slog.Error("cannot load the rule set", "path", rulesFile, "error", err)
+			os.Exit(1)
+		}
+		startingRules, ruleSource = compiled, rulesFile
+	} else if vimycRules {
 		compiled, err := rules.SeedRules()
 		if err != nil {
 			slog.Error("cannot load the vimyc rule set", "error", err)

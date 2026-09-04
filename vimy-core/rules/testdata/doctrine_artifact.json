@@ -1,0 +1,810 @@
+[
+  {
+    "name": "deploy-mcv",
+    "priority": 1000,
+    "category": "setup",
+    "exclusive": true,
+    "action": "deploy-mcv",
+    "condition": "HasUnit(\"mcv\") && !HasRole(\"construction_yard\")"
+  },
+  {
+    "name": "recover-mcv",
+    "priority": 950,
+    "category": "setup",
+    "exclusive": true,
+    "action": "produce-mcv",
+    "condition": "!HasRole(\"construction_yard\") && !HasUnit(\"mcv\") && HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuild(\"Vehicle\",\"mcv\") && Cash() >= 1000"
+  },
+  {
+    "name": "place-ready-building",
+    "priority": 900,
+    "category": "economy",
+    "exclusive": true,
+    "action": "place-building",
+    "condition": "QueueReady(\"Building\")"
+  },
+  {
+    "name": "place-ready-defense",
+    "priority": 895,
+    "category": "defense",
+    "exclusive": true,
+    "action": "place-defense",
+    "condition": "QueueReady(\"Defense\")"
+  },
+  {
+    "name": "unblock-war-factory-egress",
+    "priority": 892,
+    "category": "vehicle-maintenance",
+    "exclusive": true,
+    "action": "unblock-war-factory-egress",
+    "condition": "HasRole(\"war_factory\") && QueueReady(\"Vehicle\")"
+  },
+  {
+    "name": "cancel-stuck-aircraft",
+    "priority": 891,
+    "category": "aircraft-maintenance",
+    "exclusive": true,
+    "action": "cancel-stuck-aircraft",
+    "condition": "QueueReady(\"Aircraft\")"
+  },
+  {
+    "name": "capture-building",
+    "priority": 850,
+    "category": "capture",
+    "exclusive": false,
+    "action": "capture-building",
+    "condition": "CapturableCount() > 0 && len(IdleEngineers()) > 0 && (!CanBuildTransport() || EngineerNearCapturable())"
+  },
+  {
+    "name": "deliver-apc-to-target",
+    "priority": 847,
+    "category": "capture",
+    "exclusive": false,
+    "action": "unload-apc-near-target",
+    "condition": "CapturableCount() > 0 && len(IdleEngineerLoadedAPCs()) > 0"
+  },
+  {
+    "name": "load-engineer-into-apc",
+    "priority": 845,
+    "category": "capture",
+    "exclusive": false,
+    "action": "load-engineer-into-apc",
+    "condition": "(RoleCount(\"engineer\") > 0 || TransportCount() > 0) && len(IdleEngineers()) > 0 && len(IdleEmptyAPCs()) > 0 && !EngineerNearCapturable()"
+  },
+  {
+    "name": "produce-apc",
+    "priority": 470,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-apc",
+    "condition": "CapturableCount() > 0 && RoleCount(\"engineer\") > 0 && HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuildTransport() && TransportCount() < 1 && Cash() >= 800"
+  },
+  {
+    "name": "produce-engineer",
+    "priority": 450,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-engineer",
+    "condition": "CapturableCount() > 0 && !QueueBusy(\"Infantry\") && CanBuildRole(\"engineer\") && RoleCount(\"engineer\") < CapturableCount() && RoleCount(\"engineer\") < 2 && Cash() >= 500"
+  },
+  {
+    "name": "produce-capture-defense-infantry",
+    "priority": 440,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-infantry",
+    "condition": "HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuild(\"Infantry\",\"e1\") && UnitCount(\"e1\") < 3 && Cash() >= 100"
+  },
+  {
+    "name": "produce-assault-apc",
+    "priority": 477,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-apc",
+    "condition": "HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuildTransport() && TransportCount() < 1 && Cash() >= 800 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2800) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2300)"
+  },
+  {
+    "name": "deliver-assault-apc",
+    "priority": 840,
+    "category": "transport",
+    "exclusive": false,
+    "action": "deliver-assault-apc",
+    "condition": "HasEnemyIntel() && len(IdleCombatLoadedAPCs()) > 0"
+  },
+  {
+    "name": "load-assault-infantry",
+    "priority": 838,
+    "category": "transport",
+    "exclusive": false,
+    "action": "load-combat-infantry",
+    "condition": "len(IdleCombatInfantry()) > 0 && len(IdleEmptyAPCs()) > 0"
+  },
+  {
+    "name": "rebuild-power-plant",
+    "priority": 840,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-power-plant",
+    "condition": "LostRole(\"power_plant\") && PowerExcess() < 0 && !QueueBusy(\"Building\") && CanBuildRole(\"power_plant\") && Cash() >= 300"
+  },
+  {
+    "name": "rebuild-advanced-power",
+    "priority": 835,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-advanced-power",
+    "condition": "LostRole(\"advanced_power\") && PowerExcess() < 0 && !QueueBusy(\"Building\") && CanBuildRole(\"advanced_power\") && Cash() >= 500"
+  },
+  {
+    "name": "rebuild-harvester",
+    "priority": 830,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-harvester",
+    "condition": "HasRole(\"refinery\") && RoleCount(\"harvester\") == 0 && !QueueBusy(\"Vehicle\") && CanBuildRole(\"harvester\") && Cash() >= 600"
+  },
+  {
+    "name": "rebuild-refinery",
+    "priority": 825,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-refinery",
+    "condition": "LostRole(\"refinery\") && !QueueBusy(\"Building\") && CanBuildRole(\"refinery\") && Cash() >= 500"
+  },
+  {
+    "name": "rebuild-barracks",
+    "priority": 820,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-barracks",
+    "condition": "LostRole(\"barracks\") && !QueueBusy(\"Building\") && CanBuildRole(\"barracks\") && Cash() >= 200"
+  },
+  {
+    "name": "rebuild-war-factory",
+    "priority": 815,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-war-factory",
+    "condition": "LostRole(\"war_factory\") && !QueueBusy(\"Building\") && CanBuildRole(\"war_factory\") && Cash() >= 1000"
+  },
+  {
+    "name": "rebuild-radar",
+    "priority": 810,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-radar",
+    "condition": "LostRole(\"radar\") && !QueueBusy(\"Building\") && !QueueProducingRole(\"radar\") && CanBuildRole(\"radar\") && Cash() >= 500"
+  },
+  {
+    "name": "rebuild-tech-center",
+    "priority": 805,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-tech-center",
+    "condition": "LostRole(\"tech_center\") && !QueueBusy(\"Building\") && CanBuildRole(\"tech_center\") && HasRole(\"radar\") && Cash() >= 1000"
+  },
+  {
+    "name": "rebuild-airfield",
+    "priority": 800,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-airfield",
+    "condition": "LostRole(\"airfield\") && !QueueBusy(\"Building\") && CanBuildRole(\"airfield\") && Cash() >= 300"
+  },
+  {
+    "name": "rebuild-naval-yard",
+    "priority": 800,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-naval-yard",
+    "condition": "MapHasWater() && LostRole(\"naval_yard\") && !QueueBusy(\"Building\") && CanBuildRole(\"naval_yard\") && Cash() >= 300"
+  },
+  {
+    "name": "rebuild-service-depot",
+    "priority": 795,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-service-depot",
+    "condition": "LostRole(\"service_depot\") && !QueueBusy(\"Building\") && CanBuildRole(\"service_depot\") && Cash() >= 800"
+  },
+  {
+    "name": "rebuild-missile-silo",
+    "priority": 790,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-missile-silo",
+    "condition": "LostRole(\"missile_silo\") && !QueueBusy(\"Defense\") && CanBuildRole(\"missile_silo\") && Cash() >= 2500"
+  },
+  {
+    "name": "rebuild-iron-curtain",
+    "priority": 785,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-iron-curtain",
+    "condition": "LostRole(\"iron_curtain\") && !QueueBusy(\"Defense\") && CanBuildRole(\"iron_curtain\") && Cash() >= 2500"
+  },
+  {
+    "name": "rebuild-kennel",
+    "priority": 780,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-kennel",
+    "condition": "LostRole(\"kennel\") && !QueueBusy(\"Building\") && CanBuildRole(\"kennel\") && Cash() >= 200"
+  },
+  {
+    "name": "defend-critical-building",
+    "priority": 360,
+    "category": "combat",
+    "exclusive": false,
+    "action": "defend-critical-building",
+    "condition": "CriticalBuildingUnderAttack() && len(NearBaseGroundUnits()) > 0"
+  },
+  {
+    "name": "scramble-base-defense",
+    "priority": 350,
+    "category": "combat",
+    "exclusive": false,
+    "action": "defend-base",
+    "condition": "BaseUnderAttack() && len(UnassignedIdleGround()) > 0"
+  },
+  {
+    "name": "scramble-naval-defense",
+    "priority": 350,
+    "category": "naval-combat",
+    "exclusive": false,
+    "action": "naval-defend-base",
+    "condition": "MapHasWater() && BaseUnderAttack() && len(IdleNavalUnits()) > 0"
+  },
+  {
+    "name": "emergency-base-defense",
+    "priority": 349,
+    "category": "emergency-defense",
+    "exclusive": false,
+    "action": "emergency-defend-base",
+    "condition": "BaseUnderAttack() && len(IdleGroundUnits()) == 0 && len(NearBaseGroundUnits()) > 0"
+  },
+  {
+    "name": "repair-buildings",
+    "priority": 200,
+    "category": "maintenance",
+    "exclusive": false,
+    "action": "repair-buildings",
+    "condition": "len(DamagedBuildings()) > 0"
+  },
+  {
+    "name": "return-idle-harvesters",
+    "priority": 100,
+    "category": "harvester",
+    "exclusive": false,
+    "action": "send-harvesters",
+    "condition": "len(IdleHarvesters()) > 0"
+  },
+  {
+    "name": "build-power",
+    "priority": 800,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-power-plant",
+    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"power_plant\") && (PowerExcess() < 0 || RoleCount(\"power_plant\") == 0) && Cash() >= 290"
+  },
+  {
+    "name": "build-refinery",
+    "priority": 750,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-refinery",
+    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"refinery\") && RoleCount(\"refinery\") < 1 && Cash() >= 1160"
+  },
+  {
+    "name": "build-second-refinery",
+    "priority": 658,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-refinery",
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"refinery\") && RoleCount(\"refinery\") == 1 && (HasRole(\"barracks\") || HasRole(\"war_factory\")) && Cash() >= 800"
+  },
+  {
+    "name": "build-extra-refinery",
+    "priority": 632,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-refinery",
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"refinery\") && RoleCount(\"refinery\") >= 2 && RoleCount(\"refinery\") < 4 && (HasRole(\"barracks\") || HasRole(\"war_factory\")) && Cash() >= 1160"
+  },
+  {
+    "name": "build-advanced-power",
+    "priority": 790,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-advanced-power",
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"advanced_power\") && PowerExcess() < 50 && Cash() >= 500"
+  },
+  {
+    "name": "build-ore-silo",
+    "priority": 300,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-ore-silo",
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"ore_silo\") && ResourcesNearCap() && RoleCount(\"ore_silo\") < 1 && Cash() >= 150"
+  },
+  {
+    "name": "produce-extra-harvester",
+    "priority": 510,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-harvester",
+    "condition": "HasRole(\"refinery\") && HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuildRole(\"harvester\") && RoleCount(\"harvester\") < RoleCount(\"refinery\") + 1 && Cash() >= 1400"
+  },
+  {
+    "name": "build-radar",
+    "priority": 710,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-radar",
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"radar\") && !HasRole(\"radar\") && !QueueProducingRole(\"radar\") && (HasRole(\"barracks\") || HasRole(\"war_factory\")) && PowerExcess() >= 0 && Cash() >= 1000"
+  },
+  {
+    "name": "build-barracks",
+    "priority": 745,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-barracks",
+    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"barracks\") && !HasRole(\"barracks\") && PowerExcess() >= 0 && Cash() >= 300"
+  },
+  {
+    "name": "build-war-factory",
+    "priority": 720,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-war-factory",
+    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"war_factory\") && !HasRole(\"war_factory\") && PowerExcess() >= 0 && Cash() >= 2225"
+  },
+  {
+    "name": "build-airfield",
+    "priority": 600,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-airfield",
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"airfield\") && !HasRole(\"airfield\") && PowerExcess() >= 0 && Cash() >= 500"
+  },
+  {
+    "name": "build-service-depot",
+    "priority": 570,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-service-depot",
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"service_depot\") && !HasRole(\"service_depot\") && HasRole(\"war_factory\") && PowerExcess() >= 0 && Cash() >= 1200"
+  },
+  {
+    "name": "build-base-defense",
+    "priority": 490,
+    "category": "defense",
+    "exclusive": true,
+    "action": "produce-defense",
+    "condition": "!QueueBusy(\"Defense\") && PowerExcess() >= 0 && (CanBuildRole(\"pillbox\") || CanBuildRole(\"camo_pillbox\") || CanBuildRole(\"turret\") || CanBuildRole(\"flame_tower\") || CanBuildRole(\"tesla_coil\")) && RoleCount(\"pillbox\") + RoleCount(\"camo_pillbox\") + RoleCount(\"turret\") + RoleCount(\"flame_tower\") + RoleCount(\"tesla_coil\") < 6 && Cash() >= 960"
+  },
+  {
+    "name": "build-base-defense-rush",
+    "priority": 590,
+    "category": "defense",
+    "exclusive": true,
+    "action": "produce-defense",
+    "condition": "IsRushed() && !QueueBusy(\"Defense\") && PowerExcess() >= 0 && (CanBuildRole(\"pillbox\") || CanBuildRole(\"camo_pillbox\") || CanBuildRole(\"turret\") || CanBuildRole(\"flame_tower\") || CanBuildRole(\"tesla_coil\")) && RoleCount(\"pillbox\") + RoleCount(\"camo_pillbox\") + RoleCount(\"turret\") + RoleCount(\"flame_tower\") + RoleCount(\"tesla_coil\") < 6 && Cash() >= 200"
+  },
+  {
+    "name": "build-aa-defense",
+    "priority": 470,
+    "category": "defense",
+    "exclusive": true,
+    "action": "produce-aa-defense",
+    "condition": "!QueueBusy(\"Defense\") && PowerExcess() >= 0 && CanBuildRole(\"aa_defense\") && RoleCount(\"aa_defense\") < 3 && Cash() >= 955"
+  },
+  {
+    "name": "build-gap-generator",
+    "priority": 468,
+    "category": "defense",
+    "exclusive": true,
+    "action": "produce-gap-generator",
+    "condition": "!IsRushed() && !QueueBusy(\"Defense\") && PowerExcess() >= 0 && CanBuildRole(\"gap_generator\") && HasRole(\"tech_center\") && RoleCount(\"gap_generator\") < 1 && Cash() >= 800"
+  },
+  {
+    "name": "build-tech-center",
+    "priority": 636,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-tech-center",
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"tech_center\") && !HasRole(\"tech_center\") && HasRole(\"radar\") && PowerExcess() >= 0 && Cash() >= 1500"
+  },
+  {
+    "name": "build-missile-silo",
+    "priority": 650,
+    "category": "superweapon-build",
+    "exclusive": true,
+    "action": "produce-missile-silo",
+    "condition": "!IsRushed() && !QueueBusy(\"Defense\") && CanBuildRole(\"missile_silo\") && !HasRole(\"missile_silo\") && HasRole(\"tech_center\") && PowerExcess() >= 0 && Cash() >= 2500"
+  },
+  {
+    "name": "build-iron-curtain",
+    "priority": 640,
+    "category": "superweapon-build",
+    "exclusive": true,
+    "action": "produce-iron-curtain",
+    "condition": "!IsRushed() && !QueueBusy(\"Defense\") && CanBuildRole(\"iron_curtain\") && !HasRole(\"iron_curtain\") && HasRole(\"tech_center\") && PowerExcess() >= 0 && Cash() >= 2500"
+  },
+  {
+    "name": "build-extra-airfield",
+    "priority": 480,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-airfield",
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"airfield\") && AircraftCapacity() < 3 && CombatAircraftCount() >= AircraftCapacity() - 1 && PowerExcess() >= 0 && Cash() >= 500"
+  },
+  {
+    "name": "produce-specialist-infantry",
+    "priority": 490,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-specialist-infantry",
+    "condition": "HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuildAnySpecialist() && SpecialistInfantryCount() < 2 && Cash() >= 300 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2300) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1800) && (CombatVehicleCount() >= 7 || Cash() >= 540)"
+  },
+  {
+    "name": "produce-infantry",
+    "priority": 500,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-infantry",
+    "condition": "!AxisBurned(\"infantry\") && HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuild(\"Infantry\",\"e1\") && UnitCount(\"e1\") < 11 && Cash() >= 100 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2100) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1600) && (CombatVehicleCount() >= 7 || Cash() >= 340)"
+  },
+  {
+    "name": "produce-infantry-rush",
+    "priority": 520,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-infantry",
+    "condition": "IsRushed() && !AxisBurned(\"infantry\") && HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuild(\"Infantry\",\"e1\") && UnitCount(\"e1\") < 22 && Cash() >= 50"
+  },
+  {
+    "name": "produce-bridge-infantry",
+    "priority": 495,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-infantry",
+    "condition": "!AxisBurned(\"infantry\") && HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuild(\"Infantry\",\"e1\") && (!HasRole(\"airfield\") || !HasRole(\"war_factory\")) && UnitCount(\"e1\") >= 11 && UnitCount(\"e1\") < 16 && Cash() >= 100 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2100) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1600) && (CombatVehicleCount() >= 7 || Cash() >= 340)"
+  },
+  {
+    "name": "produce-grenadier",
+    "priority": 498,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-grenadier",
+    "condition": "!AxisBurned(\"infantry\") && HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuildRole(\"grenadier\") && RoleCount(\"grenadier\") < 3 && Cash() >= 160 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2160) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1660) && (CombatVehicleCount() >= 7 || Cash() >= 400)"
+  },
+  {
+    "name": "build-kennel",
+    "priority": 550,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-kennel",
+    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"kennel\") && !HasRole(\"kennel\") && PowerExcess() >= 0 && Cash() >= 300"
+  },
+  {
+    "name": "produce-attack-dog",
+    "priority": 510,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-attack-dog",
+    "condition": "HasRole(\"kennel\") && !QueueBusy(\"Infantry\") && CanBuildRole(\"attack_dog\") && RoleCount(\"attack_dog\") < 2 && Cash() >= 200 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2200) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1700) && (CombatVehicleCount() >= 7 || Cash() >= 440)"
+  },
+  {
+    "name": "produce-spy",
+    "priority": 440,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-spy",
+    "condition": "HasRole(\"barracks\") && HasRole(\"radar\") && !QueueBusy(\"Infantry\") && CanBuildRole(\"spy\") && RoleCount(\"spy\") < 1 && Cash() >= 500 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2500) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2000) && (CombatVehicleCount() >= 7 || Cash() >= 740)"
+  },
+  {
+    "name": "produce-vehicle",
+    "priority": 480,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-vehicle",
+    "condition": "!AxisBurned(\"vehicle\") && HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuildAnyCombatVehicle() && CombatVehicleCount() < 7 && Cash() >= 800 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 1699) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1474)"
+  },
+  {
+    "name": "produce-aircraft",
+    "priority": 460,
+    "category": "produce-aircraft",
+    "exclusive": true,
+    "action": "produce-aircraft",
+    "condition": "!AxisBurned(\"air\") && HasRole(\"airfield\") && !QueueBusy(\"Aircraft\") && CanBuildAnyCombatAircraft() && CombatAircraftCount() < 3 && CombatAircraftCount() < AircraftCapacity() && Cash() >= 800 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2800) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2300)"
+  },
+  {
+    "name": "produce-rocket-soldier",
+    "priority": 495,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-rocket-soldier",
+    "condition": "!AxisBurned(\"infantry\") && HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuildRole(\"rocket_soldier\") && RoleCount(\"rocket_soldier\") < 3 && Cash() >= 300 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2300) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1800) && (CombatVehicleCount() >= 7 || Cash() >= 540)"
+  },
+  {
+    "name": "produce-heavy-vehicle",
+    "priority": 475,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-heavy-vehicle",
+    "condition": "HasRole(\"war_factory\") && HasRole(\"tech_center\") && !QueueBusy(\"Vehicle\") && (CanBuildRole(\"heavy_tank\") || CanBuildRole(\"medium_tank\")) && RoleCount(\"heavy_tank\") + RoleCount(\"medium_tank\") < 2 && Cash() >= 1200 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 3200) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2700)"
+  },
+  {
+    "name": "produce-scout-vehicle",
+    "priority": 465,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-scout-vehicle",
+    "condition": "!HasEnemyIntel() && HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && (CanBuildRole(\"ranger\") || CanBuildRole(\"light_tank\")) && !HasRole(\"ranger\") && !HasScout() && Cash() >= 500 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2500) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2000)"
+  },
+  {
+    "name": "produce-siege-vehicle",
+    "priority": 485,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-siege-vehicle",
+    "condition": "HasRole(\"war_factory\") && HasRole(\"radar\") && !QueueBusy(\"Vehicle\") && (CanBuildRole(\"artillery\") || CanBuildRole(\"v2_launcher\")) && RoleCount(\"artillery\") + RoleCount(\"v2_launcher\") < 2 && Cash() >= 900 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 1799) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1574)"
+  },
+  {
+    "name": "produce-flak-truck",
+    "priority": 470,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-flak-truck",
+    "condition": "HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuildRole(\"flak_truck\") && RoleCount(\"flak_truck\") < 2 && Cash() >= 600 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2600) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2100)"
+  },
+  {
+    "name": "produce-mad-tank",
+    "priority": 455,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-mad-tank",
+    "condition": "HasRole(\"war_factory\") && HasRole(\"tech_center\") && !QueueBusy(\"Vehicle\") && CanBuildRole(\"mad_tank\") && RoleCount(\"mad_tank\") < 2 && Cash() >= 2000 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 4000) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 3500)"
+  },
+  {
+    "name": "produce-minelayer",
+    "priority": 450,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-minelayer",
+    "condition": "HasRole(\"war_factory\") && HasRole(\"service_depot\") && !QueueBusy(\"Vehicle\") && CanBuildRole(\"minelayer\") && RoleCount(\"minelayer\") < 1 && Cash() >= 800 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2800) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2300)"
+  },
+  {
+    "name": "lay-mines",
+    "priority": 300,
+    "category": "minelayer",
+    "exclusive": false,
+    "action": "lay-mines",
+    "condition": "len(IdleMinelayers()) > 0"
+  },
+  {
+    "name": "produce-attack-aircraft",
+    "priority": 455,
+    "category": "produce-aircraft",
+    "exclusive": true,
+    "action": "produce-advanced-aircraft",
+    "condition": "HasRole(\"airfield\") && !QueueBusy(\"Aircraft\") && CanBuildRole(\"advanced_aircraft\") && RoleCount(\"advanced_aircraft\") < 1 && CombatAircraftCount() < AircraftCapacity() && Cash() >= 1500 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 3500) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 3000)"
+  },
+  {
+    "name": "form-defense-squad",
+    "priority": 423,
+    "category": "squad-form",
+    "exclusive": false,
+    "action": "form-squad(ground-defense, Ground, 3, Defend)",
+    "condition": "(!SquadExists(\"ground-defense\") && len(UnassignedIdleGround()) >= 3 || SquadNeedsReinforcement(\"ground-defense\") && len(UnassignedIdleGround()) >= 1) && (BaseUnderAttack() || len(UnassignedIdleGround()) >= 7)"
+  },
+  {
+    "name": "squad-defend-base",
+    "priority": 418,
+    "category": "combat",
+    "exclusive": false,
+    "action": "squad-defend(ground-defense)",
+    "condition": "SquadExists(\"ground-defense\") && SquadIdleCount(\"ground-defense\") > 0 && BaseUnderAttack()"
+  },
+  {
+    "name": "defend-base-air",
+    "priority": 403,
+    "category": "air-combat",
+    "exclusive": false,
+    "action": "air-defend-base",
+    "condition": "BaseUnderAttack() && len(IdleCombatAircraft()) > 0"
+  },
+  {
+    "name": "form-ground-attack",
+    "priority": 335,
+    "category": "squad-form",
+    "exclusive": false,
+    "action": "form-squad(ground-attack, Ground, 8, Attack)",
+    "condition": "(!SquadExists(\"ground-attack\") && len(UnassignedIdleGround()) >= 4 || SquadNeedsReinforcement(\"ground-attack\") && len(UnassignedIdleGround()) >= 1)"
+  },
+  {
+    "name": "squad-attack",
+    "priority": 330,
+    "category": "ground-attack-choice",
+    "exclusive": true,
+    "action": "squad-attack-move(ground-attack)",
+    "condition": "SquadExists(\"ground-attack\") && SquadReadyRatio(\"ground-attack\") >= 0.74 && (BestGroundTarget() != nil || NearestEnemy() != nil)"
+  },
+  {
+    "name": "squad-reengage",
+    "priority": 328,
+    "category": "combat",
+    "exclusive": false,
+    "action": "squad-attack-move(ground-attack)",
+    "condition": "SquadExists(\"ground-attack\") && SquadIdleCount(\"ground-attack\") > 0 && (BestGroundTarget() != nil || NearestEnemy() != nil)"
+  },
+  {
+    "name": "squad-attack-known-base",
+    "priority": 335,
+    "category": "ground-attack-choice",
+    "exclusive": true,
+    "action": "squad-attack-known-base(ground-attack, 0.65)",
+    "condition": "SquadExists(\"ground-attack\") && SquadReadyRatio(\"ground-attack\") >= 0.74 && HasEnemyIntel()"
+  },
+  {
+    "name": "form-air-attack",
+    "priority": 330,
+    "category": "squad-form",
+    "exclusive": false,
+    "action": "form-squad(air-attack, Air, 3, Attack)",
+    "condition": "(!SquadExists(\"air-attack\") && len(UnassignedIdleAir()) >= 2 || SquadNeedsReinforcement(\"air-attack\") && len(UnassignedIdleAir()) >= 1)"
+  },
+  {
+    "name": "squad-air-attack",
+    "priority": 325,
+    "category": "air-combat",
+    "exclusive": false,
+    "action": "squad-air-strike(air-attack)",
+    "condition": "SquadExists(\"air-attack\") && SquadReadyRatio(\"air-attack\") >= 0.74 && BestAirTarget() != nil"
+  },
+  {
+    "name": "squad-air-reengage",
+    "priority": 323,
+    "category": "air-combat",
+    "exclusive": false,
+    "action": "squad-air-strike(air-attack)",
+    "condition": "SquadExists(\"air-attack\") && SquadIdleCount(\"air-attack\") > 0 && BestAirTarget() != nil"
+  },
+  {
+    "name": "squad-air-attack-known-base",
+    "priority": 315,
+    "category": "air-combat",
+    "exclusive": false,
+    "action": "squad-attack-known-base(air-attack, 0.65)",
+    "condition": "SquadExists(\"air-attack\") && SquadReadyRatio(\"air-attack\") >= 0.74 && !EnemiesVisible() && HasEnemyIntel()"
+  },
+  {
+    "name": "fire-nuke",
+    "priority": 880,
+    "category": "superweapon",
+    "exclusive": true,
+    "action": "fire-nuke",
+    "condition": "SupportPowerReady(\"NukePowerInfoOrder\")"
+  },
+  {
+    "name": "fire-iron-curtain",
+    "priority": 870,
+    "category": "superweapon",
+    "exclusive": true,
+    "action": "fire-iron-curtain",
+    "condition": "SupportPowerReady(\"GrantExternalConditionPowerInfoOrder\") && len(IdleGroundUnits()) >= 3"
+  },
+  {
+    "name": "fire-spy-plane",
+    "priority": 860,
+    "category": "superweapon",
+    "exclusive": true,
+    "action": "fire-spy-plane",
+    "condition": "SupportPowerReady(\"SovietSpyPlane\") && !HasEnemyIntel()"
+  },
+  {
+    "name": "fire-spy-plane-update",
+    "priority": 250,
+    "category": "superweapon",
+    "exclusive": true,
+    "action": "fire-spy-plane",
+    "condition": "SupportPowerReady(\"SovietSpyPlane\") && HasEnemyIntel() && !EnemiesVisible()"
+  },
+  {
+    "name": "fire-paratroopers",
+    "priority": 855,
+    "category": "superweapon",
+    "exclusive": true,
+    "action": "fire-paratroopers",
+    "condition": "SupportPowerReady(\"SovietParatroopers\") && (HasEnemyIntel() || EnemiesVisible())"
+  },
+  {
+    "name": "fire-parabombs",
+    "priority": 845,
+    "category": "superweapon",
+    "exclusive": true,
+    "action": "fire-parabombs",
+    "condition": "SupportPowerReady(\"UkraineParabombs\") && (HasEnemyIntel() || EnemiesVisible())"
+  },
+  {
+    "name": "retreat-damaged-units",
+    "priority": 405,
+    "category": "micro",
+    "exclusive": false,
+    "action": "retreat-damaged-units(0.2725)",
+    "condition": "len(DamagedCombatUnits(0.27)) > 0"
+  },
+  {
+    "name": "clear-healed-units",
+    "priority": 500,
+    "category": "micro",
+    "exclusive": false,
+    "action": "clear-healed-units(0.2725)",
+    "condition": "HasRetreatingUnits()"
+  },
+  {
+    "name": "recall-overextended-ground-attack",
+    "priority": 395,
+    "category": "micro",
+    "exclusive": false,
+    "action": "recall-overextended(ground-attack, 0.4125)",
+    "condition": "SquadExists(\"ground-attack\") && len(OverextendedSquadMembers(\"ground-attack\",0.41)) > 0"
+  },
+  {
+    "name": "recall-overextended-naval-attack",
+    "priority": 395,
+    "category": "micro",
+    "exclusive": false,
+    "action": "recall-overextended(naval-attack, 0.4125)",
+    "condition": "SquadExists(\"naval-attack\") && len(OverextendedSquadMembers(\"naval-attack\",0.41)) > 0"
+  },
+  {
+    "name": "squad-disengage-ground-attack",
+    "priority": 400,
+    "category": "micro",
+    "exclusive": false,
+    "action": "squad-disengage(ground-attack)",
+    "condition": "SquadExists(\"ground-attack\") && SquadAwayFromBase(\"ground-attack\",0.1) && SquadThreatRatio(\"ground-attack\",0.1) > 2.48"
+  },
+  {
+    "name": "squad-disengage-naval-attack",
+    "priority": 400,
+    "category": "micro",
+    "exclusive": false,
+    "action": "squad-disengage(naval-attack)",
+    "condition": "SquadExists(\"naval-attack\") && SquadAwayFromBase(\"naval-attack\",0.1) && SquadThreatRatio(\"naval-attack\",0.1) > 2.48"
+  },
+  {
+    "name": "squad-focus-fire",
+    "priority": 331,
+    "category": "micro",
+    "exclusive": false,
+    "action": "squad-focus-fire(ground-attack)",
+    "condition": "SquadExists(\"ground-attack\") && SquadReadyRatio(\"ground-attack\") >= 0.74 && BestGroundTarget() != nil"
+  },
+  {
+    "name": "flee-harvesters",
+    "priority": 255,
+    "category": "micro",
+    "exclusive": false,
+    "action": "flee-harvesters(0.12)",
+    "condition": "EnemiesVisible() && len(HarvestersInDanger(0.12)) > 0"
+  },
+  {
+    "name": "scout-with-scouts",
+    "priority": 345,
+    "category": "recon",
+    "exclusive": false,
+    "action": "scout-patrol",
+    "condition": "len(IdleScouts()) > 0"
+  },
+  {
+    "name": "scout-with-idle-units",
+    "priority": 340,
+    "category": "recon",
+    "exclusive": false,
+    "action": "scout",
+    "condition": "!EnemiesVisible() && len(UnassignedIdleGround()) >= 8"
+  }
+]

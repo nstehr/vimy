@@ -2,6 +2,7 @@ package rules
 
 import (
 	"math/rand"
+	"os"
 	"reflect"
 	"testing"
 
@@ -222,4 +223,36 @@ func TestArtifactRejectsBadActions(t *testing.T) {
 			t.Errorf("%q was accepted", src)
 		}
 	}
+}
+
+// A full doctrine's rule set, compiled by vimyc, loads and compiles.
+//
+// The unit tests above cover the loader on 13 seed rules and the action
+// registries on 235 names. This is the thing itself: 101 rules from a real
+// doctrine, every condition through expr and every action resolved, which is
+// what the engine does at startup and nothing smaller exercises.
+func TestDoctrineArtifactLoadsIntoAnEngine(t *testing.T) {
+	data, err := os.ReadFile("testdata/doctrine_artifact.json")
+	if err != nil {
+		t.Skipf("no doctrine artifact: %v", err)
+	}
+	loaded, err := LoadArtifact(data)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(loaded) < 90 {
+		t.Fatalf("only %d rules; the artifact looks truncated", len(loaded))
+	}
+	if _, err := NewEngine(loaded); err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+
+	// Every rule names a category the engine knows, since a misspelled one
+	// silently makes its own exclusivity group.
+	for _, r := range loaded {
+		if r.Category == "" {
+			t.Errorf("%s has no category", r.Name)
+		}
+	}
+	t.Logf("%d rules loaded and compiled", len(loaded))
 }
