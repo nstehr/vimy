@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/expr-lang/expr"
@@ -303,5 +304,40 @@ func TestSquadGuardHarvestersResolves(t *testing.T) {
 	// A squad name where the radius belongs must not be accepted.
 	if _, err := resolveAction("squad-guard-harvesters(0.13, harvester-guard)"); err == nil {
 		t.Error("arguments were accepted in the wrong order")
+	}
+}
+
+// The dashboard shows the rule set in the language it is written in.
+//
+// A condition says what the engine tests; the source says it the way someone
+// would edit it. Both come from one Ir in one pass of the compiler, so the text
+// shown and the text run cannot disagree — this checks the carrying, which is
+// the part that can.
+func TestSourceReachesTheRuleSummary(t *testing.T) {
+	const vy = "rule build-refinery {\n  priority 750\n  category economy exclusive\n" +
+		"  do produce-refinery\n  require cash >= 1160\n}"
+	loaded, err := LoadArtifact([]byte(`[{"name":"build-refinery","priority":750,
+	  "category":"economy","exclusive":true,"action":"produce-refinery",
+	  "condition":"Cash() >= 1160","source":` + strconv.Quote(vy) + `}]`))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	engine, err := NewEngine(loaded)
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	got := engine.Rules()
+	if len(got) != 1 || got[0].Source != vy {
+		t.Errorf("Source is %q", got[0].Source)
+	}
+
+	// An artifact without one still loads — the dashboard falls back to expr.
+	old, err := LoadArtifact([]byte(`[{"name":"r","priority":1,"category":"economy",
+	  "exclusive":false,"action":"scout","condition":"true"}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old[0].Source != "" {
+		t.Errorf("Source is %q, want empty", old[0].Source)
 	}
 }

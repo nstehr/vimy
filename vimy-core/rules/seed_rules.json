@@ -5,7 +5,8 @@
     "category": "setup",
     "exclusive": true,
     "action": "deploy-mcv",
-    "condition": "HasUnit(\"mcv\") && !HasBuilding(\"fact\")"
+    "condition": "HasUnit(\"mcv\") && !HasBuilding(\"fact\")",
+    "source": "rule deploy-mcv {\n  priority 1000\n  category setup exclusive\n  do deploy-mcv\n  require has-unit(mcv)\n  require not has-building(fact)\n}"
   },
   {
     "name": "place-ready-building",
@@ -13,7 +14,8 @@
     "category": "economy",
     "exclusive": true,
     "action": "place-building",
-    "condition": "QueueReady(\"Building\")"
+    "condition": "QueueReady(\"Building\")",
+    "source": "rule place-ready-building {\n  priority 900\n  category economy exclusive\n  do place-building\n  require queue-ready(Building)\n}"
   },
   {
     "name": "build-power",
@@ -21,7 +23,8 @@
     "category": "economy",
     "exclusive": true,
     "action": "produce-power-plant",
-    "condition": "!QueueBusy(\"Building\") && CanBuild(\"Building\",\"powr\") && (PowerExcess() < 100 || BuildingCount(\"powr\") == 0) && Cash() >= 300"
+    "condition": "!QueueBusy(\"Building\") && CanBuild(\"Building\",\"powr\") && (PowerExcess() < 100 || BuildingCount(\"powr\") == 0) && Cash() >= 300",
+    "source": "rule build-power {\n  priority 800\n  category economy exclusive\n  do produce-power-plant\n  require not queue-busy(Building)\n  require can-build(Building, powr)\n  require power-excess < 100 or building-count(powr) == 0\n  require cash >= 300\n}"
   },
   {
     "name": "build-refinery",
@@ -29,7 +32,8 @@
     "category": "economy",
     "exclusive": true,
     "action": "produce-refinery",
-    "condition": "!QueueBusy(\"Building\") && CanBuild(\"Building\",\"proc\") && !HasBuilding(\"proc\") && Cash() >= 2000"
+    "condition": "!QueueBusy(\"Building\") && CanBuild(\"Building\",\"proc\") && !HasBuilding(\"proc\") && Cash() >= 2000",
+    "source": "rule build-refinery {\n  priority 750\n  category economy exclusive\n  do produce-refinery\n  require not queue-busy(Building)\n  require can-build(Building, proc)\n  require not has-building(proc)\n  require cash >= 2000\n}"
   },
   {
     "name": "build-barracks",
@@ -37,7 +41,8 @@
     "category": "economy",
     "exclusive": true,
     "action": "produce-barracks",
-    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"barracks\") && !HasRole(\"barracks\") && PowerExcess() >= 0 && Cash() >= 300"
+    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"barracks\") && !HasRole(\"barracks\") && PowerExcess() >= 0 && Cash() >= 300",
+    "source": "rule build-barracks {\n  priority 700\n  category economy exclusive\n  do produce-barracks\n  require not queue-busy(Building)\n  require can-build-role(barracks)\n  require not has-role(barracks)\n  require power-excess >= 0\n  require cash >= 300\n}"
   },
   {
     "name": "build-war-factory",
@@ -45,7 +50,8 @@
     "category": "economy",
     "exclusive": true,
     "action": "produce-war-factory",
-    "condition": "!QueueBusy(\"Building\") && CanBuild(\"Building\",\"weap\") && !HasBuilding(\"weap\") && PowerExcess() >= 0 && Cash() >= 2000"
+    "condition": "!QueueBusy(\"Building\") && CanBuild(\"Building\",\"weap\") && !HasBuilding(\"weap\") && PowerExcess() >= 0 && Cash() >= 2000",
+    "source": "rule build-war-factory {\n  priority 650\n  category economy exclusive\n  do produce-war-factory\n  require not queue-busy(Building)\n  require can-build(Building, weap)\n  require not has-building(weap)\n  require power-excess >= 0\n  require cash >= 2000\n}"
   },
   {
     "name": "produce-infantry",
@@ -53,7 +59,8 @@
     "category": "production",
     "exclusive": false,
     "action": "produce-infantry",
-    "condition": "HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && UnitCount(\"e1\") < 10 && Cash() >= 100"
+    "condition": "HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && UnitCount(\"e1\") < 10 && Cash() >= 100",
+    "source": "rule produce-infantry {\n  priority 500\n  category production\n  do produce-infantry\n  require has-role(barracks)\n  require not queue-busy(Infantry)\n  require unit-count(e1) < 10\n  require cash >= 100\n}"
   },
   {
     "name": "defend-base",
@@ -61,7 +68,8 @@
     "category": "combat",
     "exclusive": false,
     "action": "defend-base",
-    "condition": "BaseUnderAttack() && len(IdleGroundUnits()) >= 2"
+    "condition": "BaseUnderAttack() && len(IdleGroundUnits()) >= 2",
+    "source": "rule defend-base {\n  priority 400\n  category combat\n  do defend-base\n  require base-under-attack\n  require count(idle-ground-units) >= 2\n}"
   },
   {
     "name": "scout-with-idle-units",
@@ -69,7 +77,8 @@
     "category": "recon",
     "exclusive": false,
     "action": "scout",
-    "condition": "!EnemiesVisible() && !HasEnemyIntel() && len(IdleGroundUnits()) >= 5"
+    "condition": "!EnemiesVisible() && !HasEnemyIntel() && len(IdleGroundUnits()) >= 5",
+    "source": "rule scout-with-idle-units {\n  priority 350\n  category recon\n  do scout\n  require not enemies-visible\n  require not has-enemy-intel\n  require count(idle-ground-units) >= 5\n}"
   },
   {
     "name": "attack-idle-units",
@@ -77,7 +86,8 @@
     "category": "combat",
     "exclusive": false,
     "action": "attack-move-ground",
-    "condition": "len(IdleGroundUnits()) >= 5 && NearestEnemy() != nil"
+    "condition": "len(IdleGroundUnits()) >= 5 && NearestEnemy() != nil",
+    "source": "rule attack-idle-units {\n  priority 300\n  category combat\n  do attack-move-ground\n  require count(idle-ground-units) >= 5\n  require exists nearest-enemy\n}"
   },
   {
     "name": "attack-known-base",
@@ -85,7 +95,8 @@
     "category": "combat",
     "exclusive": false,
     "action": "attack-known-base-ground",
-    "condition": "!EnemiesVisible() && HasEnemyIntel() && len(IdleGroundUnits()) >= 5"
+    "condition": "!EnemiesVisible() && HasEnemyIntel() && len(IdleGroundUnits()) >= 5",
+    "source": "rule attack-known-base {\n  priority 290\n  category combat\n  do attack-known-base-ground\n  require not enemies-visible\n  require has-enemy-intel\n  require count(idle-ground-units) >= 5\n}"
   },
   {
     "name": "repair-buildings",
@@ -93,7 +104,8 @@
     "category": "maintenance",
     "exclusive": false,
     "action": "repair-buildings",
-    "condition": "len(DamagedBuildings()) > 0"
+    "condition": "len(DamagedBuildings()) > 0",
+    "source": "rule repair-buildings {\n  priority 200\n  category maintenance\n  do repair-buildings\n  require count(damaged-buildings) > 0\n}"
   },
   {
     "name": "return-idle-harvesters",
@@ -101,6 +113,7 @@
     "category": "harvester",
     "exclusive": false,
     "action": "send-harvesters",
-    "condition": "len(IdleHarvesters()) > 0"
+    "condition": "len(IdleHarvesters()) > 0",
+    "source": "rule return-idle-harvesters {\n  priority 100\n  category harvester\n  do send-harvesters\n  require count(idle-harvesters) > 0\n}"
   }
 ]

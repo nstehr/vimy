@@ -21,6 +21,10 @@ type Rule struct {
 	// rule tests; this explains what it is for, which is what someone reading a
 	// game back actually wants.
 	Because string
+	// The rule as `.vy`, after the doctrine was applied — what a person reads.
+	// A condition says what the engine tests; this says it in the language the
+	// rule was written in, which is the one someone would edit.
+	Source  string
 	program *vm.Program // compiled bytecode
 	Action  ActionFunc
 	// How vimyc spells this action, for actions built by a factory. Empty for

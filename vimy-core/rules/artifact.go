@@ -39,6 +39,7 @@ type artifactRule struct {
 	Because   string `json:"because,omitempty"`
 	Action    string `json:"action"`
 	Condition string `json:"condition"`
+	Source    string `json:"source,omitempty"`
 }
 
 // LoadArtifact turns vimyc's output into rules the engine can take.
@@ -63,6 +64,7 @@ func LoadArtifact(data []byte) ([]*Rule, error) {
 			Category:     a.Category,
 			Exclusive:    a.Exclusive,
 			ConditionSrc: a.Condition,
+			Source:       a.Source,
 			Because:      a.Because,
 			Action:       action,
 		}
