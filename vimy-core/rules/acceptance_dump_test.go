@@ -38,13 +38,19 @@ type acceptanceRule struct {
 // all six thresholds, and stagger two of them so the differences the compiler
 // takes are non-zero.
 func boundaryDoctrines() []Doctrine {
+	// Every threshold, each side of it, and the midpoints between. Widened
+	// deliberately: this generator goes when CompileDoctrine does, and whatever
+	// it produces last is what the port stays verified against.
 	steps := []float64{
-		0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35,
-		0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.9, 1.0,
+		0, 0.05, 0.09, 0.1, 0.11, 0.15, 0.19, 0.2, 0.21, 0.25,
+		0.29, 0.3, 0.31, 0.35, 0.39, 0.4, 0.41, 0.45, 0.49, 0.5,
+		0.51, 0.55, 0.59, 0.6, 0.61, 0.7, 0.8, 0.9, 0.95, 1.0,
 	}
 	var out []Doctrine
 	for _, v := range steps {
-		for _, skew := range []float64{0, 0.2} {
+		// Skews so the differences the compiler takes between two weights are
+		// non-zero, and negative as well as positive.
+		for _, skew := range []float64{0, 0.2, -0.2, 0.45} {
 			d := Doctrine{
 				Name:                      "boundary",
 				EconomyPriority:           v,
