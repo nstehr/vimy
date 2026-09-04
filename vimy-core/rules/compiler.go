@@ -151,6 +151,17 @@ func (c *doctrineCompiler) initSavings() {
 	// can actually be queued. Without these gates, moderate tech/superweapon
 	// priorities (0.3-0.5) create enormous cash thresholds (2300+ for a tank)
 	// that prevent any army from being built in early/mid game.
+	// Radar first, because it is the tech gate for every combat vehicle worth
+	// building — without a dome, RA never offers 3tnk or v2rl at all. The
+	// reserves below are each disarmed while `!HasRole("radar")`, which left
+	// the window where radar is the thing we need with an empty savings list:
+	// income arrived in 250-500 dribbles and infantry, defenses and flak trucks
+	// drained it before it could reach 1000. Observed as a permanent deadlock —
+	// zero tanks in a 21,000-tick game whose doctrine asked for heavy and
+	// medium tanks (vimy-tex).
+	if c.d.VehicleWeight > DoctrineEnabled {
+		c.savings = append(c.savings, buildingSaving{`HasRole("radar")`, 1000})
+	}
 	if c.d.VehicleWeight > DoctrineModerate {
 		// War factory requires radar. Don't reserve 2000 until radar exists.
 		c.savings = append(c.savings, buildingSaving{`HasRole("war_factory") || !HasRole("radar")`, 2000})
