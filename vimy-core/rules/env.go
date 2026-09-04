@@ -626,8 +626,21 @@ func (e RuleEnv) WeakestVisibleEnemy() *model.Enemy {
 	return weakest
 }
 
-// HarvestersInDanger returns all harvesters (idle or not) within danger range
-// of any visible enemy. dangerPct is a fraction of the map diagonal.
+// HarvesterThreatRatio is how much enemy strength, relative to a harvester's own
+// health, counts as danger.
+//
+// Presence alone does not: a lone rifleman used to be indistinguishable from a
+// tank column, and one of them parked the economy for 17,000 ticks of game 71 —
+// flee-harvesters fired 696 times while the harvesters shuttled to the refinery
+// and back without ever filling up (vimy-mfq).
+//
+// Relative rather than an absolute HP figure, matching SquadThreatRatio, so it
+// needs no table of unit health and does not drift when the mod changes one.
+const HarvesterThreatRatio = 0.5
+
+// HarvestersInDanger returns the harvesters (idle or not) with enough enemy
+// strength within danger range to be worth running from. dangerPct is a
+// fraction of the map diagonal.
 func (e RuleEnv) HarvestersInDanger(dangerPct float64) []model.Unit {
 	if len(e.State.Enemies) == 0 {
 		return nil
@@ -642,13 +655,27 @@ func (e RuleEnv) HarvestersInDanger(dangerPct float64) []model.Unit {
 		if !matchesType(u.Type, Harvester) {
 			continue
 		}
+		// Summed, so several small units are a threat even though one is not.
+		nearbyHP := 0
 		for _, en := range e.State.Enemies {
 			dx := float64(u.X - en.X)
 			dy := float64(u.Y - en.Y)
 			if dx*dx+dy*dy < threshSq {
-				out = append(out, u)
-				break
+				nearbyHP += en.HP
 			}
+		}
+		if nearbyHP == 0 {
+			continue
+		}
+		// Against the harvester's full health rather than its current: a
+		// harvester already down to a sliver should not become easier to spook
+		// as it takes damage.
+		own := u.MaxHP
+		if own <= 0 {
+			own = u.HP
+		}
+		if own <= 0 || float64(nearbyHP) >= float64(own)*HarvesterThreatRatio {
+			out = append(out, u)
 		}
 	}
 	return out

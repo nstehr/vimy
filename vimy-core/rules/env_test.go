@@ -1487,3 +1487,49 @@ func TestGenericVehicleProductionSkipsCappedRoles(t *testing.T) {
 		t.Errorf("demo truck not reachable: %q", got)
 	}
 }
+
+// A lone rifleman is not danger; a tank is.
+//
+// HarvestersInDanger counted any enemy within range, so one e1 was
+// indistinguishable from a tank column — and one of them parked the economy for
+// 17,000 ticks of game 71, the harvesters shuttling to the refinery and back
+// without ever filling up (vimy-mfq).
+func TestHarvestersInDangerWeighsTheThreat(t *testing.T) {
+	harvester := model.Unit{ID: 1, Type: "harv", X: 50, Y: 50, HP: 600, MaxHP: 600}
+	env := func(enemies ...model.Enemy) RuleEnv {
+		return RuleEnv{
+			State: model.GameState{
+				MapWidth: 100, MapHeight: 100,
+				Units:   []model.Unit{harvester},
+				Enemies: enemies,
+			},
+			Memory: map[string]any{},
+		}
+	}
+	near := func(hp int) model.Enemy { return model.Enemy{ID: 9, Type: "e1", X: 52, Y: 52, HP: hp, MaxHP: hp} }
+
+	if got := env(near(50)).HarvestersInDanger(0.2); len(got) != 0 {
+		t.Errorf("a lone rifleman counted as danger: %+v", got)
+	}
+	// Enough small units together are, though — the threat is summed.
+	many := []model.Enemy{near(50), near(50), near(50), near(50), near(50), near(50), near(50)}
+	if got := env(many...).HarvestersInDanger(0.2); len(got) != 1 {
+		t.Errorf("seven riflemen did not count as danger: %+v", got)
+	}
+	if got := env(near(400)).HarvestersInDanger(0.2); len(got) != 1 {
+		t.Errorf("a tank did not count as danger: %+v", got)
+	}
+	// Out of range is out of range whatever it is.
+	far := model.Enemy{ID: 9, Type: "4tnk", X: 99, Y: 99, HP: 900, MaxHP: 900}
+	if got := env(far).HarvestersInDanger(0.05); len(got) != 0 {
+		t.Errorf("a distant tank counted as danger: %+v", got)
+	}
+	// A damaged harvester is not easier to spook: the test is against full HP.
+	hurt := harvester
+	hurt.HP = 30
+	e := env(near(50))
+	e.State.Units = []model.Unit{hurt}
+	if got := e.HarvestersInDanger(0.2); len(got) != 0 {
+		t.Errorf("a damaged harvester fled from a rifleman: %+v", got)
+	}
+}

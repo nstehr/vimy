@@ -1181,15 +1181,15 @@ func generateWaypoints(mapW, mapH int, terrain *model.TerrainGrid) [][2]int {
 	midY := mapH / 2
 
 	candidates := [][2]int{
-		{midX, midY},   // center
-		{minX, minY},   // top-left
-		{maxX, minY},   // top-right
-		{maxX, maxY},   // bottom-right
-		{minX, maxY},   // bottom-left
-		{midX, minY},   // top-mid
-		{maxX, midY},   // right-mid
-		{midX, maxY},   // bottom-mid
-		{minX, midY},   // left-mid
+		{midX, midY}, // center
+		{minX, minY}, // top-left
+		{maxX, minY}, // top-right
+		{maxX, maxY}, // bottom-right
+		{minX, maxY}, // bottom-left
+		{midX, minY}, // top-mid
+		{maxX, midY}, // right-mid
+		{midX, maxY}, // bottom-mid
+		{minX, midY}, // left-mid
 	}
 
 	if terrain == nil {
@@ -1414,8 +1414,23 @@ func ActionSendIdleHarvesters(env RuleEnv, conn *ipc.Connection) error {
 			refineries = append(refineries, env.State.Buildings[i])
 		}
 	}
+	// Harvesters the flee action is currently moving are left alone. Both rules
+	// fire on the same tick — flee-harvesters in `micro` at 150-300, this one
+	// in `harvester` at 100, different categories so exclusivity cannot
+	// arbitrate — and both send the harvester to the nearest refinery. The
+	// result was a shuttle: flee to the refinery, arrive idle, get sent out to
+	// harvest, come back into danger, flee again. 696 flee firings against 486
+	// returns across 17,000 ticks of game 71 (vimy-mfq).
+	//
+	// `harvesterFleeing` is pruned by FleeHarvesters to those still in danger,
+	// so this clears itself when the threat leaves.
+	fleeing := getHarvesterFleeState(env.Memory)
+
 	state := memoryMap[int, harvestEntry](env.Memory, "harvestSent")
 	for i, u := range env.IdleHarvesters() {
+		if _, ok := fleeing[u.ID]; ok {
+			continue
+		}
 		var tx, ty int
 		switch {
 		case len(refineries) > 0:
@@ -1779,6 +1794,7 @@ const minelayerDoneRadius = 4
 //     known enemy base — block the structural traffic funnel.
 //  2. Fraction-of-the-way toward the enemy when we have intel but no chokes.
 //  3. Compass perimeter around the base when we have neither.
+//
 // Each minelayer is tracked in memory so we don't re-issue orders every tick.
 // The minelayer auto-rearms at the service depot when out of ammo (handled
 // by OpenRA's LayMines activity).
@@ -2453,9 +2469,9 @@ func huntOffset(step, radius int) (int, int) {
 	if step <= 0 {
 		return 0, 0
 	}
-	idx := (step - 1) % 8        // which of 8 compass points (0-7)
-	ring := (step-1)/8 + 1       // which ring: 1 for steps 1-8, 2 for 9-16
-	r := float64(radius * ring)  // inner ring = R, outer ring = 2R
+	idx := (step - 1) % 8       // which of 8 compass points (0-7)
+	ring := (step-1)/8 + 1      // which ring: 1 for steps 1-8, 2 for 9-16
+	r := float64(radius * ring) // inner ring = R, outer ring = 2R
 	angle := float64(idx) * 2 * math.Pi / 8
 	return int(r * math.Cos(angle)), int(r * math.Sin(angle))
 }

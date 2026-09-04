@@ -1260,3 +1260,53 @@ func TestActionCaptureBuilding_ThrottlesOrderSpam(t *testing.T) {
 		t.Errorf("expected target to flip to 901 on change, got %d", state[50].TargetID)
 	}
 }
+
+// The return rule leaves alone whatever the flee rule is moving.
+//
+// Both fire on the same tick, in different categories so exclusivity cannot
+// arbitrate, and both send the harvester to the nearest refinery — so a
+// harvester fled to the refinery, arrived idle, was sent back out, and came
+// straight back into danger. 696 flee firings against 486 returns across 17,000
+// ticks of game 71 (vimy-mfq).
+//
+// Asserted on what the action recorded rather than on the wire: it writes a
+// `harvestSent` entry per harvester it dispatches, which is the same thing the
+// resend guard reads.
+func TestSendIdleHarvestersSkipsFleeingOnes(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	newEnv := func() RuleEnv {
+		return RuleEnv{
+			State: model.GameState{
+				Tick:      5000,
+				Units:     []model.Unit{{ID: 1, Type: "harv", Idle: true}, {ID: 2, Type: "harv", Idle: true}},
+				Buildings: []model.Building{{ID: 10, Type: "proc", X: 20, Y: 20}},
+			},
+			Memory: map[string]any{},
+		}
+	}
+
+	env := newEnv()
+	if err := ActionSendIdleHarvesters(env, conn); err != nil {
+		t.Fatal(err)
+	}
+	sent := memoryMap[int, harvestEntry](env.Memory, "harvestSent")
+	if len(sent) != 2 {
+		t.Fatalf("dispatched %d harvesters, want both", len(sent))
+	}
+
+	// Now one of them is mid-flee. It must be left alone; the other still goes.
+	env = newEnv()
+	getHarvesterFleeState(env.Memory)[1] = harvesterFleeEntry{Tick: 4990, X: 20, Y: 20}
+	if err := ActionSendIdleHarvesters(env, conn); err != nil {
+		t.Fatal(err)
+	}
+	sent = memoryMap[int, harvestEntry](env.Memory, "harvestSent")
+	if len(sent) != 1 {
+		t.Fatalf("dispatched %d harvesters, want only the one that is not fleeing", len(sent))
+	}
+	if _, ok := sent[2]; !ok {
+		t.Errorf("dispatched the fleeing harvester instead of the free one: %+v", sent)
+	}
+}
