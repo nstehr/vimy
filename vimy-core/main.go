@@ -31,6 +31,7 @@ var (
 	directive    string
 	addr         string
 	traceRules   bool
+	vimycRules   bool
 	exportStates bool
 	exportDir    string
 	exportEvery  int
@@ -41,6 +42,7 @@ func main() {
 	flag.StringVar(&directive, "doctrine", "", "initial doctrine directive (e.g. \"Blitzkrieg\", \"guerrilla warfare\")")
 	flag.StringVar(&addr, "addr", ":8080", "HTTP dashboard listen address")
 	flag.BoolVar(&traceRules, "trace-rules", false, "record per-rule firing counters per doctrine window; archives rule_firings rows on game end and exposes live counters to the dashboard")
+	flag.BoolVar(&vimycRules, "vimyc-rules", false, "start from the vimyc-compiled rule set (rules/seed_rules.json) rather than DefaultRules; the same rules by a different route. A -doctrine swaps them out once the first doctrine lands, so use it without one to play a whole game on them")
 	flag.BoolVar(&exportStates, "export-states", false, "record sampled rule evaluations for vimyc's differential corpus, one file per game under -export-dir")
 	flag.StringVar(&exportDir, "export-dir", "", "where -export-states writes; defaults to ~/.vimy/exports, alongside the database")
 	flag.IntVar(&exportEvery, "export-every", 5, "with -export-states, record one evaluation in this many")
@@ -58,12 +60,23 @@ func main() {
 
 	// Create engine and strategist at top level so the dashboard can access them
 	// before a game connection arrives.
-	engine, err := rules.NewEngine(rules.DefaultRules())
+	startingRules := rules.DefaultRules()
+	ruleSource := "go"
+	if vimycRules {
+		compiled, err := rules.SeedRules()
+		if err != nil {
+			slog.Error("cannot load the vimyc rule set", "error", err)
+			os.Exit(1)
+		}
+		startingRules, ruleSource = compiled, "vimyc"
+	}
+
+	engine, err := rules.NewEngine(startingRules)
 	if err != nil {
 		slog.Error("failed to create rule engine", "error", err)
 		os.Exit(1)
 	}
-	slog.Info("rule engine initialized", "rules", len(rules.DefaultRules()))
+	slog.Info("rule engine initialized", "rules", len(startingRules), "source", ruleSource)
 
 	if traceRules {
 		engine.SetTraceFirings(true)
