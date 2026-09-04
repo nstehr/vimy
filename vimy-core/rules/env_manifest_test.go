@@ -86,7 +86,19 @@ func TestDumpEnvManifest(t *testing.T) {
 		t.Skip("no DUMP_DIR")
 	}
 
-	lits, used := argLiterals()
+	// The literals and the "is this predicate used" flag came from every rule
+	// CompileDoctrine could emit. With that compiler gone the equivalent source
+	// is the rule set vimyc compiles, so the manifest is generated from the
+	// committed artifact plus the seed rules.
+	artifact, err := os.ReadFile("testdata/doctrine_artifact.json")
+	if err != nil {
+		t.Skipf("no doctrine artifact: %v", err)
+	}
+	loaded, err := LoadArtifact(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lits, used := conditionArgs(append(loaded, DefaultRules()...))
 	typ := reflect.TypeOf(RuleEnv{})
 	var methods []manifestMethod
 

@@ -153,29 +153,6 @@ func TestGenerateWaypointsFallbackWhenAllFiltered(t *testing.T) {
 	}
 }
 
-func TestDoctrineNavalGating(t *testing.T) {
-	// Compile a doctrine with naval weight and verify MapHasWater() appears in conditions.
-	d := DefaultDoctrine()
-	d.NavalWeight = 0.5
-	rules := CompileDoctrine(d)
-
-	navalRuleNames := map[string]bool{
-		"build-naval-yard":   true,
-		"produce-ship":       true,
-		"form-naval-attack":  true,
-		"squad-naval-attack": true,
-		"rebuild-naval-yard": true,
-	}
-
-	for _, r := range rules {
-		if navalRuleNames[r.Name] {
-			if !containsString(r.ConditionSrc, "MapHasWater()") {
-				t.Errorf("rule %q should contain MapHasWater() in condition: %s", r.Name, r.ConditionSrc)
-			}
-		}
-	}
-}
-
 func containsString(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstring(s, substr))
 }

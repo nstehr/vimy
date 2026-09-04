@@ -1,7 +1,8 @@
 package rules
 
 // DefaultRules returns a hardcoded rule set for play without an LLM strategist.
-// Superseded by CompileDoctrine when a strategist is active.
+// What the engine runs before the first doctrine lands. Superseded by the
+// rule set vimyc compiles once a strategist is active.
 func DefaultRules() []*Rule {
 	return []*Rule{
 		{

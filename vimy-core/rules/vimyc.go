@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// Compiling a doctrine through vimyc instead of CompileDoctrine.
+// Compiling a doctrine into rules.
 //
 // A subprocess rather than a library: the boundary is a doctrine in and a rule
 // set out, it runs once per doctrine window rather than per tick, and a process

@@ -192,7 +192,7 @@ func (e *StateExporter) Writable() error {
 //
 // Order-independent, because it has to be. `compileRules` sorts by priority
 // with `sort.Slice`, so the engine holds a different ordering from what
-// `CompileDoctrine` returned — and the sort is not stable, so two sorts of the
+// the compiler returned — and the sort is not stable, so two sorts of the
 // same rules need not even agree with each other.
 func RuleSetID(rules []*Rule) string {
 	lines := make([]string, 0, len(rules))

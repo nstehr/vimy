@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"encoding/json"
 	"math/rand"
 	"os"
 	"reflect"
@@ -123,65 +124,47 @@ func TestSeedArtifactConditionsAgreeWithDefaultRules(t *testing.T) {
 	}
 }
 
-// Every action the compiler can emit survives being named and read back.
+// Every action the artifact names resolves, and a factory call round trips.
 //
-// The seed rule set uses none of the factories, so this runs over the 500
-// archived doctrines instead — which between them exercise all eleven.
-func TestEveryCompiledActionResolves(t *testing.T) {
-	seen := map[string]bool{}
-	factories := map[string]bool{}
-
-	doctrines, err := RealDoctrines()
+// This walked CompileDoctrine's output over 500 doctrines until that compiler
+// was deleted. The committed artifact is a real doctrine's rule set, which
+// reaches fewer actions but is the shape the loader actually meets.
+func TestEveryActionInTheArtifactResolves(t *testing.T) {
+	data, err := os.ReadFile("testdata/doctrine_artifact.json")
 	if err != nil {
-		t.Fatalf("real doctrines: %v", err)
+		t.Skipf("no doctrine artifact: %v", err)
 	}
-	for _, d := range doctrines {
-		for _, r := range CompileDoctrine(d) {
-			src, err := actionName(r)
-			if err != nil {
-				t.Fatalf("%s: %v", r.Name, err)
-			}
-			if seen[src] {
-				continue
-			}
-			seen[src] = true
+	var loaded []artifactRule
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		t.Fatal(err)
+	}
 
-			fn, err := resolveAction(src)
-			if err != nil {
-				t.Errorf("%q: %v", src, err)
-				continue
-			}
-			name, args, err := parseActionSrc(src)
-			if err != nil {
-				t.Errorf("%q: %v", src, err)
-				continue
-			}
-			if args == nil {
-				// A registry id names a function, so this is the same function.
-				if reflect.ValueOf(fn).Pointer() != reflect.ValueOf(r.Action).Pointer() {
-					t.Errorf("%q resolved to a different function", src)
-				}
-				continue
-			}
-			factories[name] = true
-
-			// A closure's captured arguments cannot be read back, so the check
-			// is that rendering the parse reproduces the source exactly.
-			as := make([]any, len(args))
-			for i, a := range args {
-				as[i] = a
-			}
-			if got := actionSrc(name, as...); got != src {
-				t.Errorf("round trip: %q became %q", src, got)
-			}
+	factories := map[string]bool{}
+	for _, a := range loaded {
+		if _, err := resolveAction(a.Action); err != nil {
+			t.Errorf("%s: %v", a.Name, err)
+			continue
+		}
+		name, args, err := parseActionSrc(a.Action)
+		if err != nil {
+			t.Errorf("%s: %v", a.Name, err)
+			continue
+		}
+		if args == nil {
+			continue
+		}
+		factories[name] = true
+		// A closure's captured arguments cannot be read back, so the check is
+		// that rendering the parse reproduces the source exactly.
+		as := make([]any, len(args))
+		for i, v := range args {
+			as[i] = v
+		}
+		if got := actionSrc(name, as...); got != a.Action {
+			t.Errorf("round trip: %q became %q", a.Action, got)
 		}
 	}
-
-	if len(factories) != len(actionFactories) {
-		t.Errorf("only %d of %d factories exercised: %v",
-			len(factories), len(actionFactories), factories)
-	}
-	t.Logf("%d distinct actions, %d factories", len(seen), len(factories))
+	t.Logf("%d rules, %d factories exercised", len(loaded), len(factories))
 }
 
 // Which argument goes to which parameter is straight-line code that no
