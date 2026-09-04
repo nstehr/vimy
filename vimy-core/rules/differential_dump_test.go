@@ -80,7 +80,7 @@ func TestDumpDifferential(t *testing.T) {
 		// Memory does not change between rules and all thirteen snapshots would
 		// be identical. Recomputing them costs 13x for nothing.
 		stateIdx := len(corpus.States)
-		corpus.States = append(corpus.States, projectFor(env, DefaultRules()))
+		corpus.States = append(corpus.States, project(env))
 
 		// Mirrors Evaluate's loop, including the exclusivity skip.
 		firedCategories := map[string]bool{}

@@ -18,23 +18,28 @@ func TestEveryRuleActionIsRegistered(t *testing.T) {
 		byPtr[reflect.ValueOf(fn).Pointer()] = true
 	}
 
-	// The seed rules only. This walked every rule CompileDoctrine could emit
-	// until that compiler was deleted; a vimyc rule set names its actions as
-	// text, and that they resolve is checked by
-	// `TestEveryActionInTheArtifactResolves`, which is a stronger test of the
-	// same thing — a name that is not in the registry fails to load at all.
+	real, err := RealDoctrines()
+	if err != nil {
+		t.Fatal(err)
+	}
 	unresolved := map[string]bool{}
+	for _, d := range append(real, DefaultDoctrine()) {
+		for _, r := range CompileDoctrine(d) {
+			if !byPtr[reflect.ValueOf(r.Action).Pointer()] {
+				unresolved[r.Name] = true
+			}
+		}
+	}
 	for _, r := range DefaultRules() {
 		if !byPtr[reflect.ValueOf(r.Action).Pointer()] {
 			unresolved[r.Name] = true
 		}
 	}
 
-	// The seed rules use no factory-built action, so every one of them must be
-	// in the registry. The rules that do take arguments arrive from vimyc as
-	// text and are resolved by `resolveAction`, where an unregistered name
-	// fails the whole load rather than passing quietly.
 	expected := map[string]bool{}
+	for _, n := range parameterisedActionRules {
+		expected[n] = true
+	}
 
 	var surprise, gone []string
 	for n := range unresolved {
@@ -58,4 +63,31 @@ func TestEveryRuleActionIsRegistered(t *testing.T) {
 	if len(gone) > 0 {
 		t.Errorf("these are listed as parameterised but now resolve: %v", gone)
 	}
+}
+
+// Rules whose action is built by a factory — FormSquad, SquadDefend and the
+// nine others in actions.go — so it carries arguments and cannot be a fixed id.
+var parameterisedActionRules = []string{
+	"clear-healed-units",
+	"flee-harvesters",
+	"form-air-attack",
+	"form-defense-squad",
+	"form-ground-attack",
+	"form-naval-attack",
+	"recall-overextended-ground-attack",
+	"recall-overextended-naval-attack",
+	"retreat-damaged-units",
+	"squad-air-attack",
+	"squad-air-attack-known-base",
+	"squad-air-reengage",
+	"squad-attack",
+	"squad-attack-known-base",
+	"squad-defend-base",
+	"squad-disengage-ground-attack",
+	"squad-disengage-naval-attack",
+	"squad-focus-fire",
+	"squad-naval-attack",
+	"squad-naval-attack-known-base",
+	"squad-naval-reengage",
+	"squad-reengage",
 }

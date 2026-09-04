@@ -3,6 +3,7 @@ package rules
 import (
 	"testing"
 
+	"github.com/expr-lang/expr"
 	"github.com/nstehr/vimy/vimy-core/model"
 )
 
@@ -159,10 +160,10 @@ func TestHarvestersInDanger(t *testing.T) {
 			MapWidth:  1000,
 			MapHeight: 1000,
 			Units: []model.Unit{
-				{ID: 1, Type: "harv", Idle: true, X: 100, Y: 100},  // near enemy
-				{ID: 2, Type: "harv", Idle: false, X: 110, Y: 110}, // near enemy, not idle — still included
-				{ID: 3, Type: "harv", Idle: true, X: 900, Y: 900},  // far from enemy
-				{ID: 4, Type: "1tnk", Idle: true, X: 100, Y: 100},  // not a harvester
+				{ID: 1, Type: "harv", Idle: true, X: 100, Y: 100},   // near enemy
+				{ID: 2, Type: "harv", Idle: false, X: 110, Y: 110},  // near enemy, not idle — still included
+				{ID: 3, Type: "harv", Idle: true, X: 900, Y: 900},   // far from enemy
+				{ID: 4, Type: "1tnk", Idle: true, X: 100, Y: 100},   // not a harvester
 			},
 			Enemies: []model.Enemy{
 				{ID: 99, X: 120, Y: 120, HP: 100, MaxHP: 100},
@@ -314,6 +315,47 @@ func TestFleeHarvesters_PrunesSafeHarvesters(t *testing.T) {
 	}
 	if _, ok := state[1]; !ok {
 		t.Error("expected harvester 1 entry preserved while still in danger")
+	}
+}
+
+func TestCompileDoctrineMicroRules(t *testing.T) {
+	d := DefaultDoctrine() // Aggression=0.5, EconomyPriority=0.5
+	rules := CompileDoctrine(d)
+
+	// Verify all rules compile with expr.
+	for _, r := range rules {
+		_, err := expr.Compile(r.ConditionSrc, expr.Env(RuleEnv{}), expr.AsBool())
+		if err != nil {
+			t.Errorf("rule %q failed to compile: %v\ncondition: %s", r.Name, err, r.ConditionSrc)
+		}
+	}
+
+	found := map[string]bool{}
+	for _, r := range rules {
+		found[r.Name] = true
+	}
+
+	// All three micro rules should be present for default doctrine.
+	if !found["retreat-damaged-units"] {
+		t.Error("expected retreat-damaged-units rule")
+	}
+	if !found["squad-focus-fire"] {
+		t.Error("expected squad-focus-fire rule (Aggression=0.5 > 0.2)")
+	}
+	if !found["flee-harvesters"] {
+		t.Error("expected flee-harvesters rule (EconomyPriority=0.5 > 0.1)")
+	}
+
+	// All micro rules should use category "micro" and be non-exclusive.
+	for _, r := range rules {
+		if r.Name == "retreat-damaged-units" || r.Name == "squad-focus-fire" || r.Name == "flee-harvesters" {
+			if r.Category != "micro" {
+				t.Errorf("rule %q should have category 'micro', got %q", r.Name, r.Category)
+			}
+			if r.Exclusive {
+				t.Errorf("rule %q should not be exclusive", r.Name)
+			}
+		}
 	}
 }
 
@@ -471,5 +513,45 @@ func TestActionFireParatroopers_NoValidTarget(t *testing.T) {
 	err := ActionFireParatroopers(env, nil) // nil conn — should return nil before sending
 	if err != nil {
 		t.Fatalf("expected nil error when no valid land target, got: %v", err)
+	}
+}
+
+func TestCompileDoctrineMicroRulesGating(t *testing.T) {
+	// Low aggression, low economy → focus-fire and flee gated out.
+	d := Doctrine{
+		Name:                  "Passive",
+		EconomyPriority:       0.05, // below DoctrineEnabled
+		Aggression:            0.1,  // below DoctrineModerate
+		InfantryWeight:        0.3,
+		VehicleWeight:         0.3,
+		GroundAttackGroupSize: 5,
+		AirAttackGroupSize:    2,
+		NavalAttackGroupSize:  3,
+	}
+	rules := CompileDoctrine(d)
+
+	for _, r := range rules {
+		_, err := expr.Compile(r.ConditionSrc, expr.Env(RuleEnv{}), expr.AsBool())
+		if err != nil {
+			t.Errorf("rule %q failed to compile: %v\ncondition: %s", r.Name, err, r.ConditionSrc)
+		}
+	}
+
+	found := map[string]bool{}
+	for _, r := range rules {
+		found[r.Name] = true
+	}
+
+	// Retreat is always present.
+	if !found["retreat-damaged-units"] {
+		t.Error("expected retreat-damaged-units even with low aggression")
+	}
+	// Focus fire gated by Aggression > DoctrineModerate.
+	if found["squad-focus-fire"] {
+		t.Error("unexpected squad-focus-fire with Aggression=0.1")
+	}
+	// Flee harvesters gated by EconomyPriority > DoctrineEnabled.
+	if found["flee-harvesters"] {
+		t.Error("unexpected flee-harvesters with EconomyPriority=0.05")
 	}
 }

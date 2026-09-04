@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"math/rand"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -207,50 +206,30 @@ func TestProjectsOnlyWhatTheRulesAsk(t *testing.T) {
 	updateBuiltRoles(env)
 	updateSquads(env)
 
-	// The seed rules against a full doctrine's rule set. The wide side used to
-	// be every question CompileDoctrine could ever ask; a real rule set is the
-	// honest comparison now, and still an order of magnitude more questions.
-	narrow, err := compileRules(DefaultRules())
+	seed, err := compileRules(DefaultRules())
 	if err != nil {
 		t.Fatal(err)
 	}
-	full := artifactRules(t)
 
-	narrowState := projectFor(env, narrow)
-	wide := projectFor(env, full)
+	narrow := projectFor(env, seed)
+	wide := project(env)
 
-	if len(narrowState.Collections) >= len(wide.Collections) {
-		t.Errorf("projecting for the seed rules asked %d collection keys, a doctrine asked %d",
-			len(narrowState.Collections), len(wide.Collections))
+	if len(narrow.Collections) >= len(wide.Collections) {
+		t.Errorf("projecting for the seed rules asked %d collection keys, the union asked %d",
+			len(narrow.Collections), len(wide.Collections))
+	}
+	// Everything the seed rules do ask about must still be answered.
+	for k := range narrow.Collections {
+		if _, ok := wide.Collections[k]; !ok {
+			t.Errorf("narrow projection asked %q, which the union did not", k)
+		}
 	}
 }
 
 // The fingerprint separates rule sets that differ only in a threshold. Names
 // cannot: two doctrines routinely emit the same rules with different numbers,
 // which is what left a disagreement in the first real differential run.
-// artifactRules is a real doctrine's rule set, for the fingerprint tests that
-// used to compile one with CompileDoctrine.
-func artifactRules(t *testing.T) []*Rule {
-	t.Helper()
-	data, err := os.ReadFile("testdata/doctrine_artifact.json")
-	if err != nil {
-		t.Skipf("no doctrine artifact: %v", err)
-	}
-	rs, err := LoadArtifact(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return rs
-}
-
 func TestRuleSetIDSeparatesThresholds(t *testing.T) {
-	if _, err := exec.LookPath("vimyc"); err != nil {
-		t.Skip("vimyc not on PATH")
-	}
-	c, err := NewVimycCompiler("")
-	if err != nil {
-		t.Fatal(err)
-	}
 	real, err := RealDoctrines()
 	if err != nil {
 		t.Fatal(err)
@@ -258,11 +237,8 @@ func TestRuleSetIDSeparatesThresholds(t *testing.T) {
 
 	ids := map[string]bool{}
 	names := map[string]bool{}
-	for i := 0; i < len(real) && i < 120; i += 3 {
-		rs, err := c.Compile(real[i])
-		if err != nil {
-			t.Fatal(err)
-		}
+	for _, d := range real[:200] {
+		rs := CompileDoctrine(d)
 		ids[RuleSetID(rs)] = true
 
 		var joined string
@@ -275,15 +251,15 @@ func TestRuleSetIDSeparatesThresholds(t *testing.T) {
 		t.Errorf("fingerprint distinguished %d rule sets, bare names %d — it should see more",
 			len(ids), len(names))
 	}
-	t.Logf("%d distinct fingerprints, %d distinct name lists", len(ids), len(names))
+	t.Logf("200 doctrines: %d distinct fingerprints, %d distinct name lists", len(ids), len(names))
 }
 
 // The engine sorts by priority when it swaps, so the set it holds is ordered
-// differently from the one it was given. A fingerprint that depended on order
-// matched 1 of 47 real rule sets — the one whose source order already happened
-// to be sorted.
+// differently from what CompileDoctrine returned. A fingerprint that depended on
+// order matched 1 of 47 real rule sets — the one whose source order already
+// happened to be sorted.
 func TestRuleSetIDIgnoresOrder(t *testing.T) {
-	rs := artifactRules(t)
+	rs := CompileDoctrine(DefaultDoctrine())
 	before := RuleSetID(rs)
 
 	shuffled := append([]*Rule(nil), rs...)
@@ -305,19 +281,13 @@ func TestRuleSetIDIgnoresOrder(t *testing.T) {
 }
 
 func TestRuleSetIDIsStable(t *testing.T) {
-	rs := artifactRules(t)
-	a := RuleSetID(rs)
-	if b := RuleSetID(artifactRules(t)); a != b {
-		t.Errorf("same rule set gave %q then %q", a, b)
+	d := DefaultDoctrine()
+	a, b := RuleSetID(CompileDoctrine(d)), RuleSetID(CompileDoctrine(d))
+	if a != b {
+		t.Errorf("same doctrine gave %q then %q", a, b)
 	}
-
-	// A threshold inside a condition, which is what two doctrines most often
-	// differ by and what a name-based fingerprint cannot see.
-	nudged := append([]*Rule(nil), rs...)
-	changed := *nudged[0]
-	changed.ConditionSrc += " && Cash() >= 1"
-	nudged[0] = &changed
-	if c := RuleSetID(nudged); c == a {
+	d.GroundAttackGroupSize += 2
+	if c := RuleSetID(CompileDoctrine(d)); c == a {
 		t.Errorf("changing a threshold did not change the fingerprint")
 	}
 }

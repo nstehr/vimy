@@ -12,17 +12,17 @@ type ActionFunc func(env RuleEnv, conn *ipc.Connection) error
 // The engine evaluates rules by priority and uses Category + Exclusive
 // to prevent conflicting actions on the same production queue.
 type Rule struct {
-	Name         string // human-readable identifier
-	Priority     int    // higher = evaluated first
-	Category     string // grouping for exclusive semantics
-	Exclusive    bool   // if true, blocks lower-priority rules in same category
-	ConditionSrc string // expr source (preserved for serialization)
+	Name         string      // human-readable identifier
+	Priority     int         // higher = evaluated first
+	Category     string      // grouping for exclusive semantics
+	Exclusive    bool        // if true, blocks lower-priority rules in same category
+	ConditionSrc string      // expr source (preserved for serialization)
 	// Why the rule exists, when the rule set said. A condition explains what a
 	// rule tests; this explains what it is for, which is what someone reading a
 	// game back actually wants.
 	Because string
-	program *vm.Program // compiled bytecode
-	Action  ActionFunc
+	program      *vm.Program // compiled bytecode
+	Action       ActionFunc
 	// How vimyc spells this action, for actions built by a factory. Empty for
 	// the rest, which are named by their ActionRegistry id.
 	//

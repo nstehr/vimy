@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/nstehr/vimy/vimy-core/model"
 )
@@ -84,6 +85,20 @@ func fmtFloat(f float64) string {
 // project asks the env every question a rule could ask, and writes the answers
 // down. Driven by reflection over the manifest's shape rather than by a
 // hand-written line per predicate, so a new predicate needs no change here.
+var (
+	projArgsOnce sync.Once
+	projLits     map[string][]map[string]bool
+	projUsed     map[string]bool
+)
+
+// projectionArgs covers everything any doctrine can emit, which is what the
+// offline dump wants. A live recording should use `conditionArgs` over the rule
+// set actually loaded instead — the union asks about 38 different
+// `overextended-squad-members` thresholds when the active rules use two.
+func projectionArgs() (map[string][]map[string]bool, map[string]bool) {
+	projArgsOnce.Do(func() { projLits, projUsed = argLiterals() })
+	return projLits, projUsed
+}
 
 // recordCallArgs notes, per method and argument position, every literal a
 // condition passes. Shared so a live recording and the offline dump agree on
@@ -128,16 +143,18 @@ func conditionArgs(rules []*Rule) (map[string][]map[string]bool, map[string]bool
 	return out, seen
 }
 
-// projectFor asks the env every question the given rules could ask, and writes
-// the answers down.
-//
-// Always against a rule set. There used to be a doctrine-wide variant that
-// asked everything `CompileDoctrine` could ever emit; with the compiler gone
-// there is no such set to enumerate, and narrowing to the rules actually loaded
-// was already the better answer — the union asked about 38 thresholds where a
-// live rule set uses two.
+// project asks the env every question the given rules could ask, and writes the
+// answers down. Nil rules means every question any doctrine could ask.
 func projectFor(env RuleEnv, rules []*Rule) vimycState {
+	if rules == nil {
+		return project(env)
+	}
 	lits, used := conditionArgs(rules)
+	return projectWith(env, lits, used)
+}
+
+func project(env RuleEnv) vimycState {
+	lits, used := projectionArgs()
 	return projectWith(env, lits, used)
 }
 
@@ -336,6 +353,36 @@ func goKebab(s string) string {
 	s = regexp.MustCompile(`([A-Z]+)([A-Z][a-z]{2,})`).ReplaceAllString(s, "${1}-${2}")
 	s = camel.ReplaceAllString(s, "${1}-${2}")
 	return strings.ToLower(s)
+}
+
+// argLiterals collects, per method, the string literals passed to it across
+// every rule the doctrine compiler can emit. That is what turns "param 0 is a
+// string" into "param 0 is a role".
+func argLiterals() (map[string][]map[string]bool, map[string]bool) {
+	out := map[string][]map[string]bool{}
+	seen := map[string]bool{}
+	record := func(cond string) { recordCallArgs(cond, out, seen) }
+
+	// The seed rules too: the engine runs them before the first doctrine swap,
+	// and they are the only user of `HasBuilding` and `BuildingCount`.
+	for _, r := range DefaultRules() {
+		record(r.ConditionSrc)
+	}
+
+	// Real doctrines rather than synthetic ones: what a predicate is called
+	// with depends on which rule blocks the compiler emits, and randomly
+	// sampled doctrines emit blocks real play never reaches.
+	real, err := RealDoctrines()
+	if err != nil {
+		panic(err)
+	}
+	for _, d := range real {
+		for _, r := range CompileDoctrine(d) {
+			record(r.ConditionSrc)
+		}
+	}
+
+	return out, seen
 }
 
 // classify names the domain a set of literals belongs to, or "" when it cannot

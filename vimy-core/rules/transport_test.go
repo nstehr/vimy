@@ -2,8 +2,10 @@ package rules
 
 import (
 	"net"
+	"strings"
 	"testing"
 
+	"github.com/expr-lang/expr"
 	"github.com/nstehr/vimy/vimy-core/ipc"
 	"github.com/nstehr/vimy/vimy-core/model"
 )
@@ -92,8 +94,8 @@ func TestActionLoadCombatInfantry_SkipsSquadAssigned(t *testing.T) {
 	env := RuleEnv{
 		State: model.GameState{
 			Units: []model.Unit{
-				{ID: 1, Type: "e1", Idle: true},                  // squad-assigned — skip
-				{ID: 2, Type: "e4", Idle: true},                  // free — should load
+				{ID: 1, Type: "e1", Idle: true},   // squad-assigned — skip
+				{ID: 2, Type: "e4", Idle: true},   // free — should load
 				{ID: 10, Type: "apc", Idle: true, CargoCount: 0}, // empty APC
 			},
 		},
@@ -348,3 +350,153 @@ func TestNearestTo(t *testing.T) {
 }
 
 // --- Compiler tests ---
+
+func TestCompileDoctrineTransportAssault(t *testing.T) {
+	transportRuleNames := []string{
+		"produce-assault-apc",
+		"load-assault-infantry",
+		"deliver-assault-apc",
+	}
+
+	// TransportAssault=0 → no transport assault rules
+	t.Run("absent when TransportAssault=0", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.TransportAssault = 0
+		rules := CompileDoctrine(d)
+
+		found := map[string]bool{}
+		for _, r := range rules {
+			found[r.Name] = true
+		}
+		for _, name := range transportRuleNames {
+			if found[name] {
+				t.Errorf("unexpected transport assault rule %q when TransportAssault=0", name)
+			}
+		}
+	})
+
+	// TransportAssault=0.5 → all transport assault rules present
+	t.Run("present when TransportAssault=0.5", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.TransportAssault = 0.5
+		rules := CompileDoctrine(d)
+
+		for _, r := range rules {
+			_, err := expr.Compile(r.ConditionSrc, expr.Env(RuleEnv{}), expr.AsBool())
+			if err != nil {
+				t.Errorf("rule %q failed to compile: %v\ncondition: %s", r.Name, err, r.ConditionSrc)
+			}
+		}
+
+		found := map[string]bool{}
+		for _, r := range rules {
+			found[r.Name] = true
+		}
+		for _, name := range transportRuleNames {
+			if !found[name] {
+				t.Errorf("expected transport assault rule %q when TransportAssault=0.5", name)
+			}
+		}
+	})
+
+	// APC cap scales with TransportAssault
+	t.Run("APC cap scales with priority", func(t *testing.T) {
+		// Low priority (0.2) → APC cap = lerp(1,3,0.2) = 1
+		low := DefaultDoctrine()
+		low.TransportAssault = 0.2
+		lowRules := CompileDoctrine(low)
+		for _, r := range lowRules {
+			if r.Name == "produce-assault-apc" {
+				if !strings.Contains(r.ConditionSrc, `TransportCount() < 1`) {
+					t.Errorf("low TransportAssault: expected transport cap 1, got condition: %s", r.ConditionSrc)
+				}
+			}
+		}
+
+		// High priority (1.0) → APC cap = lerp(1,3,1.0) = 3
+		high := DefaultDoctrine()
+		high.TransportAssault = 1.0
+		highRules := CompileDoctrine(high)
+		for _, r := range highRules {
+			if r.Name == "produce-assault-apc" {
+				if !strings.Contains(r.ConditionSrc, `TransportCount() < 3`) {
+					t.Errorf("high TransportAssault: expected transport cap 3, got condition: %s", r.ConditionSrc)
+				}
+			}
+		}
+	})
+
+	// Priority ordering: capture rules > transport assault rules
+	t.Run("capture rules have higher priority than transport assault", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.TransportAssault = 0.5
+		d.CapturePriority = 0.5
+		rules := CompileDoctrine(d)
+
+		byName := map[string]*Rule{}
+		for _, r := range rules {
+			byName[r.Name] = r
+		}
+
+		loadEngineer := byName["load-engineer-into-apc"]
+		loadAssault := byName["load-assault-infantry"]
+		deliverCapture := byName["deliver-apc-to-target"]
+		deliverAssault := byName["deliver-assault-apc"]
+
+		if loadEngineer == nil || loadAssault == nil {
+			t.Fatal("expected both load rules to be present")
+		}
+		if deliverCapture == nil || deliverAssault == nil {
+			t.Fatal("expected both deliver rules to be present")
+		}
+
+		if loadEngineer.Priority <= loadAssault.Priority {
+			t.Errorf("load-engineer-into-apc priority (%d) should be > load-assault-infantry priority (%d)",
+				loadEngineer.Priority, loadAssault.Priority)
+		}
+		if deliverCapture.Priority <= deliverAssault.Priority {
+			t.Errorf("deliver-apc-to-target priority (%d) should be > deliver-assault-apc priority (%d)",
+				deliverCapture.Priority, deliverAssault.Priority)
+		}
+	})
+
+	// Transport rules use "transport" category (non-exclusive)
+	t.Run("transport rules are non-exclusive", func(t *testing.T) {
+		d := DefaultDoctrine()
+		d.TransportAssault = 0.5
+		rules := CompileDoctrine(d)
+
+		for _, r := range rules {
+			if r.Name == "load-assault-infantry" || r.Name == "deliver-assault-apc" {
+				if r.Category != "transport" {
+					t.Errorf("rule %q should have category 'transport', got %q", r.Name, r.Category)
+				}
+				if r.Exclusive {
+					t.Errorf("rule %q should not be exclusive", r.Name)
+				}
+			}
+		}
+	})
+}
+
+// Verify the economy-only doctrine doesn't include transport assault rules.
+func TestCompileDoctrineEconomyOnly_NoTransportAssault(t *testing.T) {
+	d := Doctrine{
+		Name:                  "Turtle",
+		EconomyPriority:       0.9,
+		Aggression:            0.1,
+		InfantryWeight:        0.0,
+		VehicleWeight:         0.0,
+		TransportAssault:      0.0,
+		GroundAttackGroupSize: 12,
+		AirAttackGroupSize:    2,
+		NavalAttackGroupSize:  3,
+	}
+	rules := CompileDoctrine(d)
+
+	for _, r := range rules {
+		if r.Name == "produce-assault-apc" || r.Name == "load-assault-infantry" || r.Name == "deliver-assault-apc" {
+			t.Errorf("unexpected transport assault rule %q when TransportAssault=0", r.Name)
+		}
+	}
+}

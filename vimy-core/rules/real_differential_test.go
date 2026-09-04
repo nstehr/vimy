@@ -147,16 +147,8 @@ func TestBuildRealDifferential(t *testing.T) {
 		condsByID[RuleSetID(rs)] = conds
 	}
 	addCandidate(DefaultRules()) // the engine starts here, before the first swap
-	compiler, err := NewVimycCompiler("")
-	if err != nil {
-		t.Skipf("needs vimyc to rebuild the rule sets a recording ran: %v", err)
-	}
 	for _, w := range windows {
-		rs, err := compiler.Compile(w.doctrine)
-		if err != nil {
-			t.Fatalf("%s: %v", w.doctrine.Name, err)
-		}
-		addCandidate(rs)
+		addCandidate(CompileDoctrine(w.doctrine))
 	}
 
 	corpus := realCorpus{States: exp.States}
