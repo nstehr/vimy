@@ -1309,4 +1309,44 @@ func TestSendIdleHarvestersSkipsFleeingOnes(t *testing.T) {
 	if _, ok := sent[2]; !ok {
 		t.Errorf("dispatched the fleeing harvester instead of the free one: %+v", sent)
 	}
+
+	// A stale entry must not hold a harvester forever. The map is only pruned
+	// while something is in danger, so once a threat leaves, the entry can sit
+	// there untouched — which froze every harvester that had ever fled.
+	env = newEnv()
+	getHarvesterFleeState(env.Memory)[1] = harvesterFleeEntry{
+		Tick: env.State.Tick - harvesterFleeResend - 1, X: 20, Y: 20,
+	}
+	if err := ActionSendIdleHarvesters(env, conn); err != nil {
+		t.Fatal(err)
+	}
+	sent = memoryMap[int, harvestEntry](env.Memory, "harvestSent")
+	if len(sent) != 2 {
+		t.Fatalf("a stale flee entry still froze a harvester: dispatched %d", len(sent))
+	}
+}
+
+// With nothing in danger the flee map empties, rather than keeping entries that
+// nothing will ever remove.
+func TestFleeHarvestersClearsItsMapWhenTheThreatLeaves(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	env := RuleEnv{
+		State: model.GameState{
+			Tick: 5000, MapWidth: 100, MapHeight: 100,
+			Units:     []model.Unit{{ID: 1, Type: "harv", X: 50, Y: 50, HP: 600, MaxHP: 600}},
+			Buildings: []model.Building{{ID: 10, Type: "proc", X: 20, Y: 20}},
+			// No enemies, so nothing is in danger.
+		},
+		Memory: map[string]any{},
+	}
+	getHarvesterFleeState(env.Memory)[1] = harvesterFleeEntry{Tick: 4990, X: 20, Y: 20}
+
+	if err := FleeHarvesters(0.1)(env, conn); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(getHarvesterFleeState(env.Memory)); n != 0 {
+		t.Errorf("%d stale entries left behind", n)
+	}
 }

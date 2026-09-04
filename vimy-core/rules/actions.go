@@ -1422,13 +1422,17 @@ func ActionSendIdleHarvesters(env RuleEnv, conn *ipc.Connection) error {
 	// harvest, come back into danger, flee again. 696 flee firings against 486
 	// returns across 17,000 ticks of game 71 (vimy-mfq).
 	//
-	// `harvesterFleeing` is pruned by FleeHarvesters to those still in danger,
-	// so this clears itself when the threat leaves.
+	// Bounded by age rather than by the map being pruned. FleeHarvesters
+	// refreshes an entry every harvesterFleeResend ticks while it is still
+	// moving a harvester, so a fresher entry than that means the flee is live.
+	// An older one means the threat is gone — and the map cannot be relied on
+	// to say so, because the rule that prunes it only runs while something is
+	// in danger. Trusting it froze every harvester that had ever fled.
 	fleeing := getHarvesterFleeState(env.Memory)
 
 	state := memoryMap[int, harvestEntry](env.Memory, "harvestSent")
 	for i, u := range env.IdleHarvesters() {
-		if _, ok := fleeing[u.ID]; ok {
+		if prev, ok := fleeing[u.ID]; ok && env.State.Tick-prev.Tick < harvesterFleeResend {
 			continue
 		}
 		var tx, ty int
@@ -3114,6 +3118,22 @@ func CountFleeingHarvesters(memory map[string]any) int {
 func FleeHarvesters(dangerPct float64) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
 		harvesters := env.HarvestersInDanger(dangerPct)
+
+		// Pruned before the early return: with nothing in danger the map should
+		// be empty, and returning first left stale entries behind forever —
+		// this action is only called while a harvester is in danger, so it is
+		// the one moment the map can be cleared.
+		state := getHarvesterFleeState(env.Memory)
+		inDanger := make(map[int]bool, len(harvesters))
+		for _, u := range harvesters {
+			inDanger[u.ID] = true
+		}
+		for id := range state {
+			if !inDanger[id] {
+				delete(state, id)
+			}
+		}
+
 		if len(harvesters) == 0 {
 			return nil
 		}
@@ -3134,19 +3154,6 @@ func FleeHarvesters(dangerPct float64) ActionFunc {
 			}
 			fallbackX = sumX / len(env.State.Buildings)
 			fallbackY = sumY / len(env.State.Buildings)
-		}
-
-		state := getHarvesterFleeState(env.Memory)
-		// Drop entries for dead or no-longer-endangered harvesters so the
-		// map doesn't grow unbounded.
-		inDanger := make(map[int]bool, len(harvesters))
-		for _, u := range harvesters {
-			inDanger[u.ID] = true
-		}
-		for id := range state {
-			if !inDanger[id] {
-				delete(state, id)
-			}
 		}
 
 		for _, u := range harvesters {
