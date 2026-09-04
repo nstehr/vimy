@@ -10,6 +10,15 @@ templ Layout(title string) {
 		<script src="https://cdn.tailwindcss.com"></script>
 		<script src="https://unpkg.com/htmx.org@2.0.4"></script>
 		<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css"/>
+		<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
+		<script src="/static/vy-prism.js"></script>
+		<!-- The rules panel swaps itself every 10s, so highlight what arrives. -->
+		<script>
+			document.body.addEventListener('htmx:afterSwap', function (e) {
+				if (window.Prism) { Prism.highlightAllUnder(e.detail.target); }
+			});
+		</script>
 		<style>
 			body { background: #030712; color: #f3f4f6; }
 		</style>

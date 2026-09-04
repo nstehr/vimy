@@ -215,7 +215,7 @@ templ RulesPanel(summaries []rules.RuleSummary) {
 											<p class="mt-0.5 text-xs text-gray-400 italic">{ r.Because }</p>
 										}
 										if r.Source != "" {
-											<pre class="block mt-1 text-xs text-gray-400 whitespace-pre-wrap font-mono">{ r.Source }</pre>
+											<pre class="block mt-1 text-xs whitespace-pre-wrap !bg-transparent !p-0 !m-0"><code class="language-vy">{ r.Source }</code></pre>
 										} else {
 											<code class="block mt-1 text-xs text-gray-500 break-all">{ r.ConditionSrc }</code>
 										}

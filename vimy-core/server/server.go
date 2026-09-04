@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -39,6 +40,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/doctrine/current", s.handleCurrentDoctrine)
 	s.mux.HandleFunc("GET /api/doctrine/history", s.handleDoctrineHistory)
 	s.mux.HandleFunc("GET /api/rules", s.handleRules)
+	// Served rather than inlined: templ does not interpolate inside a <script>,
+	// and a route is cacheable.
+	s.mux.HandleFunc("GET /static/vy-prism.js", s.handleVyGrammar)
 	s.mux.HandleFunc("GET /api/battlefield", s.handleBattlefield)
 	s.mux.HandleFunc("GET /api/record", s.handleRecord)
 	s.mux.HandleFunc("GET /api/record/panel", s.handleRecordPanel)
@@ -190,23 +194,23 @@ func (s *Server) handleRecord(w http.ResponseWriter, r *http.Request) {
 }
 
 type historyPoint struct {
-	Tick                      int      `json:"tick"`
-	EconomyPriority           float64  `json:"economy_priority"`
-	TechPriority              float64  `json:"tech_priority"`
-	InfantryWeight            float64  `json:"infantry_weight"`
-	VehicleWeight             float64  `json:"vehicle_weight"`
-	AirWeight                 float64  `json:"air_weight"`
-	NavalWeight               float64  `json:"naval_weight"`
-	Aggression                float64  `json:"aggression"`
-	GroundDefensePriority     float64  `json:"ground_defense_priority"`
-	AirDefensePriority        float64  `json:"air_defense_priority"`
-	ScoutPriority             float64  `json:"scout_priority"`
-	SuperweaponPriority       float64  `json:"superweapon_priority"`
-	Name                      string   `json:"name"`
-	PreferredInfantry         []string `json:"preferred_infantry,omitempty"`
-	PreferredVehicle          []string `json:"preferred_vehicle,omitempty"`
-	PreferredAircraft         []string `json:"preferred_aircraft,omitempty"`
-	PreferredNaval            []string `json:"preferred_naval,omitempty"`
+	Tick                  int      `json:"tick"`
+	EconomyPriority       float64  `json:"economy_priority"`
+	TechPriority          float64  `json:"tech_priority"`
+	InfantryWeight        float64  `json:"infantry_weight"`
+	VehicleWeight         float64  `json:"vehicle_weight"`
+	AirWeight             float64  `json:"air_weight"`
+	NavalWeight           float64  `json:"naval_weight"`
+	Aggression            float64  `json:"aggression"`
+	GroundDefensePriority float64  `json:"ground_defense_priority"`
+	AirDefensePriority    float64  `json:"air_defense_priority"`
+	ScoutPriority         float64  `json:"scout_priority"`
+	SuperweaponPriority   float64  `json:"superweapon_priority"`
+	Name                  string   `json:"name"`
+	PreferredInfantry     []string `json:"preferred_infantry,omitempty"`
+	PreferredVehicle      []string `json:"preferred_vehicle,omitempty"`
+	PreferredAircraft     []string `json:"preferred_aircraft,omitempty"`
+	PreferredNaval        []string `json:"preferred_naval,omitempty"`
 }
 
 func (s *Server) handleDoctrineHistory(w http.ResponseWriter, r *http.Request) {
@@ -222,23 +226,33 @@ func (s *Server) handleDoctrineHistory(w http.ResponseWriter, r *http.Request) {
 		d := rec.Doctrine
 		points[i] = historyPoint{
 			Tick:                  rec.Tick,
-			EconomyPriority:      d.EconomyPriority,
-			TechPriority:         d.TechPriority,
-			InfantryWeight:       d.InfantryWeight,
-			VehicleWeight:        d.VehicleWeight,
-			AirWeight:            d.AirWeight,
-			NavalWeight:          d.NavalWeight,
-			Aggression:           d.Aggression,
+			EconomyPriority:       d.EconomyPriority,
+			TechPriority:          d.TechPriority,
+			InfantryWeight:        d.InfantryWeight,
+			VehicleWeight:         d.VehicleWeight,
+			AirWeight:             d.AirWeight,
+			NavalWeight:           d.NavalWeight,
+			Aggression:            d.Aggression,
 			GroundDefensePriority: d.GroundDefensePriority,
-			AirDefensePriority:   d.AirDefensePriority,
-			ScoutPriority:        d.ScoutPriority,
-			SuperweaponPriority:  d.SuperweaponPriority,
-			Name:                 d.Name,
-			PreferredInfantry:    d.PreferredInfantry,
-			PreferredVehicle:     d.PreferredVehicle,
-			PreferredAircraft:    d.PreferredAircraft,
-			PreferredNaval:       d.PreferredNaval,
+			AirDefensePriority:    d.AirDefensePriority,
+			ScoutPriority:         d.ScoutPriority,
+			SuperweaponPriority:   d.SuperweaponPriority,
+			Name:                  d.Name,
+			PreferredInfantry:     d.PreferredInfantry,
+			PreferredVehicle:      d.PreferredVehicle,
+			PreferredAircraft:     d.PreferredAircraft,
+			PreferredNaval:        d.PreferredNaval,
 		}
 	}
 	json.NewEncoder(w).Encode(points)
+}
+
+// handleVyGrammar serves the Prism language definition for `.vy`, generated
+// from the keyword list rather than written out by hand.
+func (s *Server) handleVyGrammar(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript")
+	w.Header().Set("Cache-Control", "no-cache")
+	if _, err := io.WriteString(w, views.VyPrismGrammar()); err != nil {
+		slog.Debug("serving the vy grammar", "error", err)
+	}
 }
