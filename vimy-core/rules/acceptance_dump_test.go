@@ -3,8 +3,6 @@ package rules
 import (
 	"encoding/json"
 	"os"
-	"reflect"
-	"strings"
 	"testing"
 )
 
@@ -30,69 +28,6 @@ type acceptanceRule struct {
 	Action    string `json:"action"`
 	Condition string `json:"condition"`
 }
-
-// doctrineParams reads a Doctrine's numeric fields by their JSON tags, which
-// differ from vimyc's spelling only in the separator.
-func doctrineParams(d Doctrine) map[string]float64 {
-	out := map[string]float64{}
-	v := reflect.ValueOf(d)
-	t := v.Type()
-	for i := 0; i < t.NumField(); i++ {
-		tag := strings.Split(t.Field(i).Tag.Get("json"), ",")[0]
-		if tag == "" || tag == "-" {
-			continue
-		}
-		name := strings.ReplaceAll(tag, "_", "-")
-		switch v.Field(i).Kind() {
-		case reflect.Float64:
-			out[name] = v.Field(i).Float()
-		case reflect.Int:
-			out[name] = float64(v.Field(i).Int())
-		}
-	}
-	// Facts a rule needs from the []string preference lists. vimyc has no
-	// string type and does not need one: what the compiler actually asks of
-	// those lists is five yes/no questions, so they cross as 0 or 1 and the
-	// lists stay here.
-	for name, yes := range map[string]bool{
-		"prefers-radar-gated-primary": prefersRadarGatedPrimary(d.PreferredVehicle),
-		"prefers-v2-launcher":         c(d).prefersVehicle("v2_launcher"),
-		"prefers-artillery":           c(d).prefersVehicle("artillery"),
-		"prefers-shock-trooper":       c(d).prefersInfantry("shock_trooper"),
-		"prefers-flamethrower":        c(d).prefersInfantry("flamethrower"),
-		"specialist-infantry-first":   specialistFirst(d.PreferredInfantry),
-		"siege-vehicle-first":         first(d.PreferredVehicle, "v2_launcher", "artillery"),
-		"tech-naval-first":            first(d.PreferredNaval, "missile_sub", "cruiser", "destroyer"),
-	} {
-		if yes {
-			out[name] = 1
-		} else {
-			out[name] = 0
-		}
-	}
-	return out
-}
-
-// first reports whether the list's head is one of `want` — the "this is the
-// plan" test the compiler applies to the ordered preference lists.
-func first(list []string, want ...string) bool {
-	if len(list) == 0 {
-		return false
-	}
-	for _, w := range want {
-		if list[0] == w {
-			return true
-		}
-	}
-	return false
-}
-
-func specialistFirst(list []string) bool {
-	return first(list, specialistInfantryRoles...)
-}
-
-// c is a compiler holding just the doctrine, for the `prefers*` helpers.
-func c(d Doctrine) *doctrineCompiler { return &doctrineCompiler{d: d} }
 
 // boundaryDoctrines covers the gate thresholds that real doctrines miss.
 //
@@ -162,7 +97,7 @@ func TestDumpAcceptanceCorpus(t *testing.T) {
 
 	cases := make([]acceptanceCase, 0, len(doctrines))
 	for _, d := range doctrines {
-		c := acceptanceCase{Params: doctrineParams(d)}
+		c := acceptanceCase{Params: DoctrineParams(d)}
 		for _, r := range CompileDoctrine(d) {
 			action, err := actionName(r)
 			if err != nil {

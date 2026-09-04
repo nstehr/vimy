@@ -33,6 +33,7 @@ var (
 	traceRules   bool
 	vimycRules   bool
 	rulesFile    string
+	vimycBin     string
 	exportStates bool
 	exportDir    string
 	exportEvery  int
@@ -45,6 +46,7 @@ func main() {
 	flag.BoolVar(&traceRules, "trace-rules", false, "record per-rule firing counters per doctrine window; archives rule_firings rows on game end and exposes live counters to the dashboard")
 	flag.BoolVar(&vimycRules, "vimyc-rules", false, "start from the vimyc-compiled rule set (rules/seed_rules.json) rather than DefaultRules; the same rules by a different route. A -doctrine swaps them out once the first doctrine lands, so use it without one to play a whole game on them")
 	flag.StringVar(&rulesFile, "rules-file", "", "load a rule set compiled by vimyc from this file, instead of the built-in rules. Pair with no -doctrine: the strategist replaces the rule set as soon as its first doctrine lands")
+	flag.StringVar(&vimycBin, "vimyc", "", "compile each doctrine through this vimyc binary rather than through CompileDoctrine; \"vimyc\" finds it on PATH. Needs -doctrine, since it is the strategist that compiles")
 	flag.BoolVar(&exportStates, "export-states", false, "record sampled rule evaluations for vimyc's differential corpus, one file per game under -export-dir")
 	flag.StringVar(&exportDir, "export-dir", "", "where -export-states writes; defaults to ~/.vimy/exports, alongside the database")
 	flag.IntVar(&exportEvery, "export-every", 5, "with -export-states, record one evaluation in this many")
@@ -118,6 +120,21 @@ func main() {
 	var strategist *agent.Strategist
 	if directive != "" {
 		strategist = agent.NewStrategist(engine, directive, 500)
+	}
+
+	if vimycBin != "" {
+		if strategist == nil {
+			slog.Error("-vimyc needs -doctrine: without a strategist nothing compiles a doctrine")
+			os.Exit(1)
+		}
+		// Probed now rather than at the first doctrine, twenty minutes in.
+		compiler, err := rules.NewVimycCompiler(vimycBin)
+		if err != nil {
+			slog.Error("cannot use vimyc", "error", err)
+			os.Exit(1)
+		}
+		strategist.UseVimyc(compiler)
+		slog.Info("compiling doctrines through vimyc", "bin", compiler.Bin)
 	}
 
 	dataStore, err := store.New("")

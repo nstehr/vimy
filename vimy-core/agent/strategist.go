@@ -59,24 +59,26 @@ type BattlefieldStatus struct {
 // Strategist runs in the background, periodically consulting the LLM
 // to generate a doctrine and swap the rule engine's rule set.
 type Strategist struct {
-	mu        sync.Mutex
-	latest    *model.GameState
-	engine    *rules.Engine
+	mu              sync.Mutex
+	latest          *model.GameState
+	engine          *rules.Engine
 	faction         string
 	opponentFaction string // set from HelloMessage.Opponents; "unknown" if absent
 	directive       string // initial doctrine seed from --doctrine flag
-	interval  int    // re-evaluate every N ticks
-	lastTick  int    // tick of last evaluation
-	ready     chan struct{}
-	prevSnap  *stateSnapshot // previous state snapshot for event diff
+	interval        int    // re-evaluate every N ticks
+	lastTick        int    // tick of last evaluation
+	ready           chan struct{}
+	prevSnap        *stateSnapshot // previous state snapshot for event diff
 	// prevCashSnapshot: cash observed at the last strategist evaluation.
 	// Used to compute cash_burn_rate (net cash change per interval) surfaced
 	// to the LLM as a "is this build order sustainable?" signal.
 	prevCashSnapshot int
 	prevCashTick     int
-	cooldown  int            // minimum ticks between event-driven evaluations
-	pending   []Event        // events accumulated since last evaluation
-	history   []DoctrineRecord // append-only log of all doctrine outputs
+	// Compiles doctrines through vimyc when set; nil uses CompileDoctrine.
+	compiler *rules.VimycCompiler
+	cooldown int              // minimum ticks between event-driven evaluations
+	pending  []Event          // events accumulated since last evaluation
+	history  []DoctrineRecord // append-only log of all doctrine outputs
 
 	// stressEvents holds high-impact events (harvester/critical-building/
 	// strategy-countered) for several evaluation cycles after they fire.
@@ -261,9 +263,9 @@ func (s *Strategist) GetRules() []rules.RuleSummary {
 // RuleTraceSnapshot is the dashboard-facing view of rule firing
 // instrumentation for the current doctrine window.
 type RuleTraceSnapshot struct {
-	Enabled   bool
-	RuleSet   []string
-	Stats     map[string]rules.RuleFiringStats
+	Enabled bool
+	RuleSet []string
+	Stats   map[string]rules.RuleFiringStats
 }
 
 // GetRuleTraceSnapshot returns the live firing counters (non-destructive)
@@ -582,7 +584,15 @@ func (s *Strategist) evaluate(ctx context.Context) {
 
 	s.engine.SetTargetBias(rules.ComputeTargetBias(doctrine))
 
-	compiled := rules.CompileDoctrine(doctrine)
+	compiled, err := s.compile(doctrine)
+	if err != nil {
+		// The engine keeps the rule set it has. Falling back to
+		// CompileDoctrine would be worse than doing nothing: it would hide
+		// exactly the failure this path exists to expose.
+		slog.Error("doctrine did not compile; keeping the current rules",
+			"doctrine", doctrine.Name, "error", err)
+		return
+	}
 	if err := s.engine.Swap(compiled); err != nil {
 		slog.Error("strategist rule swap failed", "error", err)
 		return
@@ -603,23 +613,41 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	s.mu.Unlock()
 }
 
+// UseVimyc routes doctrine compilation through the vimyc binary.
+func (s *Strategist) UseVimyc(c *rules.VimycCompiler) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.compiler = c
+}
+
+// compile turns a doctrine into rules, by whichever compiler is configured.
+func (s *Strategist) compile(d rules.Doctrine) ([]*rules.Rule, error) {
+	s.mu.Lock()
+	c := s.compiler
+	s.mu.Unlock()
+	if c == nil {
+		return rules.CompileDoctrine(d), nil
+	}
+	return c.Compile(d)
+}
+
 // fromBAML converts the BAML-generated Doctrine type to our rules.Doctrine.
 func fromBAML(d types.Doctrine) rules.Doctrine {
 	return rules.Doctrine{
-		Name:                  d.Name,
-		Rationale:             d.Rationale,
-		EconomyPriority:       d.Economy_priority,
-		Aggression:            d.Aggression,
-		GroundDefensePriority: d.Ground_defense_priority,
-		AirDefensePriority:    d.Air_defense_priority,
-		TechPriority:          d.Tech_priority,
-		InfantryWeight:        d.Infantry_weight,
-		VehicleWeight:         d.Vehicle_weight,
-		AirWeight:             d.Air_weight,
-		NavalWeight:           d.Naval_weight,
-		GroundAttackGroupSize: int(d.Ground_attack_group_size),
-		AirAttackGroupSize:    int(d.Air_attack_group_size),
-		NavalAttackGroupSize:  int(d.Naval_attack_group_size),
+		Name:                      d.Name,
+		Rationale:                 d.Rationale,
+		EconomyPriority:           d.Economy_priority,
+		Aggression:                d.Aggression,
+		GroundDefensePriority:     d.Ground_defense_priority,
+		AirDefensePriority:        d.Air_defense_priority,
+		TechPriority:              d.Tech_priority,
+		InfantryWeight:            d.Infantry_weight,
+		VehicleWeight:             d.Vehicle_weight,
+		AirWeight:                 d.Air_weight,
+		NavalWeight:               d.Naval_weight,
+		GroundAttackGroupSize:     int(d.Ground_attack_group_size),
+		AirAttackGroupSize:        int(d.Air_attack_group_size),
+		NavalAttackGroupSize:      int(d.Naval_attack_group_size),
 		ScoutPriority:             d.Scout_priority,
 		SpecializedInfantryWeight: d.Specialized_infantry_weight,
 		SuperweaponPriority:       d.Superweapon_priority,
