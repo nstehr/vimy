@@ -31,7 +31,6 @@ var (
 	directive    string
 	addr         string
 	traceRules   bool
-	vimycRules   bool
 	rulesFile    string
 	vimycBin     string
 	exportStates bool
@@ -44,7 +43,6 @@ func main() {
 	flag.StringVar(&directive, "doctrine", "", "initial doctrine directive (e.g. \"Blitzkrieg\", \"guerrilla warfare\")")
 	flag.StringVar(&addr, "addr", ":8080", "HTTP dashboard listen address")
 	flag.BoolVar(&traceRules, "trace-rules", false, "record per-rule firing counters per doctrine window; archives rule_firings rows on game end and exposes live counters to the dashboard")
-	flag.BoolVar(&vimycRules, "vimyc-rules", false, "start from the vimyc-compiled rule set (rules/seed_rules.json) rather than DefaultRules; the same rules by a different route. A -doctrine swaps them out once the first doctrine lands, so use it without one to play a whole game on them")
 	flag.StringVar(&rulesFile, "rules-file", "", "load a rule set compiled by vimyc from this file, instead of the built-in rules. Pair with no -doctrine: the strategist replaces the rule set as soon as its first doctrine lands")
 	flag.StringVar(&vimycBin, "vimyc-bin", "vimyc", "the vimyc binary that compiles doctrines; found on PATH by default")
 	flag.BoolVar(&exportStates, "export-states", false, "record sampled rule evaluations for vimyc's differential corpus, one file per game under -export-dir")
@@ -64,27 +62,32 @@ func main() {
 
 	// Create engine and strategist at top level so the dashboard can access them
 	// before a game connection arrives.
-	startingRules := rules.DefaultRules()
-	ruleSource := "go"
+	// The seed rules, compiled by vimyc rather than built in Go. Identical to
+	// `DefaultRules` — `TestSeedArtifactMatchesDefaultRules` compares them down
+	// to the action function pointers — but they carry their `.vy` source, so
+	// the dashboard shows the language from the first tick rather than expr for
+	// the first minute.
+	startingRules, err := rules.SeedRules()
+	if err != nil {
+		slog.Error("cannot load the seed rule set", "error", err)
+		os.Exit(1)
+	}
+	ruleSource := "seed.vy"
 	if rulesFile != "" {
-		data, err := os.ReadFile(rulesFile)
+		data, readErr := os.ReadFile(rulesFile)
+		if readErr != nil {
+			err = readErr
+		}
 		if err != nil {
 			slog.Error("cannot read the rule set", "path", rulesFile, "error", err)
 			os.Exit(1)
 		}
-		compiled, err := rules.LoadArtifact(data)
-		if err != nil {
-			slog.Error("cannot load the rule set", "path", rulesFile, "error", err)
+		compiled, loadErr := rules.LoadArtifact(data)
+		if loadErr != nil {
+			slog.Error("cannot load the rule set", "path", rulesFile, "error", loadErr)
 			os.Exit(1)
 		}
 		startingRules, ruleSource = compiled, rulesFile
-	} else if vimycRules {
-		compiled, err := rules.SeedRules()
-		if err != nil {
-			slog.Error("cannot load the vimyc rule set", "error", err)
-			os.Exit(1)
-		}
-		startingRules, ruleSource = compiled, "vimyc"
 	}
 
 	engine, err := rules.NewEngine(startingRules)

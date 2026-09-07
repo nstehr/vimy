@@ -6,6 +6,7 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/expr-lang/expr"
@@ -340,4 +341,33 @@ func TestSourceReachesTheRuleSummary(t *testing.T) {
 	if old[0].Source != "" {
 		t.Errorf("Source is %q, want empty", old[0].Source)
 	}
+}
+
+// The rules the engine starts with carry their own source.
+//
+// They used to come from `DefaultRules`, built in Go, so the dashboard showed
+// expr until the first doctrine landed a minute later. Booting from the
+// compiled artifact means the panel shows the language from the first tick —
+// which only works if every seed rule actually has a `source`.
+func TestSeedRulesCarryTheirSource(t *testing.T) {
+	seed, err := SeedRules()
+	if err != nil {
+		t.Fatalf("seed rules: %v", err)
+	}
+	for _, r := range seed {
+		if r.Source == "" {
+			t.Errorf("%s has no source", r.Name)
+			continue
+		}
+		if !strings.HasPrefix(r.Source, "rule "+r.Name+" {") {
+			t.Errorf("%s: source starts %q", r.Name, firstLine(r.Source))
+		}
+	}
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
