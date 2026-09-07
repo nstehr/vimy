@@ -20,9 +20,10 @@ import (
 // cannot take the bot down with it.
 
 // The rule set source, carried in the binary so a game needs only the compiler
-// on PATH. Regenerate with `make rules`.
+// on PATH. Written by hand in `rules/vy/` — it is Vimy's strategy, the way the
+// `.go` files are Vimy's code; vimyc is the language it is written in.
 //
-//go:embed doctrine.vy
+//go:embed vy/doctrine.vy
 var doctrineSource []byte
 
 // VimycCompiler turns a Doctrine into rules by running the vimyc binary.
