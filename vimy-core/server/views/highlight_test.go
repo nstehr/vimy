@@ -71,9 +71,11 @@ func TestVyPrismGrammarIsWellFormed(t *testing.T) {
 	if strings.Index(js, "'string'") > strings.Index(js, "'keyword'") {
 		t.Error("strings must be matched before keywords")
 	}
-	// Identifiers last, or a kebab name swallows the operators.
-	if strings.Index(js, "'identifier'") < strings.Index(js, "'operator'") {
-		t.Error("identifiers must be matched after operators")
+	// Identifiers before operators: they are kebab, and the pattern consumes a
+	// `-` only when a letter follows — the lexer's rule. Matched the other way
+	// round, `build-power` splits into two names around a subtraction.
+	if strings.Index(js, "'identifier'") > strings.Index(js, "'operator'") {
+		t.Error("identifiers must be matched before operators")
 	}
 	// Every regex literal must be escaped for two contexts: regex
 	// metacharacters, and the `/` that would close the literal early. Getting
@@ -131,6 +133,9 @@ func TestLayoutHighlightsAfterSwap(t *testing.T) {
 
 	if !strings.Contains(html, "htmx:afterSwap") {
 		t.Error("nothing re-highlights after a swap")
+	}
+	if strings.Contains(html, "document.body.addEventListener") {
+		t.Error("the script is in the head, where document.body is null")
 	}
 	if !strings.Contains(html, "Prism.highlightAll()") {
 		t.Error("the whole document must be scanned; the swap target is detached")

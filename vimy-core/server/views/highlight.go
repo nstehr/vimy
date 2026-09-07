@@ -16,8 +16,10 @@ import (
 // VyPrismGrammar is the Prism language definition, as JavaScript.
 //
 // Order is significant twice over. Strings come first, so a keyword inside a
-// `because` stays prose. Identifiers come last, because a kebab name would
-// otherwise swallow the `-` that separates it.
+// `because` stays prose. Identifiers come before operators, because they are
+// kebab: the identifier pattern consumes a `-` only when a letter follows, which
+// is the lexer's own rule, so `build-power` stays one name instead of splitting
+// into two around a subtraction.
 func VyPrismGrammar() string {
 	return `Prism.languages.vy = {
   'string': { pattern: /"[^"]*"/, greedy: true },
@@ -25,9 +27,9 @@ func VyPrismGrammar() string {
   'boolean': /\b(?:true|false)\b/,
   'number': /\b\d+(?:\.\d+)?\b/,
   'function': /\b[a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)*(?=\()/,
+  'identifier': /\b[a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)*\b/,
   'operator': ` + alternation(vyOperators) + `,
-  'punctuation': ` + alternation(vyPunctuation) + `,
-  'identifier': /\b[a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)*\b/
+  'punctuation': ` + alternation(vyPunctuation) + `
 };`
 }
 

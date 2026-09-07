@@ -19,9 +19,13 @@ templ Layout(title string) {
 		  rather than the swap target on purpose: with hx-swap="outerHTML" the
 		  target is the element that was replaced, and by the time this runs it
 		  is detached, so highlightAllUnder found nothing.
+
+		  On `document`, not `document.body`: this script is in the head, where
+		  body is still null. htmx events bubble, so document catches them and
+		  exists this early.
 		-->
 		<script>
-			document.body.addEventListener('htmx:afterSwap', function () {
+			document.addEventListener('htmx:afterSwap', function () {
 				if (window.Prism) { Prism.highlightAll(); }
 			});
 		</script>
