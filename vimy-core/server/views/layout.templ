@@ -13,10 +13,16 @@ templ Layout(title string) {
 		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css"/>
 		<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
 		<script src="/static/vy-prism.js"></script>
-		<!-- The rules panel swaps itself every 10s, so highlight what arrives. -->
+		<!--
+		  The rules panel starts empty and arrives by swap, so Prism's own
+		  highlight-on-load never has anything to colour. Scanning the document
+		  rather than the swap target on purpose: with hx-swap="outerHTML" the
+		  target is the element that was replaced, and by the time this runs it
+		  is detached, so highlightAllUnder found nothing.
+		-->
 		<script>
-			document.body.addEventListener('htmx:afterSwap', function (e) {
-				if (window.Prism) { Prism.highlightAllUnder(e.detail.target); }
+			document.body.addEventListener('htmx:afterSwap', function () {
+				if (window.Prism) { Prism.highlightAll(); }
 			});
 		</script>
 		<style>

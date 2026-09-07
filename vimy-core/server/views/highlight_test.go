@@ -1,6 +1,7 @@
 package views
 
 import (
+	"context"
 	"os/exec"
 	"strings"
 	"testing"
@@ -111,4 +112,34 @@ func regexLiteral(line string) (string, bool) {
 		return "", false
 	}
 	return body[:j], true
+}
+
+// The panel is highlighted after a swap, not on load.
+//
+// It starts as `@RulesPanel(nil)` and its content only ever arrives by htmx, so
+// Prism's own highlight-on-load runs against a placeholder. And the handler has
+// to scan the document: with `hx-swap="outerHTML"` the swap target is the
+// element that was replaced, detached by the time the event fires, so
+// `highlightAllUnder(e.detail.target)` colours nothing. Both together left the
+// rules rendering perfectly in uniform grey.
+func TestLayoutHighlightsAfterSwap(t *testing.T) {
+	var b strings.Builder
+	if err := Layout("t").Render(context.Background(), &b); err != nil {
+		t.Fatal(err)
+	}
+	html := b.String()
+
+	if !strings.Contains(html, "htmx:afterSwap") {
+		t.Error("nothing re-highlights after a swap")
+	}
+	if !strings.Contains(html, "Prism.highlightAll()") {
+		t.Error("the whole document must be scanned; the swap target is detached")
+	}
+	// The call, not the comment explaining why it is not used.
+	if strings.Contains(html, "highlightAllUnder(") {
+		t.Error("highlightAllUnder(e.detail.target) colours a detached node")
+	}
+	if !strings.Contains(html, "/static/vy-prism.js") {
+		t.Error("the language definition is not loaded")
+	}
 }
