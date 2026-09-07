@@ -1,7 +1,7 @@
 include .env
 export
 
-.PHONY: build run clean generate rules
+.PHONY: build run clean generate rules check-rules
 
 generate:
 	PATH="$(HOME)/go/bin:$(PATH)" baml-cli generate
@@ -22,6 +22,14 @@ rules:
 	./server/views/gen_tokens.sh $(VIMYC)/target/release/vimyc \
 		$(CURDIR)/server/views/vy_tokens.go
 	gofmt -w server/views/vy_tokens.go
+
+# Type-checks the doctrine rule set the way a game compiles it: every `.vy` in
+# `rules/vy/` bar the seed, as one unit. Warnings — shared priorities, shadowed
+# rules — print and do not fail, the same as at runtime.
+check-rules:
+	@$(VIMYC)/target/release/vimyc \
+		$(filter-out %/seed.vy,$(wildcard $(CURDIR)/rules/vy/*.vy))
+	@echo "rule set ok"
 
 build:
 	go build -o bin/vimy .

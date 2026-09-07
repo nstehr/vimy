@@ -110,7 +110,8 @@ rule build-airfield {
 }
 
 rule build-service-depot {
-  priority 570
+  priority 565
+  because "below the radar, which is the tech gate and cannot wait behind a repair bay"
   category economy exclusive
   do produce-service-depot
   require vehicle-weight > 0.3
@@ -124,7 +125,8 @@ rule build-service-depot {
 }
 
 rule build-naval-yard {
-  priority lerp(580, 680, naval-weight)
+  priority lerp(580, 680, naval-weight) - 1
+  because "below the airfield when air and naval are weighted the same"
   category economy exclusive
   do produce-naval-yard
   require naval-weight > 0.1
@@ -164,7 +166,8 @@ rule build-base-defense-rush {
 }
 
 rule build-aa-defense {
-  priority lerp(400, 600, air-defense-priority)
+  priority lerp(400, 600, air-defense-priority) - 1
+  because "below base defense when the doctrine weights air and ground the same, which is how the strategist usually sets them"
   category defense exclusive
   do produce-aa-defense
   require air-defense-priority > 0.3
@@ -176,7 +179,8 @@ rule build-aa-defense {
 }
 
 rule build-gap-generator {
-  priority lerp(400, 550, ground-defense-priority)
+  priority lerp(400, 550, ground-defense-priority) - 2
+  because "the least urgent of the three defenses, so it goes below both"
   category defense exclusive
   do produce-gap-generator
   require ground-defense-priority > 0.3

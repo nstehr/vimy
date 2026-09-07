@@ -3,12 +3,13 @@ package rules
 import (
 	"bytes"
 	"context"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -23,8 +24,12 @@ import (
 // on PATH. Written by hand in `rules/vy/` — it is Vimy's strategy, the way the
 // `.go` files are Vimy's code; vimyc is the language it is written in.
 //
-//go:embed vy/doctrine.vy
-var doctrineSource []byte
+// A directory rather than one file: the rule set is split by topic, and vimyc
+// compiles the whole set as one unit. `seed.vy` is embedded along with the rest
+// and dropped below — it is a separate, standalone rule set.
+//
+//go:embed vy/*.vy
+var doctrineSource embed.FS
 
 // VimycCompiler turns a Doctrine into rules by running the vimyc binary.
 type VimycCompiler struct {
@@ -64,24 +69,18 @@ func (c *VimycCompiler) Compile(d Doctrine) ([]*Rule, error) {
 		return nil, fmt.Errorf("marshal params: %w", err)
 	}
 
-	// The source goes to a temp file because vimyc takes a path; the params go
-	// on stdin so nothing per-doctrine touches the disk.
-	src, err := os.CreateTemp("", "vimy-*.vy")
+	// The source goes to a temp directory because vimyc takes paths; the params
+	// go on stdin so nothing per-doctrine touches the disk.
+	dir, err := writeRuleSet()
 	if err != nil {
-		return nil, fmt.Errorf("temp file: %w", err)
+		return nil, err
 	}
-	defer os.Remove(src.Name())
-	if _, err := src.Write(doctrineSource); err != nil {
-		return nil, fmt.Errorf("write rule set: %w", err)
-	}
-	if err := src.Close(); err != nil {
-		return nil, fmt.Errorf("write rule set: %w", err)
-	}
+	defer os.RemoveAll(dir)
 
 	ctx, cancel := context.WithTimeout(context.Background(), c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, c.Bin, src.Name(), "--params", "-", "--json")
+	cmd := exec.CommandContext(ctx, c.Bin, dir, "--params", "-", "--json")
 	cmd.Stdin = bytes.NewReader(params)
 	var out, errs bytes.Buffer
 	cmd.Stdout = &out
@@ -92,11 +91,57 @@ func (c *VimycCompiler) Compile(d Doctrine) ([]*Rule, error) {
 
 	// Warnings — priority collisions, shadowed rules — are findings about the
 	// rule set rather than failures, and are lost if nobody prints them.
+	//
+	// The temp directory is stripped so a warning names the file as it is
+	// checked out — `combat.vy:412:6` — rather than a path that stopped
+	// existing when this function returned.
 	for _, line := range strings.Split(strings.TrimSpace(errs.String()), "\n") {
 		if line != "" {
-			slog.Warn("vimyc", "doctrine", d.Name, "message", line)
+			slog.Warn("vimyc", "doctrine", d.Name, "message", strings.ReplaceAll(line, dir+"/", ""))
 		}
 	}
 
 	return LoadArtifact(out.Bytes())
+}
+
+// writeRuleSet unpacks the embedded sources into a fresh temp directory and
+// returns it, for the caller to remove.
+//
+// A directory handed to vimyc whole, rather than a list of files: what belongs
+// to the rule set is then decided by what is embedded, in one place, and adding
+// a topic file needs no change here.
+func writeRuleSet() (string, error) {
+	entries, err := doctrineSource.ReadDir("vy")
+	if err != nil {
+		return "", fmt.Errorf("read rule set: %w", err)
+	}
+	dir, err := os.MkdirTemp("", "vimy-rules-")
+	if err != nil {
+		return "", fmt.Errorf("temp dir: %w", err)
+	}
+	written := 0
+	for _, e := range entries {
+		// The seed rules are their own rule set — compiled separately by
+		// `make rules` — so they would collide with the doctrine's.
+		if e.IsDir() || e.Name() == "seed.vy" {
+			continue
+		}
+		b, err := doctrineSource.ReadFile(filepath.Join("vy", e.Name()))
+		if err != nil {
+			os.RemoveAll(dir)
+			return "", fmt.Errorf("read %s: %w", e.Name(), err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, e.Name()), b, 0o600); err != nil {
+			os.RemoveAll(dir)
+			return "", fmt.Errorf("write %s: %w", e.Name(), err)
+		}
+		written++
+	}
+	// An empty directory would reach vimyc as "no .vy files", which reads like
+	// a broken checkout rather than a broken embed.
+	if written == 0 {
+		os.RemoveAll(dir)
+		return "", fmt.Errorf("rule set is empty: nothing embedded under rules/vy")
+	}
+	return dir, nil
 }

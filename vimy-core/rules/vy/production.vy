@@ -22,14 +22,6 @@ param tech-naval-first: int
 def infantry-base() = trunc(select(specialist-infantry-first > 0, 490.0, 500.0))
 def specialist-base() = trunc(select(specialist-infantry-first > 0, 500.0, 490.0))
 
-def reserves(cost: int) =
-  cash >= cost
-  and (vehicle-weight <= 0.1 or has-role(radar) or cash >= cost + 1000)
-  and (vehicle-weight <= 0.2 or has-role(war-factory) or not has-role(radar) or cash >= cost + 2000)
-  and (tech-priority <= 0.4 or has-role(tech-center) or not has-role(radar) or cash >= cost + 1500)
-  and (superweapon-priority <= 0.4 or has-role(missile-silo) or has-role(iron-curtain)
-       or not has-role(tech-center) or cash >= cost + 2500)
-
 def scaled-reserves(cost: int) =
   cash >= cost
   and (vehicle-weight <= 0.1
@@ -88,7 +80,8 @@ rule build-tech-center-for-shock-trooper {
 }
 
 rule build-tesla-coil-for-shock-trooper {
-  priority 555
+  priority 554
+  because "below the flame tower, the cheaper of the two specialist unlocks"
   category defense exclusive
   do produce-tesla-coil
   require specialized-infantry-weight > 0.1
@@ -142,9 +135,9 @@ rule produce-infantry-rush {
 }
 
 rule produce-bridge-infantry {
-  priority infantry-base() - 5
+  priority infantry-base() - 6
   category produce-infantry exclusive
-  because "extra rifles while the doctrine's production buildings are still missing"
+  because "extra rifles while the doctrine's production buildings are still missing, and below the rocket soldier because a rifle top-up is the more disposable of the two"
   do produce-infantry
   require infantry-weight > 0.1
   require air-weight > 0.1 or naval-weight > 0.1 or vehicle-weight > 0.2
@@ -189,9 +182,9 @@ rule build-kennel {
 }
 
 rule produce-attack-dog {
-  priority infantry-base() + 10
+  priority infantry-base() + 9
   category produce-infantry exclusive
-  because "the first dog out of the kennel is the scout, so it outranks rifles until the cap"
+  because "the first dog out of the kennel is the scout, so it outranks rifles until the cap — but not the specialists, when the doctrine asks for those first"
   do produce-attack-dog
   require infantry-weight > 0.2
   require has-role(kennel)
@@ -202,7 +195,8 @@ rule produce-attack-dog {
 }
 
 rule produce-spy {
-  priority 440
+  priority 438
+  because "below the capture-defense rifles, which are cheaper and hold what was taken"
   category produce-infantry exclusive
   do produce-spy
   require capture-priority > 0.2 or scout-priority > 0.3

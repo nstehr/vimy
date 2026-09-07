@@ -23,7 +23,8 @@ rule build-refinery {
 }
 
 rule build-second-refinery {
-  priority lerp(560, 700, economy-priority)
+  priority lerp(560, 700, economy-priority) + 1
+  because "above the tech centre when economy and tech are weighted the same: the tech centre is paid for out of an income that has to exist first"
   category economy exclusive
   do produce-refinery
   require economy-priority > 0.1
@@ -36,7 +37,8 @@ rule build-second-refinery {
 }
 
 rule build-extra-refinery {
-  priority lerp(520, 680, economy-priority)
+  priority lerp(520, 680, economy-priority) + 1
+  because "above the tech centre when economy and tech are weighted the same"
   category economy exclusive
   do produce-refinery
   require economy-priority > 0.1

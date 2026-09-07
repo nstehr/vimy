@@ -10,9 +10,6 @@ param ground-attack-group-size: int
 param air-attack-group-size: int
 param naval-attack-group-size: int
 
-def activation() =
-  select(commit-ratio > 0.0, commit-ratio, lerpf(0.6, 1.0, 1.0 - aggression))
-
 def attack-priority() = lerp(200, 400, aggression)
 
 def defend-priority() = lerp(350, 500, ground-defense-priority)
@@ -49,9 +46,9 @@ rule squad-defend-base {
 }
 
 rule defend-base {
-  priority defend-priority()
+  priority defend-priority() + 1
   category combat
-  because "no reserved squad at low defense priority, so scramble whatever is idle"
+  because "no reserved squad at low defense priority, so scramble whatever is idle — above scramble-base-defense, which does the same thing with a looser condition"
   do defend-base
   require ground-defense-priority <= 0.3
   require base-under-attack()

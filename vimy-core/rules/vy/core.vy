@@ -5,6 +5,7 @@ param tech-priority: float
 param superweapon-priority: float
 param infantry-weight: float
 param aggression: float
+param commit-ratio: float
 
 def reserves(cost: int) =
   cash >= cost
@@ -13,6 +14,9 @@ def reserves(cost: int) =
   and (tech-priority <= 0.4 or has-role(tech-center) or not has-role(radar) or cash >= cost + 1500)
   and (superweapon-priority <= 0.4 or has-role(missile-silo) or has-role(iron-curtain)
        or not has-role(tech-center) or cash >= cost + 2500)
+
+def activation() =
+  select(commit-ratio > 0.0, commit-ratio, lerpf(0.6, 1.0, 1.0 - aggression))
 
 rule deploy-mcv {
   priority 1000
@@ -92,7 +96,8 @@ rule load-engineer-into-apc {
 }
 
 rule produce-apc {
-  priority 470
+  priority 471
+  because "above the flak truck: an engineer is already built and waiting for the ride"
   category produce-vehicle exclusive
   do produce-apc
   require capture-priority > 0.1
@@ -131,7 +136,8 @@ rule produce-capture-defense-infantry {
 }
 
 rule produce-assault-apc {
-  priority lerp(475, 490, transport-assault)
+  priority lerp(486, 496, transport-assault)
+  because "above the vehicle rules it used to tie with: a doctrine has to opt into transport-assault, and the transports it buys are capped"
   category produce-vehicle exclusive
   do produce-apc
   require transport-assault > 0.1
@@ -256,8 +262,9 @@ rule rebuild-airfield {
 }
 
 rule rebuild-naval-yard {
-  priority 800
+  priority 799
   category rebuild exclusive
+  because "below the airfield, which is useful on a map without water"
   do produce-naval-yard
   require map-has-water()
   require lost-role(naval-yard)

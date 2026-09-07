@@ -507,7 +507,13 @@ func compileRules(rules []*Rule) ([]*Rule, error) {
 		}
 		r.program = prog
 	}
-	sort.Slice(rules, func(i, j int) bool {
+	// Stable, so a tie resolves the same way every run. Most ties are broken in
+	// the rule set itself, but a handful cannot be: two rules whose priorities
+	// lerp on different doctrine knobs will land on the same number for some
+	// doctrine, and fixing that would mean ranking the knobs against each other
+	// once and for all. Source order decides those, and vimyc emits in a fixed
+	// file-then-declaration order, so "the same way" is also inspectable.
+	sort.SliceStable(rules, func(i, j int) bool {
 		return rules[i].Priority > rules[j].Priority
 	})
 	return rules, nil

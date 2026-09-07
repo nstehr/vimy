@@ -4,9 +4,6 @@ param scout-priority: float
 param commit-ratio: float
 param ground-attack-group-size: int
 
-def activation() =
-  select(commit-ratio > 0.0, commit-ratio, lerpf(0.6, 1.0, 1.0 - aggression))
-
 def retreat-threshold() = lerpf(0.5, 0.15, aggression)
 def retreat-priority() = lerp(380, 450, 1.0 - aggression)
 def leash() = lerpf(0.25, 0.5, aggression)
@@ -36,7 +33,8 @@ rule recall-overextended-ground-attack {
 }
 
 rule recall-overextended-naval-attack {
-  priority retreat-priority() - 10
+  priority retreat-priority() - 11
+  because "below its ground mirror, so the two do not tie on every doctrine"
   category micro
   do recall-overextended(naval-attack, leash())
   require squad-exists(naval-attack)
@@ -55,7 +53,8 @@ rule squad-disengage-ground-attack {
 }
 
 rule squad-disengage-naval-attack {
-  priority retreat-priority() - 5
+  priority retreat-priority() - 6
+  because "below its ground mirror, so the two do not tie on every doctrine"
   category micro
   do squad-disengage(naval-attack)
   require aggression < 1.0
@@ -65,8 +64,9 @@ rule squad-disengage-naval-attack {
 }
 
 rule squad-focus-fire {
-  priority lerp(200, 400, aggression) + 1
+  priority lerp(200, 360, aggression) + 1
   category micro
+  because "capped below the retreat band: keeping a unit alive outranks improving what it shoots at"
   do squad-focus-fire(ground-attack)
   require aggression > 0.2
   require squad-exists(ground-attack)
