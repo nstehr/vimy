@@ -39,15 +39,23 @@ var (
 	exportMax    int
 )
 
+// Recording is on by default.
+//
+// Both of these used to be opt-in, from when nothing read them. Currie reads
+// both, and a game played without them cannot be replayed afterwards — there is
+// no way to go back and record a game that has already been lost, which is
+// exactly the game worth looking at. The cost is a sampled state file per game
+// and a pair of counters per rule, against a post mortem that is otherwise
+// impossible.
 func main() {
 	flag.StringVar(&directive, "doctrine", "", "initial doctrine directive (e.g. \"Blitzkrieg\", \"guerrilla warfare\")")
 	flag.StringVar(&addr, "addr", ":8080", "HTTP dashboard listen address")
-	flag.BoolVar(&traceRules, "trace-rules", false, "record per-rule firing counters per doctrine window; archives rule_firings rows on game end and exposes live counters to the dashboard")
+	flag.BoolVar(&traceRules, "trace-rules", true, "record per-rule firing counters per doctrine window; archives rule_firings rows on game end and exposes live counters to the dashboard. -trace-rules=false to turn it off")
 	flag.StringVar(&rulesFile, "rules-file", "", "load a rule set compiled by vimyc from this file, instead of the built-in rules. Pair with no -doctrine: the strategist replaces the rule set as soon as its first doctrine lands")
 	flag.StringVar(&vimycBin, "vimyc-bin", "vimyc", "the vimyc binary that compiles doctrines; found on PATH by default")
-	flag.BoolVar(&exportStates, "export-states", false, "record sampled rule evaluations for vimyc's differential corpus, one file per game under -export-dir")
+	flag.BoolVar(&exportStates, "export-states", true, "record sampled game states and rule evaluations, one file per game under -export-dir. What Currie replays and what vimyc's differential corpus is built from. -export-states=false to turn it off")
 	flag.StringVar(&exportDir, "export-dir", "", "where -export-states writes; defaults to ~/.vimy/exports, alongside the database")
-	flag.IntVar(&exportEvery, "export-every", 5, "with -export-states, record one evaluation in this many")
+	flag.IntVar(&exportEvery, "export-every", 15, "with -export-states, record one evaluation in this many")
 	flag.IntVar(&exportMax, "export-max", 20000, "with -export-states, stop after this many recorded cases")
 	flag.Parse()
 

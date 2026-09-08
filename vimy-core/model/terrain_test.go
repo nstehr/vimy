@@ -76,12 +76,12 @@ func TestTerrainGridAtMapPos(t *testing.T) {
 		mapX, mapY int
 		want       TerrainType
 	}{
-		{0, 0, Land},     // col=0, row=0
-		{4, 0, Land},     // col=0, row=0 (just inside)
-		{16, 0, Water},   // col=2, row=0
-		{24, 16, Land},   // col=3, row=2
-		{0, 16, Cliff},   // col=0, row=2
-		{8, 16, Bridge},  // col=1, row=2
+		{0, 0, Land},    // col=0, row=0
+		{4, 0, Land},    // col=0, row=0 (just inside)
+		{16, 0, Water},  // col=2, row=0
+		{24, 16, Land},  // col=3, row=2
+		{0, 16, Cliff},  // col=0, row=2
+		{8, 16, Bridge}, // col=1, row=2
 	}
 	for _, tc := range tests {
 		got := grid.AtMapPos(tc.mapX, tc.mapY)

@@ -11,13 +11,21 @@ import (
 type Querier interface {
 	CountLosses(ctx context.Context) (int64, error)
 	CountWins(ctx context.Context) (int64, error)
-	GetGame(ctx context.Context, id int64) (Game, error)
+	GetGame(ctx context.Context, id int64) (GetGameRow, error)
 	InsertDoctrine(ctx context.Context, arg InsertDoctrineParams) (int64, error)
 	InsertGame(ctx context.Context, arg InsertGameParams) (int64, error)
 	InsertLesson(ctx context.Context, arg InsertLessonParams) error
 	InsertRuleFiring(ctx context.Context, arg InsertRuleFiringParams) error
+	ListAllGames(ctx context.Context) ([]ListAllGamesRow, error)
+	// Every doctrine window of one game, in the order they took effect.
+	ListDoctrinesForGame(ctx context.Context, gameID int64) ([]ListDoctrinesForGameRow, error)
+	// What each rule actually did during the game, summed over its doctrine
+	// windows. act_count is NULL for games recorded before it was measured.
+	ListFiringsForGame(ctx context.Context, gameID int64) ([]ListFiringsForGameRow, error)
 	ListGames(ctx context.Context) ([]ListGamesRow, error)
-	ListGamesDetailed(ctx context.Context, arg ListGamesDetailedParams) ([]Game, error)
+	ListGamesDetailed(ctx context.Context, arg ListGamesDetailedParams) ([]ListGamesDetailedRow, error)
+	// Games with a recorded state export, newest first: the ones Currie can replay.
+	ListReplayableGames(ctx context.Context) ([]ListReplayableGamesRow, error)
 	ListTopLessons(ctx context.Context, limit int64) ([]ListTopLessonsRow, error)
 	// Opponent faction is NOT filtered here; the librarian decides whether the
 	// failure mode transfers across opponents.
@@ -28,6 +36,8 @@ type Querier interface {
 	// Opponent faction is NOT filtered here; lessons are often generalizable
 	// across opponents and the librarian will drop what doesn't apply.
 	QueryLessons(ctx context.Context, arg QueryLessonsParams) ([]QueryLessonsRow, error)
+	// Backfill: associate an export with a game recorded before provenance existed.
+	SetGameExportPath(ctx context.Context, arg SetGameExportPathParams) error
 }
 
 var _ Querier = (*Queries)(nil)

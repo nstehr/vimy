@@ -18,11 +18,11 @@ type Chokepoint struct {
 }
 
 const (
-	bridgeScore       = 0.9  // bridges always outrank land strips
-	narrowDeepScore   = 0.7  // land strip with 2-cell-deep walls on both sides
+	bridgeScore        = 0.9 // bridges always outrank land strips
+	narrowDeepScore    = 0.7 // land strip with 2-cell-deep walls on both sides
 	narrowShallowScore = 0.5 // land strip with 1-cell-deep walls on both sides
 
-	pathBoost     = 0.1 // bonus when choke lies on BFS shortest path
+	pathBoost     = 0.1  // bonus when choke lies on BFS shortest path
 	pathNearBoost = 0.05 // smaller bonus when within 1 zone of the path
 )
 

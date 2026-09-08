@@ -44,6 +44,13 @@ type GameContext struct {
 	MapHeight       int
 	DurationTicks   int
 	Won             bool
+	// Where the state export for this game was written, when one was. What
+	// lets a replay find the states that go with these doctrines.
+	ExportPath string
+	// The directive the strategist was working from. The weights it chose came
+	// from this sentence, so a post mortem that stops at the weights stops one
+	// step short.
+	Directive string
 }
 
 // ArchivedDoctrine is one doctrine snapshot from a prior game, ready to be
@@ -75,14 +82,18 @@ type InputDoctrine struct {
 	RatingReason string
 
 	// Rule-engine trace for this doctrine's window.
-	RuleSetJSON  string                 // JSON array of rule names compiled during the window; "" skips storage
-	RuleFirings  []InputRuleFiring      // per-rule firing stats; empty means no rule fired (or pre-instrumentation)
+	RuleSetJSON string            // JSON array of rule names compiled during the window; "" skips storage
+	RuleFirings []InputRuleFiring // per-rule firing stats; empty means no rule fired (or pre-instrumentation)
 }
 
 // InputRuleFiring is a per-rule, per-doctrine-window firing record.
 type InputRuleFiring struct {
-	RuleName  string
+	RuleName string
+	// FireCount is how often the condition matched; ActCount how often the
+	// action then did something. They are not the same measure and a rule
+	// where they diverge is the interesting kind.
 	FireCount int
+	ActCount  int
 	FirstTick int
 	LastTick  int
 }
@@ -186,6 +197,7 @@ func (s *Store) migrate() error {
 // available — preserves the legacy dashboard counters.
 func (s *Store) RecordGame(r GameRecord) error {
 	_, err := s.queries.InsertGame(context.Background(), db.InsertGameParams{
+		ExportPath:      sql.NullString{},
 		PlayedAt:        time.Now().Unix(),
 		OurFaction:      r.Faction,
 		OpponentFaction: sql.NullString{},
@@ -251,6 +263,8 @@ func (s *Store) ArchiveGame(
 
 	q := s.queries.WithTx(tx)
 	gameID, err := q.InsertGame(ctx, db.InsertGameParams{
+		ExportPath:      nullableString(gameCtx.ExportPath),
+		Directive:       nullableString(gameCtx.Directive),
 		PlayedAt:        time.Now().Unix(),
 		OurFaction:      gameCtx.OurFaction,
 		OpponentFaction: nullableString(gameCtx.OpponentFaction),
@@ -282,8 +296,11 @@ func (s *Store) ArchiveGame(
 				DoctrineID: doctrineID,
 				RuleName:   f.RuleName,
 				FireCount:  int64(f.FireCount),
-				FirstTick:  int64(f.FirstTick),
-				LastTick:   int64(f.LastTick),
+				// Always Valid: anything this code writes was measured. NULL is
+				// reserved for the rows that predate the counter.
+				ActCount:  sql.NullInt64{Int64: int64(f.ActCount), Valid: true},
+				FirstTick: int64(f.FirstTick),
+				LastTick:  int64(f.LastTick),
 			}); err != nil {
 				return 0, fmt.Errorf("insert rule_firing: %w", err)
 			}
@@ -543,4 +560,143 @@ func nullStringOr(ns sql.NullString, def string) string {
 		return ns.String
 	}
 	return def
+}
+
+// ReplayableGame is an archived game with a state export beside it — one Currie
+// can replay against the rule sets that ran.
+type ReplayableGame struct {
+	ID              int64
+	PlayedAt        time.Time
+	OurFaction      string
+	OpponentFaction string
+	DurationTicks   int
+	Won             bool
+	QualityTag      string
+	ExportPath      string
+	Directive       string
+}
+
+// ReplayableGames lists the games that recorded an export, newest first.
+//
+// Games without one are omitted rather than listed as unavailable: a game with
+// no states cannot be replayed, and offering it only to fail is worse than not
+// offering it.
+func (s *Store) ReplayableGames(ctx context.Context) ([]ReplayableGame, error) {
+	rows, err := s.queries.ListReplayableGames(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list replayable games: %w", err)
+	}
+	out := make([]ReplayableGame, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, ReplayableGame{
+			ID:              r.ID,
+			PlayedAt:        time.Unix(r.PlayedAt, 0),
+			OurFaction:      r.OurFaction,
+			OpponentFaction: r.OpponentFaction.String,
+			DurationTicks:   int(r.DurationTicks),
+			Won:             r.Won != 0,
+			QualityTag:      r.QualityTag.String,
+			ExportPath:      r.ExportPath.String,
+			Directive:       r.Directive.String,
+		})
+	}
+	return out, nil
+}
+
+// DoctrineWindow is one doctrine and the tick it took effect.
+type DoctrineWindow struct {
+	ID           int64
+	Tick         int
+	DoctrineJSON string
+	Rating       string
+	RatingReason string
+}
+
+// DoctrinesForGame returns a game's doctrine windows in the order they applied.
+func (s *Store) DoctrinesForGame(ctx context.Context, gameID int64) ([]DoctrineWindow, error) {
+	rows, err := s.queries.ListDoctrinesForGame(ctx, gameID)
+	if err != nil {
+		return nil, fmt.Errorf("list doctrines for game %d: %w", gameID, err)
+	}
+	out := make([]DoctrineWindow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, DoctrineWindow{
+			ID:           r.ID,
+			Tick:         int(r.Tick),
+			DoctrineJSON: r.DoctrineJson,
+			Rating:       r.Rating.String,
+			RatingReason: r.RatingReason.String,
+		})
+	}
+	return out, nil
+}
+
+// LinkExport associates an export file with a game.
+//
+// Backfill for games recorded before the archive knew where its states went.
+// New games carry the path from the moment they are archived.
+func (s *Store) LinkExport(ctx context.Context, gameID int64, path string) error {
+	if err := s.queries.SetGameExportPath(ctx, db.SetGameExportPathParams{
+		ExportPath: nullableString(path),
+		ID:         gameID,
+	}); err != nil {
+		return fmt.Errorf("link export to game %d: %w", gameID, err)
+	}
+	return nil
+}
+
+// AllGames lists every archived game, replayable or not, newest first.
+func (s *Store) AllGames(ctx context.Context) ([]ReplayableGame, error) {
+	rows, err := s.queries.ListAllGames(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list games: %w", err)
+	}
+	out := make([]ReplayableGame, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, ReplayableGame{
+			ID:              r.ID,
+			PlayedAt:        time.Unix(r.PlayedAt, 0),
+			OurFaction:      r.OurFaction,
+			OpponentFaction: r.OpponentFaction.String,
+			DurationTicks:   int(r.DurationTicks),
+			Won:             r.Won != 0,
+			QualityTag:      r.QualityTag.String,
+			ExportPath:      r.ExportPath.String,
+			Directive:       r.Directive.String,
+		})
+	}
+	return out, nil
+}
+
+// Firing is what a rule actually did during a game.
+//
+// Distinct from anything a replay can tell you: a replay reads the sampled
+// states in the export, so a rule that fired a handful of times across a whole
+// game can be absent from every sample and look as though it never could. These
+// counts come from the game itself.
+type Firing struct {
+	Matched int
+	// Acted is -1 when the game predates the counter, which is not the same as
+	// zero and must not be read as "it did nothing".
+	Acted int
+}
+
+// FiringsForGame is what every rule did, by name.
+func (s *Store) FiringsForGame(ctx context.Context, gameID int64) (map[string]Firing, error) {
+	rows, err := s.queries.ListFiringsForGame(ctx, gameID)
+	if err != nil {
+		return nil, fmt.Errorf("firings for game %d: %w", gameID, err)
+	}
+	out := make(map[string]Firing, len(rows))
+	for _, r := range rows {
+		f := Firing{Acted: -1}
+		if r.Matched.Valid {
+			f.Matched = int(r.Matched.Float64)
+		}
+		if r.Acted.Valid {
+			f.Acted = int(r.Acted.Float64)
+		}
+		out[r.RuleName] = f
+	}
+	return out, nil
 }

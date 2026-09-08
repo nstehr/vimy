@@ -690,8 +690,8 @@ func TestDetectEvents_StrategyCountered_InfantryVsTesla(t *testing.T) {
 
 func TestDetectEvents_StrategyCountered_VehiclesVsTesla(t *testing.T) {
 	gs := model.GameState{
-		Tick:   100,
-		Player: model.Player{Cash: 500, Resources: 500},
+		Tick:      100,
+		Player:    model.Player{Cash: 500, Resources: 500},
 		Buildings: []model.Building{{ID: 1, Type: "fact"}},
 		Units: []model.Unit{
 			{ID: 10, Type: "harv"},
@@ -731,8 +731,8 @@ func TestDetectEvents_StrategyCountered_VehiclesVsTesla(t *testing.T) {
 
 func TestDetectEvents_StrategyCountered_AircraftVsSAM(t *testing.T) {
 	gs := model.GameState{
-		Tick:   100,
-		Player: model.Player{Cash: 500, Resources: 500},
+		Tick:      100,
+		Player:    model.Player{Cash: 500, Resources: 500},
 		Buildings: []model.Building{{ID: 1, Type: "fact"}},
 		Units: []model.Unit{
 			{ID: 40, Type: "heli"}, {ID: 41, Type: "heli"}, {ID: 42, Type: "heli"},
@@ -804,8 +804,8 @@ func TestDetectEvents_StrategyCountered_InfantryAtThreshold(t *testing.T) {
 func TestDetectEvents_StrategyCountered_VehicleBelowThreshold(t *testing.T) {
 	// Vehicle threshold is still 3, so losing 2 vehicles should NOT fire.
 	gs := model.GameState{
-		Tick:   100,
-		Player: model.Player{Cash: 500, Resources: 500},
+		Tick:      100,
+		Player:    model.Player{Cash: 500, Resources: 500},
 		Buildings: []model.Building{{ID: 1, Type: "fact"}},
 		Units: []model.Unit{
 			{ID: 10, Type: "harv"},
@@ -961,8 +961,8 @@ func TestStrategyCountered_AccumulatesAcrossTicks(t *testing.T) {
 
 	// Tick 100: 6 infantry alive, tesla coil visible
 	gs0 := model.GameState{
-		Tick:   100,
-		Player: model.Player{Cash: 500, Resources: 500},
+		Tick:      100,
+		Player:    model.Player{Cash: 500, Resources: 500},
 		Buildings: []model.Building{{ID: 1, Type: "fact"}},
 		Units: []model.Unit{
 			{ID: 10, Type: "harv"},
@@ -1018,8 +1018,8 @@ func TestStrategyCountered_WindowResetsAfterCooldown(t *testing.T) {
 	memory := make(map[string]any)
 
 	gs0 := model.GameState{
-		Tick:   100,
-		Player: model.Player{Cash: 500, Resources: 500},
+		Tick:      100,
+		Player:    model.Player{Cash: 500, Resources: 500},
 		Buildings: []model.Building{{ID: 1, Type: "fact"}},
 		Units: []model.Unit{
 			{ID: 10, Type: "harv"},

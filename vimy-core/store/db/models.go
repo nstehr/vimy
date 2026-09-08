@@ -29,6 +29,8 @@ type Game struct {
 	Won             int64          `json:"won"`
 	QualityTag      sql.NullString `json:"quality_tag"`
 	ReviewJson      sql.NullString `json:"review_json"`
+	ExportPath      sql.NullString `json:"export_path"`
+	Directive       sql.NullString `json:"directive"`
 }
 
 type Lesson struct {
@@ -43,10 +45,11 @@ type Lesson struct {
 }
 
 type RuleFiring struct {
-	ID         int64  `json:"id"`
-	DoctrineID int64  `json:"doctrine_id"`
-	RuleName   string `json:"rule_name"`
-	FireCount  int64  `json:"fire_count"`
-	FirstTick  int64  `json:"first_tick"`
-	LastTick   int64  `json:"last_tick"`
+	ID         int64         `json:"id"`
+	DoctrineID int64         `json:"doctrine_id"`
+	RuleName   string        `json:"rule_name"`
+	FireCount  int64         `json:"fire_count"`
+	FirstTick  int64         `json:"first_tick"`
+	LastTick   int64         `json:"last_tick"`
+	ActCount   sql.NullInt64 `json:"act_count"`
 }

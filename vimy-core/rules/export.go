@@ -1,10 +1,13 @@
 package rules
 
 import (
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -209,15 +212,20 @@ func RuleSetID(rules []*Rule) string {
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
-// Flush writes what was recorded. Safe to call with nothing recorded.
-func (e *StateExporter) Flush() error {
+// Flush writes what was recorded and returns the file it wrote.
+//
+// The path is returned rather than only logged because the archive records it:
+// replaying a game means pairing its export to its doctrines, and that pairing
+// should be a fact the archive knows rather than something reconstructed from
+// timestamps. Empty means nothing was recorded.
+func (e *StateExporter) Flush() (string, error) {
 	if e == nil {
-		return nil
+		return "", nil
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if len(e.cases) == 0 {
-		return nil
+		return "", nil
 	}
 
 	payload := struct {
@@ -227,13 +235,19 @@ func (e *StateExporter) Flush() error {
 
 	b, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshal export: %w", err)
+		return "", fmt.Errorf("marshal export: %w", err)
 	}
 	// One file per game, named when it is written rather than at startup, so a
 	// sidecar left running across several games produces several files.
-	path := filepath.Join(e.dir, fmt.Sprintf("export-%s.json", time.Now().UTC().Format("20060102-150405")))
-	if err := os.WriteFile(path, append(b, '\n'), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
+	//
+	// Compressed, because almost all of it is the same key strings again: a
+	// state names every predicate it answers, and a game holds hundreds of
+	// states asking the same questions. Measured at forty times smaller, which
+	// is a better result than interning those names would give and costs no
+	// schema anyone has to agree on.
+	path := filepath.Join(e.dir, fmt.Sprintf("export-%s.json.gz", time.Now().UTC().Format("20060102-150405")))
+	if err := writeGzip(path, append(b, '\n')); err != nil {
+		return "", err
 	}
 	slog.Info("exported rule evaluations",
 		"path", path, "states", len(e.states), "cases", len(e.cases))
@@ -241,5 +255,61 @@ func (e *StateExporter) Flush() error {
 	// Cleared so a second game in the same process starts fresh rather than
 	// re-writing everything the first one saw.
 	e.states, e.cases, e.seen = nil, nil, 0
-	return nil
+	return path, nil
+}
+
+// writeGzip writes b compressed, via a temp file so a crash mid-write cannot
+// leave a truncated export that reads as a short game.
+func writeGzip(path string, b []byte) error {
+	tmp := path + ".tmp"
+	f, err := os.Create(tmp)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", tmp, err)
+	}
+	zw, err := gzip.NewWriterLevel(f, gzip.BestSpeed)
+	if err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("gzip: %w", err)
+	}
+	if _, err := zw.Write(b); err != nil {
+		zw.Close()
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("write %s: %w", tmp, err)
+	}
+	if err := zw.Close(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("flush %s: %w", tmp, err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("close %s: %w", tmp, err)
+	}
+	return os.Rename(tmp, path)
+}
+
+// ReadExport reads an export, compressed or not.
+//
+// Both, because the plain files predate compression and there is no reason to
+// make a recording unreadable to save a branch.
+func ReadExport(path string) ([]byte, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if len(b) < 2 || b[0] != 0x1f || b[1] != 0x8b {
+		return b, nil
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(b))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	defer zr.Close()
+	out, err := io.ReadAll(zr)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return out, nil
 }

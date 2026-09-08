@@ -86,6 +86,15 @@ func (a *Agent) HandleGameEnd(env ipc.Envelope) (*ipc.Envelope, error) {
 	won := msg.Winner == a.Player
 	slog.Info("game ended", "player", a.Player, "winner", msg.Winner, "won", won)
 
+	// Flushed before the review rather than after it: the archive records where
+	// the export was written, and the row is inserted by the retrospective, so
+	// the file has to exist and be named by the time that starts. A failure here
+	// must not stop the game ending, so it is logged rather than returned.
+	exportPath, err := a.Engine.Exporter().Flush()
+	if err != nil {
+		slog.Error("failed to export rule evaluations", "error", err)
+	}
+
 	// Only the vimy bot records the game.
 	if a.Strategist != nil && strings.Contains(strings.ToLower(a.Player), "vimy") {
 		a.Strategist.RecordGame(GameResult{
@@ -97,7 +106,7 @@ func (a *Agent) HandleGameEnd(env ipc.Envelope) (*ipc.Envelope, error) {
 		// Snapshot history under the strategist lock BEFORE Reset wipes it.
 		// The retrospective LLM call + archival run asynchronously and the
 		// game record is inserted only when the review completes (or fails).
-		snap := a.Strategist.snapshotForReview(won)
+		snap := a.Strategist.snapshotForReview(won, exportPath)
 		a.Strategist.runRetrospective(a.ctx, snap)
 
 		a.Strategist.Reset()
@@ -108,13 +117,6 @@ func (a *Agent) HandleGameEnd(env ipc.Envelope) (*ipc.Envelope, error) {
 		if snap == nil && a.Store != nil {
 			_ = a.Store.RecordGame(store.GameRecord{Faction: a.Faction, Won: won})
 		}
-	}
-
-	// Written before Reset: the exporter accumulates in memory, and a game that
-	// ends without flushing leaves nothing behind. A failure here must not stop
-	// the game ending, so it is logged rather than returned.
-	if err := a.Engine.Exporter().Flush(); err != nil {
-		slog.Error("failed to export rule evaluations", "error", err)
 	}
 
 	a.Engine.Reset()

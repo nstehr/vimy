@@ -3,6 +3,7 @@ package ipc
 import (
 	"log/slog"
 	"net"
+	"sync/atomic"
 )
 
 // Handler processes a received envelope. Return nil to send no reply.
@@ -13,6 +14,10 @@ type Handler func(env Envelope) (*Envelope, error)
 type Connection struct {
 	conn     net.Conn
 	handlers map[string]Handler
+	// Envelopes written, ever. The rule engine samples it around an action to
+	// tell an action that did something from one that returned without
+	// ordering anything — see `Engine.Evaluate`.
+	sent atomic.Uint64
 }
 
 func NewConnection(conn net.Conn, handlers map[string]Handler) *Connection {
@@ -34,7 +39,17 @@ func (c *Connection) Send(msgType string, data any) error {
 	if err != nil {
 		return err
 	}
-	return WriteEnvelope(c.conn, env)
+	if err := WriteEnvelope(c.conn, env); err != nil {
+		return err
+	}
+	c.sent.Add(1)
+	return nil
+}
+
+// Sent is the number of envelopes written so far. Monotonic; only differences
+// between two readings mean anything.
+func (c *Connection) Sent() uint64 {
+	return c.sent.Load()
 }
 
 // ReadLoop blocks until the connection closes or errors. It owns the conn lifetime

@@ -200,3 +200,169 @@ func TestRetrievalFiltersOnOurFaction(t *testing.T) {
 		t.Errorf("wrong-faction retrieval leaked: got %d exemplars", len(mem.Exemplars))
 	}
 }
+
+// Firing counters survive the round trip, and the two counts stay distinct.
+//
+// act_count is nullable so that rows predating the counter read as "not
+// measured" rather than "matched and never acted"; anything written here was
+// measured, so it must come back non-NULL — including a genuine zero.
+func TestArchiveKeepsMatchedAndActedApart(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	gameID, err := s.ArchiveGame(ctx, GameContext{
+		OurFaction: "england", MapWidth: 91, MapHeight: 91, DurationTicks: 100,
+	}, "cautionary", "{}", []InputDoctrine{{
+		Tick:         0,
+		DoctrineJSON: `{"name":"opening"}`,
+		RuleFirings: []InputRuleFiring{
+			{RuleName: "does-something", FireCount: 9, ActCount: 9, FirstTick: 1, LastTick: 90},
+			{RuleName: "does-nothing", FireCount: 12, ActCount: 0, FirstTick: 2, LastTick: 95},
+		},
+	}})
+	if err != nil {
+		t.Fatalf("ArchiveGame: %v", err)
+	}
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT rule_name, fire_count, act_count FROM rule_firings
+		 JOIN archived_doctrines ON archived_doctrines.id = rule_firings.doctrine_id
+		 WHERE archived_doctrines.game_id = ? ORDER BY rule_name`, gameID)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	defer rows.Close()
+
+	got := map[string][2]any{}
+	for rows.Next() {
+		var name string
+		var fire int
+		var act sql.NullInt64
+		if err := rows.Scan(&name, &fire, &act); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		got[name] = [2]any{fire, act}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows: %v", err)
+	}
+
+	idle, ok := got["does-nothing"]
+	if !ok {
+		t.Fatal("does-nothing was not stored")
+	}
+	if idle[0] != 12 {
+		t.Errorf("does-nothing fire_count = %v, want 12", idle[0])
+	}
+	act := idle[1].(sql.NullInt64)
+	if !act.Valid {
+		t.Error("act_count is NULL for a row this code measured")
+	}
+	if act.Int64 != 0 {
+		t.Errorf("does-nothing act_count = %d, want 0", act.Int64)
+	}
+
+	worked := got["does-something"][1].(sql.NullInt64)
+	if !worked.Valid || worked.Int64 != 9 {
+		t.Errorf("does-something act_count = %v, want 9", worked)
+	}
+}
+
+// The export path reaches the archive, so a replay can find the states that go
+// with a game's doctrines without a human pairing files by timestamp.
+func TestArchiveRecordsTheExportPath(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	const path = "/Users/x/.vimy/exports/export-20260907-201419.json"
+	if _, err := s.ArchiveGame(ctx, GameContext{
+		OurFaction: "england", MapWidth: 91, MapHeight: 91,
+		DurationTicks: 30300, ExportPath: path,
+	}, "cautionary", "{}", []InputDoctrine{
+		{Tick: 0, DoctrineJSON: `{"name":"opening"}`},
+	}); err != nil {
+		t.Fatalf("ArchiveGame: %v", err)
+	}
+
+	games, err := s.queries.ListReplayableGames(ctx)
+	if err != nil {
+		t.Fatalf("ListReplayableGames: %v", err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("replayable games = %d, want 1", len(games))
+	}
+	if got := games[0].ExportPath.String; got != path {
+		t.Errorf("export_path = %q, want %q", got, path)
+	}
+}
+
+// A game recorded without --export-states is not replayable and must not be
+// offered as though it were.
+func TestGameWithoutAnExportIsNotReplayable(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	if _, err := s.ArchiveGame(ctx, GameContext{
+		OurFaction: "england", MapWidth: 91, MapHeight: 91, DurationTicks: 100,
+	}, "cautionary", "{}", []InputDoctrine{
+		{Tick: 0, DoctrineJSON: `{"name":"opening"}`},
+	}); err != nil {
+		t.Fatalf("ArchiveGame: %v", err)
+	}
+
+	games, err := s.queries.ListReplayableGames(ctx)
+	if err != nil {
+		t.Fatalf("ListReplayableGames: %v", err)
+	}
+	if len(games) != 0 {
+		t.Errorf("replayable games = %d, want 0 — it has no export", len(games))
+	}
+}
+
+// The directive is archived with the game.
+//
+// The strategist turns a line of prose into weights, and the weights decide
+// which rules can fire — so a post mortem that stops at the weights stops one
+// step short of the thing a person can actually edit.
+func TestArchiveRecordsTheDirective(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	const directive = "air superiority supported with long range rockets"
+	if _, err := s.ArchiveGame(ctx, GameContext{
+		OurFaction: "england", MapWidth: 91, MapHeight: 91, DurationTicks: 100,
+		ExportPath: "/tmp/export.json", Directive: directive,
+	}, "cautionary", "{}", []InputDoctrine{{Tick: 0, DoctrineJSON: `{"name":"opening"}`}}); err != nil {
+		t.Fatalf("ArchiveGame: %v", err)
+	}
+
+	games, err := s.ReplayableGames(ctx)
+	if err != nil {
+		t.Fatalf("ReplayableGames: %v", err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("games = %d, want 1", len(games))
+	}
+	if games[0].Directive != directive {
+		t.Errorf("directive = %q, want %q", games[0].Directive, directive)
+	}
+}
+
+// A game played before the directive was recorded reads as empty rather than
+// as something invented.
+func TestGameWithoutADirectiveReadsEmpty(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	if _, err := s.ArchiveGame(ctx, GameContext{
+		OurFaction: "england", MapWidth: 91, MapHeight: 91, DurationTicks: 100,
+		ExportPath: "/tmp/export.json",
+	}, "cautionary", "{}", []InputDoctrine{{Tick: 0, DoctrineJSON: `{"name":"opening"}`}}); err != nil {
+		t.Fatalf("ArchiveGame: %v", err)
+	}
+
+	games, _ := s.ReplayableGames(ctx)
+	if games[0].Directive != "" {
+		t.Errorf("directive = %q, want empty", games[0].Directive)
+	}
+}

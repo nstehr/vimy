@@ -18,7 +18,7 @@ func TestNilExporterIsInert(t *testing.T) {
 		t.Fatalf("nil exporter began a recording: %d", idx)
 	}
 	e.record(-1, 0, "id", "r", true, false)
-	if err := e.Flush(); err != nil {
+	if _, err := e.Flush(); err != nil {
 		t.Fatalf("nil exporter flush: %v", err)
 	}
 }
@@ -56,18 +56,21 @@ func TestExporterSamplesAndRecords(t *testing.T) {
 		}
 	}
 
-	if err := exp.Flush(); err != nil {
+	if _, err := exp.Flush(); err != nil {
 		t.Fatal(err)
 	}
 
-	written, err := filepath.Glob(filepath.Join(dir, "export-*.json"))
+	written, err := filepath.Glob(filepath.Join(dir, "export-*.json.gz"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(written) != 1 {
 		t.Fatalf("wrote %d files, want 1", len(written))
 	}
-	b, err := os.ReadFile(written[0])
+	// Through ReadExport rather than os.ReadFile: an export is compressed, and
+	// the test that says what an export is should read one the way a reader
+	// does.
+	b, err := ReadExport(written[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,10 +122,10 @@ func TestExporterWritesNothingWhenIdle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := exp.Flush(); err != nil {
+	if _, err := exp.Flush(); err != nil {
 		t.Fatal(err)
 	}
-	written, _ := filepath.Glob(filepath.Join(dir, "export-*.json"))
+	written, _ := filepath.Glob(filepath.Join(dir, "export-*.json.gz"))
 	if len(written) != 0 {
 		t.Errorf("wrote %d files with nothing recorded", len(written))
 	}
@@ -184,14 +187,14 @@ func TestEachGameWritesItsOwnFile(t *testing.T) {
 		if idx := exp.begin(env, nil); idx >= 0 {
 			exp.record(idx, game, "id", "r", true, false)
 		}
-		if err := exp.Flush(); err != nil {
+		if _, err := exp.Flush(); err != nil {
 			t.Fatal(err)
 		}
 		// Timestamps are second-resolution, so a same-second second flush would
 		// overwrite the first.
 		time.Sleep(1100 * time.Millisecond)
 	}
-	written, _ := filepath.Glob(filepath.Join(dir, "export-*.json"))
+	written, _ := filepath.Glob(filepath.Join(dir, "export-*.json.gz"))
 	if len(written) != 2 {
 		t.Errorf("two games wrote %d files, want 2", len(written))
 	}
@@ -340,5 +343,75 @@ func TestProjectionKeysNormaliseNumbers(t *testing.T) {
 		if got := normaliseLiteral(c.in); got != c.want {
 			t.Errorf("normaliseLiteral(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+// An export is compressed, and reads back byte for byte.
+//
+// Compression is worth having because almost all of an export is the same key
+// strings again — a state names every predicate it answers, and a game holds
+// hundreds of states asking the same questions.
+func TestExportIsCompressedAndRoundTrips(t *testing.T) {
+	dir := t.TempDir()
+	e, err := NewStateExporter(dir, 1, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := RuleEnv{Memory: map[string]any{}}
+	rules := DefaultRules()
+	idx := e.begin(env, rules)
+	for _, r := range rules {
+		e.record(idx, 1, "set", r.Name, true, false)
+	}
+
+	path, err := e.Flush()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Ext(path) != ".gz" {
+		t.Errorf("path = %q, want a .gz", path)
+	}
+
+	onDisk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(onDisk) >= 2 && (onDisk[0] != 0x1f || onDisk[1] != 0x8b) {
+		t.Error("no gzip header; the file is not compressed")
+	}
+
+	plain, err := ReadExport(path)
+	if err != nil {
+		t.Fatalf("ReadExport: %v", err)
+	}
+	var got struct {
+		States []map[string]any `json:"states"`
+		Cases  []ExportedCase   `json:"cases"`
+	}
+	if err := json.Unmarshal(plain, &got); err != nil {
+		t.Fatalf("decompressed export does not parse: %v", err)
+	}
+	if len(got.Cases) != len(rules) {
+		t.Errorf("cases = %d, want %d", len(got.Cases), len(rules))
+	}
+	if len(plain) <= len(onDisk) {
+		t.Errorf("compressed %d bytes is not smaller than %d", len(onDisk), len(plain))
+	}
+}
+
+// A recording made before compression stays readable. There is no reason to
+// make an old export unreadable to save a branch.
+func TestReadExportAcceptsPlainJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "export-old.json")
+	want := []byte(`{"states":[],"cases":[]}`)
+	if err := os.WriteFile(path, want, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadExport(path)
+	if err != nil {
+		t.Fatalf("ReadExport: %v", err)
+	}
+	if string(got) != string(want) {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

@@ -39,9 +39,22 @@ SELECT id, played_at, our_faction, opponent_faction,
 FROM games WHERE id = ?
 `
 
-func (q *Queries) GetGame(ctx context.Context, id int64) (Game, error) {
+type GetGameRow struct {
+	ID              int64          `json:"id"`
+	PlayedAt        int64          `json:"played_at"`
+	OurFaction      string         `json:"our_faction"`
+	OpponentFaction sql.NullString `json:"opponent_faction"`
+	MapWidth        int64          `json:"map_width"`
+	MapHeight       int64          `json:"map_height"`
+	DurationTicks   int64          `json:"duration_ticks"`
+	Won             int64          `json:"won"`
+	QualityTag      sql.NullString `json:"quality_tag"`
+	ReviewJson      sql.NullString `json:"review_json"`
+}
+
+func (q *Queries) GetGame(ctx context.Context, id int64) (GetGameRow, error) {
 	row := q.db.QueryRowContext(ctx, getGame, id)
-	var i Game
+	var i GetGameRow
 	err := row.Scan(
 		&i.ID,
 		&i.PlayedAt,
@@ -91,8 +104,8 @@ const insertGame = `-- name: InsertGame :one
 INSERT INTO games (
     played_at, our_faction, opponent_faction,
     map_width, map_height, duration_ticks,
-    won, quality_tag, review_json
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    won, quality_tag, review_json, export_path, directive
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id
 `
 
@@ -106,6 +119,8 @@ type InsertGameParams struct {
 	Won             int64          `json:"won"`
 	QualityTag      sql.NullString `json:"quality_tag"`
 	ReviewJson      sql.NullString `json:"review_json"`
+	ExportPath      sql.NullString `json:"export_path"`
+	Directive       sql.NullString `json:"directive"`
 }
 
 func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (int64, error) {
@@ -119,6 +134,8 @@ func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (int64, 
 		arg.Won,
 		arg.QualityTag,
 		arg.ReviewJson,
+		arg.ExportPath,
+		arg.Directive,
 	)
 	var id int64
 	err := row.Scan(&id)
@@ -157,16 +174,17 @@ func (q *Queries) InsertLesson(ctx context.Context, arg InsertLessonParams) erro
 
 const insertRuleFiring = `-- name: InsertRuleFiring :exec
 INSERT INTO rule_firings (
-    doctrine_id, rule_name, fire_count, first_tick, last_tick
-) VALUES (?, ?, ?, ?, ?)
+    doctrine_id, rule_name, fire_count, act_count, first_tick, last_tick
+) VALUES (?, ?, ?, ?, ?, ?)
 `
 
 type InsertRuleFiringParams struct {
-	DoctrineID int64  `json:"doctrine_id"`
-	RuleName   string `json:"rule_name"`
-	FireCount  int64  `json:"fire_count"`
-	FirstTick  int64  `json:"first_tick"`
-	LastTick   int64  `json:"last_tick"`
+	DoctrineID int64         `json:"doctrine_id"`
+	RuleName   string        `json:"rule_name"`
+	FireCount  int64         `json:"fire_count"`
+	ActCount   sql.NullInt64 `json:"act_count"`
+	FirstTick  int64         `json:"first_tick"`
+	LastTick   int64         `json:"last_tick"`
 }
 
 func (q *Queries) InsertRuleFiring(ctx context.Context, arg InsertRuleFiringParams) error {
@@ -174,10 +192,146 @@ func (q *Queries) InsertRuleFiring(ctx context.Context, arg InsertRuleFiringPara
 		arg.DoctrineID,
 		arg.RuleName,
 		arg.FireCount,
+		arg.ActCount,
 		arg.FirstTick,
 		arg.LastTick,
 	)
 	return err
+}
+
+const listAllGames = `-- name: ListAllGames :many
+SELECT id, played_at, our_faction, opponent_faction,
+       duration_ticks, won, quality_tag, export_path, directive
+FROM games ORDER BY played_at DESC
+`
+
+type ListAllGamesRow struct {
+	ID              int64          `json:"id"`
+	PlayedAt        int64          `json:"played_at"`
+	OurFaction      string         `json:"our_faction"`
+	OpponentFaction sql.NullString `json:"opponent_faction"`
+	DurationTicks   int64          `json:"duration_ticks"`
+	Won             int64          `json:"won"`
+	QualityTag      sql.NullString `json:"quality_tag"`
+	ExportPath      sql.NullString `json:"export_path"`
+	Directive       sql.NullString `json:"directive"`
+}
+
+func (q *Queries) ListAllGames(ctx context.Context) ([]ListAllGamesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAllGames)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAllGamesRow
+	for rows.Next() {
+		var i ListAllGamesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlayedAt,
+			&i.OurFaction,
+			&i.OpponentFaction,
+			&i.DurationTicks,
+			&i.Won,
+			&i.QualityTag,
+			&i.ExportPath,
+			&i.Directive,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDoctrinesForGame = `-- name: ListDoctrinesForGame :many
+SELECT id, tick, doctrine_json, rating, rating_reason
+FROM archived_doctrines
+WHERE game_id = ?
+ORDER BY tick
+`
+
+type ListDoctrinesForGameRow struct {
+	ID           int64          `json:"id"`
+	Tick         int64          `json:"tick"`
+	DoctrineJson string         `json:"doctrine_json"`
+	Rating       sql.NullString `json:"rating"`
+	RatingReason sql.NullString `json:"rating_reason"`
+}
+
+// Every doctrine window of one game, in the order they took effect.
+func (q *Queries) ListDoctrinesForGame(ctx context.Context, gameID int64) ([]ListDoctrinesForGameRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDoctrinesForGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDoctrinesForGameRow
+	for rows.Next() {
+		var i ListDoctrinesForGameRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Tick,
+			&i.DoctrineJson,
+			&i.Rating,
+			&i.RatingReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFiringsForGame = `-- name: ListFiringsForGame :many
+SELECT f.rule_name, SUM(f.fire_count) AS matched, SUM(f.act_count) AS acted
+FROM rule_firings f
+JOIN archived_doctrines d ON d.id = f.doctrine_id
+WHERE d.game_id = ?
+GROUP BY f.rule_name
+`
+
+type ListFiringsForGameRow struct {
+	RuleName string          `json:"rule_name"`
+	Matched  sql.NullFloat64 `json:"matched"`
+	Acted    sql.NullFloat64 `json:"acted"`
+}
+
+// What each rule actually did during the game, summed over its doctrine
+// windows. act_count is NULL for games recorded before it was measured.
+func (q *Queries) ListFiringsForGame(ctx context.Context, gameID int64) ([]ListFiringsForGameRow, error) {
+	rows, err := q.db.QueryContext(ctx, listFiringsForGame, gameID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListFiringsForGameRow
+	for rows.Next() {
+		var i ListFiringsForGameRow
+		if err := rows.Scan(&i.RuleName, &i.Matched, &i.Acted); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listGames = `-- name: ListGames :many
@@ -226,15 +380,28 @@ type ListGamesDetailedParams struct {
 	Offset int64 `json:"offset"`
 }
 
-func (q *Queries) ListGamesDetailed(ctx context.Context, arg ListGamesDetailedParams) ([]Game, error) {
+type ListGamesDetailedRow struct {
+	ID              int64          `json:"id"`
+	PlayedAt        int64          `json:"played_at"`
+	OurFaction      string         `json:"our_faction"`
+	OpponentFaction sql.NullString `json:"opponent_faction"`
+	MapWidth        int64          `json:"map_width"`
+	MapHeight       int64          `json:"map_height"`
+	DurationTicks   int64          `json:"duration_ticks"`
+	Won             int64          `json:"won"`
+	QualityTag      sql.NullString `json:"quality_tag"`
+	ReviewJson      sql.NullString `json:"review_json"`
+}
+
+func (q *Queries) ListGamesDetailed(ctx context.Context, arg ListGamesDetailedParams) ([]ListGamesDetailedRow, error) {
 	rows, err := q.db.QueryContext(ctx, listGamesDetailed, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Game
+	var items []ListGamesDetailedRow
 	for rows.Next() {
-		var i Game
+		var i ListGamesDetailedRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.PlayedAt,
@@ -246,6 +413,60 @@ func (q *Queries) ListGamesDetailed(ctx context.Context, arg ListGamesDetailedPa
 			&i.Won,
 			&i.QualityTag,
 			&i.ReviewJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listReplayableGames = `-- name: ListReplayableGames :many
+SELECT id, played_at, our_faction, opponent_faction,
+       duration_ticks, won, quality_tag, export_path, directive
+FROM games
+WHERE export_path IS NOT NULL AND export_path != ''
+ORDER BY played_at DESC
+`
+
+type ListReplayableGamesRow struct {
+	ID              int64          `json:"id"`
+	PlayedAt        int64          `json:"played_at"`
+	OurFaction      string         `json:"our_faction"`
+	OpponentFaction sql.NullString `json:"opponent_faction"`
+	DurationTicks   int64          `json:"duration_ticks"`
+	Won             int64          `json:"won"`
+	QualityTag      sql.NullString `json:"quality_tag"`
+	ExportPath      sql.NullString `json:"export_path"`
+	Directive       sql.NullString `json:"directive"`
+}
+
+// Games with a recorded state export, newest first: the ones Currie can replay.
+func (q *Queries) ListReplayableGames(ctx context.Context) ([]ListReplayableGamesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listReplayableGames)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListReplayableGamesRow
+	for rows.Next() {
+		var i ListReplayableGamesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.PlayedAt,
+			&i.OurFaction,
+			&i.OpponentFaction,
+			&i.DurationTicks,
+			&i.Won,
+			&i.QualityTag,
+			&i.ExportPath,
+			&i.Directive,
 		); err != nil {
 			return nil, err
 		}
@@ -466,4 +687,19 @@ func (q *Queries) QueryLessons(ctx context.Context, arg QueryLessonsParams) ([]Q
 		return nil, err
 	}
 	return items, nil
+}
+
+const setGameExportPath = `-- name: SetGameExportPath :exec
+UPDATE games SET export_path = ? WHERE id = ?
+`
+
+type SetGameExportPathParams struct {
+	ExportPath sql.NullString `json:"export_path"`
+	ID         int64          `json:"id"`
+}
+
+// Backfill: associate an export with a game recorded before provenance existed.
+func (q *Queries) SetGameExportPath(ctx context.Context, arg SetGameExportPathParams) error {
+	_, err := q.db.ExecContext(ctx, setGameExportPath, arg.ExportPath, arg.ID)
+	return err
 }

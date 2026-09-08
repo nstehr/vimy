@@ -23,12 +23,17 @@ type retrospectiveSnapshot struct {
 	history         []DoctrineRecord
 	totalLosses     map[string]int
 	store           *store.Store
+	// Where this game's states were written, so a replay can find them. Empty
+	// when the sidecar ran without --export-states.
+	exportPath string
+	// The directive these doctrines were written from.
+	directive string
 }
 
 // snapshotForReview takes a snapshot of everything the retrospective will
 // need. Must be called while the strategist still holds its history, i.e.
 // before Reset. Returns nil if no history exists (nothing to review).
-func (s *Strategist) snapshotForReview(won bool) *retrospectiveSnapshot {
+func (s *Strategist) snapshotForReview(won bool, exportPath string) *retrospectiveSnapshot {
 	// Close the final doctrine window by flushing firing counters BEFORE
 	// copying history. Attach stats to the last DoctrineRecord so the
 	// archive reflects the entire game. No-op when tracing is disabled.
@@ -54,6 +59,8 @@ func (s *Strategist) snapshotForReview(won bool) *retrospectiveSnapshot {
 		history:         append([]DoctrineRecord(nil), s.history...),
 		totalLosses:     make(map[string]int, len(s.totalLosses)),
 		store:           s.store,
+		exportPath:      exportPath,
+		directive:       s.directive,
 	}
 	if snap.opponentFaction == "" {
 		snap.opponentFaction = "unknown"
@@ -165,6 +172,8 @@ func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveRev
 			MapHeight:       snap.mapHeight,
 			DurationTicks:   snap.durationTicks,
 			Won:             snap.won,
+			ExportPath:      snap.exportPath,
+			Directive:       snap.directive,
 		},
 	}
 
@@ -211,6 +220,7 @@ func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveRev
 			entry.RuleFirings = append(entry.RuleFirings, store.InputRuleFiring{
 				RuleName:  name,
 				FireCount: stats.FireCount,
+				ActCount:  stats.ActCount,
 				FirstTick: stats.FirstTick,
 				LastTick:  stats.LastTick,
 			})
