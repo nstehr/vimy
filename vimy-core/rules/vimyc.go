@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -35,13 +36,22 @@ var doctrineSource embed.FS
 type VimycCompiler struct {
 	// Path to the binary; "vimyc" finds it on PATH.
 	Bin string
+	// Where the `.vy` sources come from. Empty uses the copy embedded in this
+	// binary, which is what a game wants: the rules it runs should be the ones
+	// it shipped with.
+	//
+	// A replay wants the opposite. Currie blames against sources on disk, and
+	// if it fingerprints against an embedded copy from an older build the two
+	// halves of its analysis are reading different rule sets — which happened,
+	// and showed up only as a pairing failure that silently degraded to
+	// matching states by tick.
+	RulesDir string
 	// How long to wait. Compiling 118 rules takes single-digit milliseconds,
 	// so this only ever catches something being wrong.
 	Timeout time.Duration
 }
 
-// NewVimycCompiler writes the embedded rule set to a file vimyc can read and
-// returns a compiler for it.
+// NewVimycCompiler returns a compiler reading the embedded rule set.
 //
 // Checked at startup rather than at the first doctrine: a missing binary
 // discovered twenty minutes into a game is a wasted game.
@@ -71,16 +81,17 @@ func (c *VimycCompiler) Compile(d Doctrine) ([]*Rule, error) {
 
 	// The source goes to a temp directory because vimyc takes paths; the params
 	// go on stdin so nothing per-doctrine touches the disk.
-	dir, err := writeRuleSet()
+	srcArgs, cleanup, err := c.sources()
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(dir)
+	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(context.Background(), c.Timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, c.Bin, dir, "--params", "-", "--json")
+	args := append(append([]string{}, srcArgs...), "--params", "-", "--json")
+	cmd := exec.CommandContext(ctx, c.Bin, args...)
 	cmd.Stdin = bytes.NewReader(params)
 	var out, errs bytes.Buffer
 	cmd.Stdout = &out
@@ -97,11 +108,43 @@ func (c *VimycCompiler) Compile(d Doctrine) ([]*Rule, error) {
 	// existing when this function returned.
 	for _, line := range strings.Split(strings.TrimSpace(errs.String()), "\n") {
 		if line != "" {
-			slog.Warn("vimyc", "doctrine", d.Name, "message", strings.ReplaceAll(line, dir+"/", ""))
+			slog.Warn("vimyc", "doctrine", d.Name, "message", trimSourceDir(line, srcArgs))
 		}
 	}
 
 	return LoadArtifact(out.Bytes())
+}
+
+// sources is the arguments naming the rule set, and a function to release them.
+//
+// Files rather than a directory when `RulesDir` is set: `seed.vy` lives beside
+// the doctrine sources and is its own standalone rule set, so handing vimyc the
+// whole directory compiles a set the game never runs — and the fingerprint of
+// that set matches no recording. The embedded path already drops it; this has
+// to drop it the same way or the two disagree.
+func (c *VimycCompiler) sources() ([]string, func(), error) {
+	if c.RulesDir != "" {
+		found, err := filepath.Glob(filepath.Join(c.RulesDir, "*.vy"))
+		if err != nil {
+			return nil, func() {}, fmt.Errorf("%s: %w", c.RulesDir, err)
+		}
+		out := make([]string, 0, len(found))
+		for _, f := range found {
+			if filepath.Base(f) != "seed.vy" {
+				out = append(out, f)
+			}
+		}
+		if len(out) == 0 {
+			return nil, func() {}, fmt.Errorf("%s: no .vy sources", c.RulesDir)
+		}
+		sort.Strings(out)
+		return out, func() {}, nil
+	}
+	dir, err := writeRuleSet()
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return []string{dir}, func() { os.RemoveAll(dir) }, nil
 }
 
 // writeRuleSet unpacks the embedded sources into a fresh temp directory and
@@ -144,4 +187,15 @@ func writeRuleSet() (string, error) {
 		return "", fmt.Errorf("rule set is empty: nothing embedded under rules/vy")
 	}
 	return dir, nil
+}
+
+// trimSourceDir strips the directory from a diagnostic so it names the file as
+// it is checked out rather than a temp path that stopped existing.
+func trimSourceDir(line string, srcArgs []string) string {
+	for _, a := range srcArgs {
+		if dir := filepath.Dir(a); dir != "." {
+			line = strings.ReplaceAll(line, dir+"/", "")
+		}
+	}
+	return line
 }

@@ -49,3 +49,46 @@ func TestVimycCompilesEveryArchivedDoctrine(t *testing.T) {
 	}
 	t.Logf("%d doctrines, %d rules compiled and loaded", compiled, rulesSeen)
 }
+
+// The squad names Swap retains are read out of a real compiled rule set.
+//
+// This is the seam that fails quietly: if ActionSrc were spelled differently
+// than squadNames expects, `keep` would come back empty and every swap would
+// silently go back to dropping every squad — which is the behaviour that kept
+// the attack squad from ever reaching commit strength.
+func TestSquadNamesReadsARealRuleSet(t *testing.T) {
+	if _, err := exec.LookPath("vimyc"); err != nil {
+		t.Skip("vimyc not on PATH")
+	}
+	c, err := NewVimycCompiler("")
+	if err != nil {
+		t.Fatalf("compiler: %v", err)
+	}
+	doctrines, err := RealDoctrines()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A doctrine that wants ground, air and naval, so every form-squad rule
+	// survives specialisation.
+	var found map[string]bool
+	for _, d := range doctrines {
+		rs, err := c.Compile(d)
+		if err != nil {
+			t.Fatalf("%s: %v", d.Name, err)
+		}
+		names := squadNames(rs)
+		if found == nil || len(names) > len(found) {
+			found = names
+		}
+		if found["ground-attack"] && found["ground-defense"] && found["harvester-guard"] {
+			break
+		}
+	}
+
+	for _, want := range []string{"ground-attack", "ground-defense", "harvester-guard"} {
+		if !found[want] {
+			t.Errorf("squadNames did not find %q in any compiled rule set; got %v", want, found)
+		}
+	}
+}

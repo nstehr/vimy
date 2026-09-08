@@ -1,0 +1,50 @@
+{{if .Pending}}
+<section hx-get="{{.URL}}" hx-trigger="load delay:2s" hx-swap="outerHTML">
+  <h2>What the strategist did not try</h2>
+  <div class="figure"><div class="ins-body">
+    <p class="ins-pending"><span class="pulse" aria-hidden="true"></span>Replaying the game at values the doctrines never used…</p>
+  </div></div>
+</section>
+{{else if .Error}}
+<section>
+  <h2>What the strategist did not try</h2>
+  <div class="figure"><div class="ins-body"><p class="ins-caveat">The sweep failed: {{.Error}}</p></div></div>
+</section>
+{{else if .Sweeps}}
+<section>
+  <h2>What the strategist did not try</h2>
+  <p class="lede">
+    The sensitivity read above can only speak about values the strategist actually chose. This
+    replays the same states with one input overridden and everything else left as that window had
+    it, so it can reach values the game never saw. The big number is <b>held states</b> — how often a requirement set was satisfiable, summed over
+    rules; below it, how many rules could fire at all.
+  </p>
+  <div class="figure">
+    <div class="figure-head">
+      <span class="figure-title">Rules the set could still use, by input value</span>
+      <span class="legend"><span style="font-family:var(--mono)">shaded = inside the range the strategist used</span></span>
+    </div>
+    {{range .Sweeps}}
+    <div class="sweep">
+      <span class="sweep-knob">{{.Knob}}</span>
+      <span class="sweep-verdict{{if not .Material}} quiet{{end}}">{{.Verdict}}</span>
+      <div class="sweep-points">
+        {{range .Points}}
+        <div class="sp{{if .Actual}} used{{end}}">
+          <span class="sp-v">{{printf "%.1f" .Value}}</span>
+          <span class="sp-n">{{.Held}}</span>
+          <span class="sp-l">{{.Live}} rules</span>
+        </div>
+        {{end}}
+      </div>
+      <span class="sweep-meta">used {{printf "%.2f" .UsedLow}}–{{printf "%.2f" .UsedHigh}} · held {{.Worst.Held}}–{{.Best.Held}} · live rules {{.Worst.Live}}–{{.Best.Live}}</span>
+    </div>
+    {{end}}
+  </div>
+  <p class="lede">
+    These states came from the game that happened, so a sweep says whether a rule would have been
+    <i>satisfiable</i> in the situations that arose — not that the game would have gone
+    differently. Different rules produce different situations from the first tick.
+  </p>
+</section>
+{{end}}

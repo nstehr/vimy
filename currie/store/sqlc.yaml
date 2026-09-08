@@ -1,0 +1,17 @@
+version: "2"
+sql:
+  - engine: "sqlite"
+    # A plain schema rather than a migrations directory, unlike vimy-core's.
+    # This is a cache: it can be rebuilt from the archive and the rule sources,
+    # so a change here is a DROP and a rebuild rather than a migration to get
+    # right, and there is no history to preserve.
+    schema: "schema.sql"
+    queries: "queries.sql"
+    gen:
+      go:
+        package: "db"
+        out: "db"
+        sql_package: "database/sql"
+        emit_json_tags: true
+        emit_prepared_queries: false
+        emit_interface: true

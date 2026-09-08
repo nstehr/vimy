@@ -1,0 +1,101 @@
+<title>Currie</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{color-scheme:light;--ground:#f7f6f3;--panel:#fffefb;--ink:#14161a;--ink-2:#4a4f58;--ink-3:#787e88;
+--rule:rgba(20,22,26,.13);--rule-soft:rgba(20,22,26,.07);--sole:#eb6834;--calm:#2a78d6;
+--display:"IBM Plex Sans Condensed","Helvetica Neue",Arial,sans-serif;--body:"IBM Plex Sans",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--ground:#16181c;--panel:#1c1f24;--ink:#e8e9ec;--ink-2:#a8adb6;--ink-3:#7d838d;--rule:rgba(232,233,236,.16);--rule-soft:rgba(232,233,236,.08);--sole:#d95926;--calm:#3987e5}}
+:root[data-theme="dark"]{color-scheme:dark;--ground:#16181c;--panel:#1c1f24;--ink:#e8e9ec;--ink-2:#a8adb6;--ink-3:#7d838d;--rule:rgba(232,233,236,.16);--rule-soft:rgba(232,233,236,.08);--sole:#d95926;--calm:#3987e5}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:940px;margin:0 auto;padding:clamp(2rem,5vw,4rem) clamp(1.1rem,4vw,2.5rem) 5rem;display:flex;flex-direction:column;gap:2rem}
+.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(2.2rem,6vw,3.2rem);line-height:1;letter-spacing:-.015em;margin:.5rem 0 0}
+.lede{margin:0;color:var(--ink-2);max-width:66ch}
+code{font-family:var(--mono);font-size:.88em;background:var(--rule-soft);padding:.08em .34em;border-radius:2px}
+.list{border:1px solid var(--rule);background:var(--panel)}
+.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:.35rem 1rem;align-items:baseline;padding:.85rem 1.1rem;border-bottom:1px solid var(--rule-soft);text-decoration:none;color:inherit}
+.row:last-child{border-bottom:0}
+a.row:hover{background:var(--rule-soft)}
+a.row:focus-visible{outline:2px solid var(--calm);outline-offset:-2px}
+.gid{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
+.matchup{font-family:var(--mono);font-size:.9rem}
+.meta{grid-column:2/-1;font-size:.8rem;color:var(--ink-3);font-family:var(--mono)}
+.tag{font-family:var(--mono);font-size:.75rem;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap}
+.tag.loss{color:var(--sole)} .tag.win{color:var(--calm)}
+.row.dim{color:var(--ink-3)}
+.row.dim .gid{font-weight:400}
+.note{border-left:3px solid var(--rule);padding-left:1.1rem;color:var(--ink-2);font-size:.92rem;display:flex;flex-direction:column;gap:.5rem}
+.note p{margin:0;max-width:66ch}
+.row.dim{grid-template-columns:auto minmax(0,1fr) auto}
+form.link{grid-column:1/-1;display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.35rem}
+form.link select{font-family:var(--mono);font-size:.8rem;padding:.3rem .4rem;background:var(--ground);color:var(--ink);border:1px solid var(--rule);border-radius:3px;max-width:100%}
+form.link button{font-family:var(--body);font-size:.8rem;padding:.3rem .8rem;background:var(--calm);color:#fff;border:0;border-radius:3px;cursor:pointer}
+form.link button:hover{filter:brightness(1.08)}
+form.link :focus-visible{outline:2px solid var(--calm);outline-offset:2px}
+.flash{margin:0;font-family:var(--mono);font-size:.85rem;color:var(--sole)}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Currie · rule-set post mortems</div>
+    <h1>Recorded games</h1>
+  </header>
+
+  {{with .Note}}<p class="flash">{{.}}</p>{{end}}
+
+  <p class="lede">
+    Reading <code>{{.Dir}}</code>. Pick a game to replay it against the rule sets that ran and
+    see what stopped each rule from firing.{{if .HasInsight}} A model reads the result alongside you.{{end}}
+  </p>
+
+  <div class="list">
+    {{range .Games}}
+      {{if .Replayable}}
+      <a class="row" href="/game/{{.ID}}">
+        <span class="gid">{{.ID}}</span>
+        <span class="matchup">{{.OurFaction}} vs {{.OpponentFaction}}</span>
+        <span class="tag {{.Outcome}}">{{.Outcome}}</span>
+        <span class="meta">{{date .PlayedAt}} · {{ticks .DurationTicks}} ticks{{if .QualityTag}} · {{.QualityTag}}{{end}}</span>
+      </a>
+      {{else}}
+      <div class="row dim">
+        <span class="gid">{{.ID}}</span>
+        <span class="matchup">{{.OurFaction}} vs {{.OpponentFaction}}</span>
+        <span class="tag">no export</span>
+        <span class="meta">{{date .PlayedAt}} · {{ticks .DurationTicks}} ticks</span>
+        {{if .Loose}}
+        <form class="link" method="post" action="/link/{{.ID}}">
+          <select name="export" aria-label="export file for game {{.ID}}">
+            <option value="">attach an export…</option>
+            {{range .Loose}}<option value="{{.Path}}">{{.Name}} · {{.Size}}{{if .Taken}} · already attached elsewhere{{end}}</option>{{end}}
+          </select>
+          <button type="submit">Attach</button>
+        </form>
+        {{end}}
+      </div>
+      {{end}}
+    {{else}}
+      <div class="row"><span class="matchup">No games archived yet.</span></div>
+    {{end}}
+  </div>
+
+  {{if .Unlinked}}
+  <div class="note">
+    <p>
+      <b>{{.Unlinked}} games have no export recorded.</b> The archive only started noting where a
+      game's states were written recently; anything older was recorded without it, and a game run
+      without <code>--export-states</code> has no states at all.
+    </p>
+    <p>
+      {{if .Loose}}Attach one above if you know which file belongs to which game. An export is
+      named for the minute it was written, which is near a game's end but not derivable from it —
+      so this is offered rather than guessed, because a wrong pairing produces a confident report
+      about the wrong game.{{else}}No export files found in
+      <code>{{.Dir}}/exports</code>.{{end}}
+    </p>
+  </div>
+  {{end}}
+</div>

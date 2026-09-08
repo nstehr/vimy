@@ -1,0 +1,2 @@
+# Build output. `go build` drops the binary here by default.
+/currie

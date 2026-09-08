@@ -1,0 +1,46 @@
+{{if .Pending}}
+<section class="insight" hx-get="{{.URL}}" hx-trigger="load delay:1500ms" hx-swap="outerHTML">
+  <div class="figure-head" style="border:1px solid var(--rule);border-bottom:0">
+    <span class="figure-title">Read alongside you</span>
+    <span class="legend"><span style="font-family:var(--mono)">reading the numbers below…</span></span>
+  </div>
+  <div class="ins-body">
+    <p class="ins-pending"><span class="pulse" aria-hidden="true"></span>The report is ready — this part takes a moment longer.</p>
+  </div>
+</section>
+{{else if .Error}}
+<section class="insight">
+  <div class="ins-body">
+    <p class="ins-caveat">The model could not be reached: {{.Error}} — the report below is unaffected.</p>
+  </div>
+</section>
+{{else if .Insight}}
+<section class="insight">
+  <div class="figure-head" style="border:1px solid var(--rule);border-bottom:0">
+    <span class="figure-title">Read alongside you</span>
+    <span class="legend"><span style="font-family:var(--mono)">generated from the numbers on this page, and only those</span></span>
+  </div>
+  <div class="ins-body">
+    <p class="ins-summary">{{.Insight.Summary}}</p>
+    {{range .Insight.Findings}}
+    <div class="finding">
+      <p class="f-claim">{{.Claim}}</p>
+      <p class="f-eq">{{.Evidence}}</p>
+      <span class="f-conf">confidence {{printf "%.2f" .Confidence}}</span>
+    </div>
+    {{end}}
+    {{with .Insight.Suggestion}}<p class="ins-do"><b>Most likely to help:</b> {{.}}</p>{{end}}
+    {{with .Insight.Directive}}
+    <div class="directive">
+      <p class="d-head">The directive that produced these weights <span class="d-conf">confidence {{printf "%.2f" .Confidence}}</span></p>
+      <p class="d-diag">{{.Diagnosis}}</p>
+      {{with .Revision}}
+      <p class="d-label">Try instead</p>
+      <blockquote class="d-rev">{{.}}</blockquote>
+      {{end}}
+    </div>
+    {{end}}
+    {{with .Insight.Caveat}}<p class="ins-caveat">{{.}}</p>{{end}}
+  </div>
+</section>
+{{end}}

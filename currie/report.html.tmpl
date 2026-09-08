@@ -1,0 +1,398 @@
+<title>Currie · {{.Title}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+<style>
+:root {
+  color-scheme: light;
+  --ground:#f7f6f3; --panel:#fffefb; --ink:#14161a; --ink-2:#4a4f58; --ink-3:#787e88;
+  --rule:rgba(20,22,26,.13); --rule-soft:rgba(20,22,26,.07);
+  --sole:#eb6834; --other:rgba(235,104,52,.26); --calm:#2a78d6;
+  --display:"IBM Plex Sans Condensed","Helvetica Neue",Arial,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground:#16181c; --panel:#1c1f24; --ink:#e8e9ec; --ink-2:#a8adb6; --ink-3:#7d838d;
+    --rule:rgba(232,233,236,.16); --rule-soft:rgba(232,233,236,.08);
+    --sole:#d95926; --other:rgba(217,89,38,.30); --calm:#3987e5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground:#16181c; --panel:#1c1f24; --ink:#e8e9ec; --ink-2:#a8adb6; --ink-3:#7d838d;
+  --rule:rgba(232,233,236,.16); --rule-soft:rgba(232,233,236,.08);
+  --sole:#d95926; --other:rgba(217,89,38,.30); --calm:#3987e5;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1040px;margin:0 auto;padding:clamp(2rem,5vw,4rem) clamp(1.1rem,4vw,2.5rem) 5rem;display:flex;flex-direction:column;gap:clamp(2.5rem,5vw,3.5rem)}
+.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(2.2rem,6vw,3.4rem);line-height:1;letter-spacing:-.015em;margin:.6rem 0 0;text-wrap:balance}
+h2{font-family:var(--display);font-weight:600;font-size:clamp(1.3rem,3vw,1.7rem);letter-spacing:-.01em;margin:0;text-wrap:balance}
+.lede{margin:0;color:var(--ink-2);max-width:66ch}
+.lede b{color:var(--ink);font-weight:600}
+code{font-family:var(--mono);font-size:.88em;background:var(--rule-soft);padding:.08em .34em;border-radius:2px}
+section{display:flex;flex-direction:column;gap:1.05rem}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule)}
+.stat{background:var(--panel);padding:1.1rem 1.2rem;display:flex;flex-direction:column;gap:.28rem}
+.stat-n{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:1.9rem;font-weight:600;line-height:1;letter-spacing:-.02em}
+.stat-n.hot{color:var(--sole)}
+.stat-l{font-size:.82rem;color:var(--ink-2);line-height:1.45}
+.figure{border:1px solid var(--rule);background:var(--panel)}
+.figure-head{padding:.85rem 1.1rem;border-bottom:1px solid var(--rule);display:flex;flex-wrap:wrap;gap:.5rem 1.4rem;align-items:baseline;justify-content:space-between}
+.figure-title{font-family:var(--display);font-weight:600;font-size:1rem}
+.legend{display:flex;gap:1rem;font-size:.79rem;color:var(--ink-2)}
+.legend span{display:inline-flex;align-items:center;gap:.4rem}
+.chip{width:11px;height:11px;border-radius:2px;flex:none}
+/* one hue, two strengths: same measure, different confidence that a single edit frees the rule */
+.chip.sole{background:var(--sole)} .chip.other{background:var(--other)}
+.site{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.3rem .9rem;padding:.8rem 1.1rem;border-bottom:1px solid var(--rule-soft)}
+.site:last-child{border-bottom:0}
+.site-src{font-family:var(--mono);font-size:.85rem;overflow-wrap:anywhere}
+.site-n{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600;color:var(--sole);white-space:nowrap}
+.site-meta{grid-column:1/-1;font-size:.79rem;color:var(--ink-3);font-family:var(--mono)}
+.bar{grid-column:1/-1;height:6px;background:var(--rule-soft);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--sole);border-radius:3px}
+details.rule{border-bottom:1px solid var(--rule-soft)}
+details.rule:last-child{border-bottom:0}
+details.rule summary{padding:.75rem 1.1rem;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.25rem .9rem;align-items:baseline;list-style:none}
+details.rule summary::-webkit-details-marker{display:none}
+details.rule summary:focus-visible{outline:2px solid var(--calm);outline-offset:-2px}
+.rname{font-family:var(--mono);font-size:.9rem;font-weight:500}
+.rwhy{grid-column:1/-1;font-family:var(--mono);font-size:.78rem;color:var(--ink-2);overflow-wrap:anywhere}
+.rn{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.82rem;color:var(--sole);white-space:nowrap}
+.clauses{padding:.2rem 1.1rem 1rem;display:flex;flex-direction:column;gap:.55rem}
+.cl{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.2rem .9rem;align-items:baseline}
+.cl-src{font-family:var(--mono);font-size:.78rem;color:var(--ink-2);overflow-wrap:anywhere}
+.cl.culprit .cl-src{color:var(--ink)}
+.cl-n{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.75rem;color:var(--ink-3);white-space:nowrap}
+/* 2px gap between segments so adjacent fills stay separable */
+.cl-bar{grid-column:1/-1;display:flex;gap:2px;height:5px}
+.cl-bar i{display:block;height:100%;border-radius:2px}
+.cl-bar i.sole{background:var(--sole)} .cl-bar i.other{background:var(--other)}
+.sweep{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.35rem .9rem;padding:.85rem 1.1rem;border-bottom:1px solid var(--rule-soft)}
+.sweep:last-child{border-bottom:0}
+.sweep-knob{font-family:var(--mono);font-size:.88rem;font-weight:500}
+.sweep-verdict{font-family:var(--mono);font-size:.75rem;color:var(--sole);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em}
+.sweep-points{grid-column:1/-1;display:flex;gap:2px;margin:.15rem 0}
+.sp{flex:1;display:flex;flex-direction:column;align-items:center;gap:.1rem;padding:.35rem .2rem;background:var(--rule-soft);border-radius:3px}
+.sp.used{background:var(--other)}
+.sp-v{font-family:var(--mono);font-size:.7rem;color:var(--ink-3)}
+.sp-n{font-family:var(--mono);font-size:.95rem;font-weight:600;font-variant-numeric:tabular-nums}
+.sp-l{font-family:var(--mono);font-size:.62rem;color:var(--ink-3)}
+.sweep-verdict.quiet{color:var(--ink-3)}
+.sweep-meta{grid-column:1/-1;font-family:var(--mono);font-size:.76rem;color:var(--ink-3)}
+.chain{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.3rem .9rem;padding:.85rem 1.1rem;border-bottom:1px solid var(--rule-soft)}
+.chain:last-child{border-bottom:0}
+.ch-rule{font-family:var(--mono);font-size:.88rem;font-weight:500}
+.ch-verdict{font-family:var(--mono);font-size:.73rem;color:var(--sole);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em}
+.ch-clause{grid-column:1/-1;font-size:.84rem;color:var(--ink-2)}
+.ch-up{grid-column:1/-1;font-size:.84rem;color:var(--ink);padding-left:.4rem;border-left:2px solid var(--sole);margin-top:.15rem}
+.chain code{font-size:.8rem}
+.gate{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.3rem .9rem;padding:.8rem 1.1rem;border-bottom:1px solid var(--rule-soft)}
+.gate:last-child{border-bottom:0}
+.gate-src{font-family:var(--mono);font-size:.85rem;overflow-wrap:anywhere}
+.gate-n{font-family:var(--mono);font-variant-numeric:tabular-nums;font-weight:600;color:var(--sole);white-space:nowrap}
+.gate-meta{grid-column:1/-1;font-family:var(--mono);font-size:.76rem;color:var(--ink-3)}
+.gate .cl-bar{margin-top:.15rem}
+.sens{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.3rem .9rem;padding:.85rem 1.1rem;border-bottom:1px solid var(--rule-soft)}
+.sens:last-child{border-bottom:0}
+.sens-src{font-family:var(--mono);font-size:.85rem;overflow-wrap:anywhere}
+.sens-verdict{font-family:var(--mono);font-size:.75rem;color:var(--ink-3);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em}
+.sens.doctrinal .sens-verdict{color:var(--sole)}
+.sens-meta{grid-column:1/-1;font-family:var(--mono);font-size:.76rem;color:var(--ink-3)}
+.sens-range{grid-column:1/-1;position:relative;height:8px;margin:.2rem 0}
+.sens-range i{position:absolute;top:0;height:100%;display:block}
+.sens-range .track{left:0;width:100%;background:var(--rule-soft);border-radius:4px}
+.sens-range .span{background:var(--other);border-radius:4px}
+.sens.doctrinal .sens-range .span{background:var(--sole);opacity:.45}
+.sens-range .mark{width:2px;background:var(--ink);border-radius:1px;margin-left:-1px}
+.sens-drive{grid-column:1/-1;font-size:.82rem;color:var(--ink-2)}
+.sens-drive b{color:var(--ink);font-family:var(--mono)}
+.note{border-left:3px solid var(--sole);padding-left:1.1rem;display:flex;flex-direction:column;gap:.6rem}
+.note p{margin:0;max-width:66ch;color:var(--ink-2)}
+.note p b{color:var(--ink);font-weight:600}
+footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padding-top:1rem}
+.eyebrow a{color:inherit;text-decoration:none;border-bottom:1px solid var(--rule)}
+.eyebrow a:hover{color:var(--ink)}
+.insight{gap:0}
+.ins-body{border:1px solid var(--rule);background:var(--panel);padding:1.15rem;display:flex;flex-direction:column;gap:1rem}
+.ins-summary{margin:0;font-size:1.05rem;max-width:66ch}
+.finding{display:flex;flex-direction:column;gap:.25rem;border-left:2px solid var(--sole);padding-left:.9rem}
+.f-claim{margin:0;font-weight:500;max-width:66ch}
+.f-eq{margin:0;font-family:var(--mono);font-size:.79rem;color:var(--ink-2);max-width:70ch}
+.f-conf{font-family:var(--mono);font-size:.72rem;color:var(--ink-3);letter-spacing:.05em}
+.ins-do{margin:0;max-width:66ch}
+.ins-caveat{margin:0;color:var(--ink-2);font-size:.9rem;max-width:66ch}
+.directive{border-top:1px solid var(--rule);padding-top:.9rem;display:flex;flex-direction:column;gap:.55rem}
+.d-head{margin:0;font-family:var(--display);font-weight:600;font-size:.98rem;display:flex;gap:.7rem;align-items:baseline;flex-wrap:wrap}
+.d-conf{font-family:var(--mono);font-size:.7rem;font-weight:400;color:var(--ink-3);letter-spacing:.05em}
+.d-diag{margin:0;max-width:66ch;color:var(--ink-2)}
+.d-label{margin:0;font-family:var(--mono);font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.d-rev{margin:0;border-left:3px solid var(--sole);padding:.15rem 0 .15rem 1rem;max-width:66ch;font-size:1.02rem}
+.ins-pending{margin:0;color:var(--ink-2);display:flex;align-items:center;gap:.6rem}
+.pulse{width:8px;height:8px;border-radius:50%;background:var(--sole);flex:none;animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.pulse{animation:none;opacity:.7}}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">{{if .Home}}<a href="{{.Home}}">Currie</a>{{else}}Currie{{end}} · rule-set post mortem · {{.Title}}</div>
+    <h1>What stopped each rule</h1>
+  </header>
+
+  {{with .InsightURL}}
+  <div hx-get="{{.}}" hx-trigger="load" hx-swap="outerHTML"></div>
+  {{end}}
+
+  <div class="stats">
+    <div class="stat"><div class="stat-n">{{.States}}</div><div class="stat-l">states replayed, each against the rules in force at the time</div></div>
+    <div class="stat"><div class="stat-n{{if .Approximate}} hot{{end}}">{{.Windows}}</div><div class="stat-l">doctrine windows replayed separately{{if .Approximate}}, paired by tick — the rules have changed since{{else if .Orphaned}} · {{.Orphaned}} states unmatched{{end}}</div></div>
+    <div class="stat"><div class="stat-n">{{.RuleCount}}</div><div class="stat-l">rules in the compiled set</div></div>
+    <div class="stat"><div class="stat-n hot">{{.NeverFired}}</div><div class="stat-l">never satisfiable in any sampled state, and never seen to act</div></div>
+    <div class="stat"><div class="stat-n">{{.SampleMissed}}</div><div class="stat-l">the replay never caught firing, but the engine recorded acting — these WORK; the sample is every 15th evaluation</div></div>
+    <div class="stat"><div class="stat-n">{{.NoCulprit}}</div><div class="stat-l">blocked by more than one thing at once, so no single edit frees them</div></div>
+    <div class="stat"><div class="stat-n{{if .Preempted}} hot{{end}}">{{.Preempted}}</div><div class="stat-l">held their condition but lost their exclusive category to a higher-priority rule — no clause is to blame for these, so relaxing one changes nothing</div></div>
+  </div>
+
+  <section>
+    <h2>The lines that did the blocking</h2>
+    <p class="lede">
+      Every <code>require</code> that was the <b>only</b> thing standing between a rule and firing,
+      totalled across every rule it appears in. A requirement written once inside a def is inlined
+      into many rules, so one line here can account for a large share of everything the AI did not do.
+    </p>
+    <div class="figure">
+      <div class="figure-head">
+        <span class="figure-title">States where this line alone was responsible, per 100 replayed</span>
+        <span class="legend"><span style="font-family:var(--mono)">a rate, so two games of different length compare</span></span>
+        <span class="legend"><span><i class="chip sole"></i>solely responsible</span></span>
+      </div>
+      {{range .Sites}}
+      <div class="site">
+        <span class="site-src">{{.Source}}</span>
+        <span class="site-n">{{printf "%.0f" .SoleRate}}<span style="font-size:.7rem;font-weight:400">/100 states</span></span>
+        <div class="bar"><i style="width:{{pct .SolePct}}%"></i></div>
+        <span class="site-meta">{{.File}}:{{.Line}} · blocks {{len .Rules}} rule{{if ne (len .Rules) 1}}s{{end}} · {{.Sole}} sole, {{.Blocked}} blocked over {{$.States}} states{{if .Live}} · <b style="color:var(--calm)">all of them already fire — the sample missed it</b>{{end}}</span>
+      </div>
+      {{else}}
+      <div class="site"><span class="site-src">Nothing was ever solely responsible.</span></div>
+      {{end}}
+    </div>
+  </section>
+
+  {{with .SweepURL}}
+  <div hx-get="{{.}}" hx-trigger="load" hx-swap="outerHTML"></div>
+  {{end}}
+
+  {{if .Chains}}
+  <section>
+    <h2>Missing things, and what should have made them</h2>
+    <p class="lede">
+      A clause like <code>count(idle-minelayers) &gt; 0</code> is not a threshold — it is a report
+      that no minelayer exists. Relaxing it changes nothing, because the problem is a rule further
+      back. Each row follows the missing thing to whichever rule was supposed to produce it.
+    </p>
+    <div class="figure">
+      <div class="figure-head">
+        <span class="figure-title">One hop upstream</span>
+        <span class="legend"><span style="font-family:var(--mono)">the question is not why the gate is closed</span></span>
+      </div>
+      {{range .Chains}}
+      <div class="chain">
+        <span class="ch-rule">{{.Rule}}</span>
+        <span class="ch-verdict">{{.Verdict}}</span>
+        <span class="ch-clause">blocked by <code>{{.Clause}}</code> — no <b>{{.Thing}}</b> existed</span>
+        {{if .Maker}}
+        <span class="ch-up">↳ <b>{{.Maker}}</b>{{if gt .MakerMatched 0}} matched {{.MakerMatched}}×{{else}} never fired{{end}}{{if .MakerCulprit}}, stopped by <code>{{.MakerCulprit}}</code> at {{.MakerFile}}:{{.MakerLine}}{{end}}</span>
+        {{else}}
+        <span class="ch-up">↳ no rule in this set produces one</span>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+
+  {{if .Gates}}
+  <section>
+    <h2>Gates worth moving</h2>
+    <p class="lede">
+      A numeric <code>require</code> compared against a constant is a dial. This lists the ones
+      where turning it would actually buy something — measured only at values the compared side
+      really reached, because a cash gate improves all the way to zero on paper and
+      <i>"set it to zero"</i> is not a recommendation. Gates set above anything that ever happened
+      are left out: they are asking for something that did not occur, and the rule is what to
+      change, not the number.
+    </p>
+    <div class="figure">
+      <div class="figure-head">
+        <span class="figure-title">Blocked now, and blocked at the best reachable value</span>
+        <span class="legend">
+          <span><i class="chip sole"></i>still blocked</span>
+          <span><i class="chip other"></i>freed by moving it</span>
+        </span>
+      </div>
+      {{range .Gates}}
+      <div class="gate">
+        <span class="gate-src">{{.Source}}</span>
+        <span class="gate-n">{{.Relief}} freed</span>
+        <span class="gate-meta">{{.File}}:{{.Line}} · {{len .Rules}} rule{{if ne (len .Rules) 1}}s{{end}} · at {{.At}} → {{.MovedTo}} · highest reached {{printf "%.0f" .Reached}}</span>
+        <div class="cl-bar">
+          <i class="sole" style="width:{{pct (sub .BlockedPct .ReliefPct)}}%"></i>
+          <i class="other" style="width:{{pct .ReliefPct}}%"></i>
+        </div>
+      </div>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+
+  {{if .Sensitivity}}
+  <section>
+    <h2>The rules, or the doctrine?</h2>
+    <p class="lede">
+      The same sources compile to different thresholds under every doctrine, and this game ran
+      {{.Windows}} of them — so the archive already contains the experiment. A clause that blocks
+      about as much whichever doctrine is in force is asking for something the game rarely
+      provides: <b>change the rule</b>. One that blocks heavily under some doctrines and barely
+      under others is a <b>doctrine that priced itself out</b>: change the prompt, or the weights
+      it is allowed to reach.
+    </p>
+    <div class="figure">
+      <div class="figure-head">
+        <span class="figure-title">Block rate across doctrine windows</span>
+        <span class="legend"><span style="font-family:var(--mono)">{{.Doctrinal}} of {{len .Sensitivity}} track a doctrine input</span></span>
+      </div>
+      {{range .Sensitivity}}
+      <div class="sens{{if .Doctrinal}} doctrinal{{end}}">
+        <span class="sens-src">{{.Source}}</span>
+        <span class="sens-verdict">{{.Verdict}}</span>
+        <span class="sens-meta">{{.File}}:{{.Line}} · {{.Rules}} rule{{if ne .Rules 1}}s{{end}} · {{.Windows}} windows</span>
+        <div class="sens-range" title="block rate from {{pct1 .Low}}% to {{pct1 .High}}% across windows">
+          <i class="track"></i>
+          <i class="span" style="left:{{pct .LowPct}}%;width:{{pct .SpanPct}}%"></i>
+          <i class="mark" style="left:{{pct .OverallPct}}%"></i>
+        </div>
+        {{if .Doctrinal}}
+        <span class="sens-drive">
+          {{pct1 .RateLow}}% blocked when <b>{{.Knob}}</b> averaged {{printf "%.2f" .KnobLow}} ·
+          {{pct1 .RateHigh}}% when it averaged {{printf "%.2f" .KnobHigh}}
+        </span>
+        {{else}}
+        <span class="sens-drive">{{pct1 .Low}}%–{{pct1 .High}}% across windows; no doctrine input splits it</span>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+
+  {{if .FiredAnyway}}
+  <section>
+    <h2>The sample missed these</h2>
+    <p class="lede">
+      A replay reads the <b>sampled</b> states in the recording, not every tick — so a rule that
+      fired a handful of times across a whole game can be absent from every sample and look as
+      though it never could. The archive says otherwise for these, and the list below should be
+      read with them removed.
+    </p>
+    <div class="figure">
+      <div class="figure-head">
+        <span class="figure-title">Never satisfiable in the sample, but fired in the game</span>
+        <span class="legend"><span style="font-family:var(--mono)">matched / acted, from the game itself</span></span>
+      </div>
+      {{range .FiredAnyway}}
+      <div class="site">
+        <span class="site-src">{{.Name}}</span>
+        <span class="site-n">{{.Matched}} / {{.Acted}}<span style="font-size:.7rem;font-weight:400"> matched/acted</span></span>
+        <span class="site-meta">{{.Category}} · {{if gt .Acted 0}}<b style="color:var(--calm)">but it fired {{.Matched}}× and acted {{.Acted}}× in the real game — the sample missed it, so this rule WORKS and the counts below are about the sample, not the game</b>{{else}}the replay saw {{.Seen}} states and none where it could fire{{end}}{{if gt .Preempted 0}} · <b style="color:var(--sole)">but its condition HELD in {{.Preempted}} of them and a higher-priority rule in <code>{{.Category}}</code> took the slot — look at the priorities, not the requires</b>{{end}}</span>
+      </div>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+
+  <section>
+    <h2>Rules that never fired</h2>
+    <p class="lede">
+      Ranked by how often one requirement was solely to blame — the ones closest to working.
+      Open a rule for its full breakdown: solid is where that clause was the only failure,
+      faded is where it failed alongside others.
+    </p>
+    <div class="figure">
+      <div class="figure-head">
+        <span class="figure-title">Share of replayed states each clause was false</span>
+        <span class="legend">
+          <span><i class="chip sole"></i>only failure</span>
+          <span><i class="chip other"></i>failed with others</span>
+        </span>
+      </div>
+      {{range .Dead}}
+      <details class="rule">
+        <summary>
+          <span class="rname">{{.Name}}</span>
+          <span class="rn">{{if gt .Acted 0}}fired {{.Acted}}×{{else}}{{.Culprit.Sole}} sole{{end}}</span>
+          <span class="rwhy">{{.Culprit.Source}} &nbsp;<span style="color:var(--ink-3)">{{.Culprit.Line}} · {{.Category}}</span></span>
+        </summary>
+        <div class="clauses">
+          {{range .Clauses}}
+          <div class="cl{{if .IsCulprit}} culprit{{end}}">
+            <span class="cl-src">{{.Source}}</span>
+            <span class="cl-n">{{.ShortFile}}:{{.Line}} · {{.Blocked}} blocked / {{.Sole}} sole</span>
+            <div class="cl-bar">
+              <i class="sole" style="width:{{pct .SolePct}}%"></i>
+              <i class="other" style="width:{{pct .OtherPct}}%"></i>
+            </div>
+          </div>
+          {{end}}
+        </div>
+      </details>
+      {{else}}
+      <div class="site"><span class="site-src">Every rule fired at least once.</span></div>
+      {{end}}
+    </div>
+  </section>
+
+  <section class="note">
+    <h2>How to read this</h2>
+    {{if .Approximate}}
+    <p>
+      <b>The rule sources have changed since this game was played.</b> Recompiling its doctrines
+      today produces rule sets it never ran, so the fingerprint the recording carries matches
+      nothing. States were paired to doctrines <b>by tick</b> instead — the doctrine of the moment,
+      applied to today's rules.
+    </p>
+    <p>
+      That is wrong in a knowable way: thresholds are the ones in force at the time, but a rule
+      whose condition was edited since is being judged by its current text. Treat this as a guide
+      to where to look. The archive records a doctrine but not the artifact it compiled to, which
+      is what an exact replay of an old game would need.
+    </p>
+    {{else}}
+    <p>
+      Each state was replayed against the rule set that was <b>actually running</b> when it was
+      recorded, paired on the fingerprint the recording carries. So a threshold that moved between
+      doctrines is applied as it stood at the time, and <code>never satisfiable</code> means it
+      across every doctrine the game ran.
+    </p>
+    <p>
+      What this still cannot show is a rule that fired and achieved nothing. A condition holding is
+      not the same as an action doing something — that is what the engine's separate
+      <code>matched</code> and <code>acted</code> counters are for.
+    </p>
+    {{end}}
+  </section>
+
+  <footer>
+    Generated by <code>currie report</code>. Rule conditions compiled by vimyc from the
+    <code>.vy</code> sources; clause attribution comes from <code>IrRule.requires</code>, which the
+    runtime has already flattened by the time a rule reaches it.
+  </footer>
+</div>
