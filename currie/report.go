@@ -205,7 +205,18 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 		}
 		v.Sites = append(v.Sites, *s)
 	}
-	sort.SliceStable(v.Sites, func(i, j int) bool { return v.Sites[i].Sole > v.Sites[j].Sole })
+	// A line whose every rule already works is not a reason anything failed —
+	// `not squad-exists(ground-attack)` scoring 98 per 100 states means the
+	// squad EXISTS and the rule that forms it correctly declined to run twice.
+	// Ranked purely by blame these fill the whole first page, which is how a
+	// scouting bug that was really a war-factory bug survived two readings.
+	// They stay in the report, below the lines that actually stopped something.
+	sort.SliceStable(v.Sites, func(i, j int) bool {
+		if a, b := v.Sites[i].Live(), v.Sites[j].Live(); a != b {
+			return b
+		}
+		return v.Sites[i].Sole > v.Sites[j].Sole
+	})
 	if len(v.Sites) > 12 {
 		v.Sites = v.Sites[:12]
 	}
