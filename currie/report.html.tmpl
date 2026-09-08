@@ -46,6 +46,7 @@ section{display:flex;flex-direction:column;gap:1.05rem}
 .on-track{position:relative;height:.62rem;background:var(--rule-soft);border-radius:.31rem;overflow:hidden}
 .on-bar{position:absolute;top:0;bottom:0;background:var(--sole);border-radius:.31rem;min-width:2px}
 .on-bar.early{background:var(--calm)}
+.late-key{color:var(--sole)}
 .on-when{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.78rem;color:var(--ink);opacity:.72;text-align:right}
 .stat-l{font-size:.82rem;color:var(--ink-2);line-height:1.45}
 .figure{border:1px solid var(--rule);background:var(--panel)}
@@ -196,9 +197,8 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
   <section>
     <h2>When each working rule first did something</h2>
     <p class="lede">
-      A blame count has no clock: a rule that fired seven times reads the same as one that fired
-      seven times too late. Every rule here worked — the order shows when each one <em>started</em>.
-      Bars past the first quarter are marked, and reactive rules belong there.
+      Every rule here worked. Each bar runs from its first action to its last, and turns
+      <b class="late-key">orange</b> when a rule did not start until the game was a quarter gone.
     </p>
     <div class="figure">
       <div class="figure-head">
@@ -219,9 +219,9 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
   <section>
     <h2>The lines that did the blocking</h2>
     <p class="lede">
-      Every <code>require</code> that was the <b>only</b> thing standing between a rule and firing,
-      totalled across every rule it appears in. A requirement written once inside a def is inlined
-      into many rules, so one line here can account for a large share of everything the AI did not do.
+      Every <code>require</code> that was the <b>only</b> thing standing between a rule and firing.
+      One written inside a def is inlined into many rules, so a single line can account for a
+      great deal of what the AI did not do.
     </p>
     <div class="figure">
       
