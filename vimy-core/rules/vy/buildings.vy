@@ -24,6 +24,8 @@ def defense-cap() = lerp(2, 10, ground-defense-priority)
 
 def war-factory-base() = lerp(580, 730, vehicle-weight)
 
+def service-depot-cash() = 1200
+
 def war-factory-cash() =
   trunc(select(transport-assault > 0.2,
                min(lerp(2500, 2000, vehicle-weight),
@@ -114,11 +116,14 @@ rule build-airfield {
   require has-role(war-factory)
        or vehicle-weight <= 0.1
        or cash >= 500 + war-factory-cash()
+  require has-role(service-depot)
+       or vehicle-weight <= 0.3
+       or cash >= 500 + service-depot-cash()
 }
 
 rule build-service-depot {
-  priority 565
-  because "below the radar, which is the tech gate and cannot wait behind a repair bay"
+  priority trunc(select(vehicle-weight > 0.3, 680.0, 565.0))
+  because "not a repair bay — fix is the prerequisite for the medium tank, the heavy tank and the mammoth, so without one the only armour either side can field is the Allied light tank; game 84 never built it, fought with light tanks and artillery, and met six tesla tanks and two mammoths"
   category economy exclusive
   do produce-service-depot
   require vehicle-weight > 0.3
@@ -128,7 +133,7 @@ rule build-service-depot {
   require not has-role(service-depot)
   require has-role(war-factory)
   require power-excess >= 0
-  require cash >= 1200
+  require cash >= service-depot-cash()
 }
 
 rule build-naval-yard {
