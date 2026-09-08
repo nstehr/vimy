@@ -24,6 +24,12 @@ def defense-cap() = lerp(2, 10, ground-defense-priority)
 
 def war-factory-base() = lerp(580, 730, vehicle-weight)
 
+def war-factory-cash() =
+  trunc(select(transport-assault > 0.2,
+               min(lerp(2500, 2000, vehicle-weight),
+                   lerp(2200, 2000, transport-assault)),
+               lerp(2500, 2000, vehicle-weight)))
+
 def affordable(cost: int) =
   cash >= cost
   and (vehicle-weight <= 0.1 or has-role(radar) or cash >= cost + 1000)
@@ -75,10 +81,7 @@ rule build-war-factory {
   require can-build-role(war-factory)
   require not has-role(war-factory)
   require power-excess >= 0
-  require cash >= trunc(select(transport-assault > 0.2,
-                               min(lerp(2500, 2000, vehicle-weight),
-                                   lerp(2200, 2000, transport-assault)),
-                               lerp(2500, 2000, vehicle-weight)))
+  require cash >= war-factory-cash()
 }
 
 rule build-barracks-prereq {
@@ -99,6 +102,7 @@ rule build-barracks-prereq {
 rule build-airfield {
   priority lerp(580, 680, air-weight)
   category economy exclusive
+  because "does not spend the war factory's money: an exclusive category picks the highest-priority rule whose condition HOLDS, so a cash gate keeps the dearer rule out of the running entirely and the category builds cheapest-first — the war factory outranks this by fifty points and in game 83 was built thirty-five points of game later"
   do produce-airfield
   require air-weight > 0.1
   require not is-rushed()
@@ -107,6 +111,9 @@ rule build-airfield {
   require not has-role(airfield)
   require power-excess >= 0
   require cash >= 500
+  require has-role(war-factory)
+       or vehicle-weight <= 0.1
+       or cash >= 500 + war-factory-cash()
 }
 
 rule build-service-depot {
