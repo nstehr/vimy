@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/nstehr/vimy/vimy-core/store"
 )
@@ -85,6 +86,19 @@ type LateStart struct {
 	SpanPct float64
 }
 
+// finding is one fact worth reading first. The report grew seven headline
+// numbers and nine sections, all weighted equally, and the reader (me, all day)
+// had to reconstruct the same three questions each time: what blocked the most,
+// what fired and achieved nothing, and what arrived too late. Those are
+// computed here so the page can lead with them.
+//
+// Facts, not conclusions. "build-war-factory first acted at 57%" is something
+// the data says; "the war factory was too late" is a judgement the reader makes.
+type finding struct {
+	Headline string
+	Detail   string
+}
+
 type view struct {
 	Title      string
 	States     int
@@ -99,14 +113,16 @@ type view struct {
 	DurationTicks int
 	// Who we played, so a clause can say which faction can never satisfy it.
 	Faction string
+	// The two or three facts worth reading before anything else.
+	Findings []finding
 	// Blame sites ranked below the cut because they are correct: their rules
 	// already work, or the faction can never satisfy them. Counted rather than
 	// silently dropped — a report that hides what it excluded is how a reader
 	// comes to trust a ranking more than it deserves.
 	InertSites int
-	Preempted     int
-	Sites         []site
-	Dead          []deadRule
+	Preempted  int
+	Sites      []site
+	Dead       []deadRule
 	// Which blame sites track a doctrine input and which block regardless.
 	Sensitivity []Sensitivity
 	Doctrinal   int
@@ -165,6 +181,13 @@ func reconcile(v *view, firings map[string]store.Firing) {
 // looking at. A quarter is early enough to catch an opener that never happened
 // and late enough not to list every rule that needs a building first.
 const lateStartPct = 25.0
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
 
 func build(title string, rep report, firings map[string]store.Firing, durationTicks int, faction string) view {
 	v := view{Title: title, States: rep.States, RuleCount: len(rep.Rules)}
@@ -321,6 +344,46 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 			}
 			return v.Late[i].Name < v.Late[j].Name
 		})
+	}
+
+	// Lead with the shapes that produced every real finding this tool has had:
+	// the line that blocked most, the rule that fired and did nothing, and the
+	// building that arrived latest.
+	for _, st := range v.Sites {
+		if st.Live() || st.Impossible != "" {
+			continue
+		}
+		v.Findings = append(v.Findings, finding{
+			Headline: fmt.Sprintf("%s was the only thing stopping a rule in %.0f of every 100 states",
+				st.Source, st.SoleRate),
+			Detail: fmt.Sprintf("%s:%d · blocks %d rule%s", st.File, st.Line, len(st.Rules), plural(len(st.Rules))),
+		})
+		break
+	}
+	var gapName string
+	var gapMatched, gapActed int
+	for name, f := range firings {
+		if f.Acted < 0 || f.Matched-f.Acted <= gapMatched-gapActed {
+			continue
+		}
+		gapName, gapMatched, gapActed = name, f.Matched, f.Acted
+	}
+	if gapName != "" && gapMatched-gapActed > 0 {
+		v.Findings = append(v.Findings, finding{
+			Headline: fmt.Sprintf("%s matched %d times and ordered nothing %d of them",
+				gapName, gapMatched, gapMatched-gapActed),
+			Detail: "a condition holding is not an action doing something",
+		})
+	}
+	for i := len(v.Late) - 1; i >= 0; i-- {
+		if !strings.HasPrefix(v.Late[i].Name, "build-") {
+			continue
+		}
+		v.Findings = append(v.Findings, finding{
+			Headline: fmt.Sprintf("%s first acted %.0f%% into the game", v.Late[i].Name, v.Late[i].Pct),
+			Detail:   "the last building to arrive",
+		})
+		break
 	}
 
 	reconcile(&v, firings)

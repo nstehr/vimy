@@ -50,6 +50,17 @@ section{display:flex;flex-direction:column;gap:1.05rem}
 .stat-l{font-size:.82rem;color:var(--ink-2);line-height:1.45}
 .figure{border:1px solid var(--rule);background:var(--panel)}
 .figure-head{padding:.85rem 1.1rem;border-bottom:1px solid var(--rule);display:flex;flex-wrap:wrap;gap:.5rem 1.4rem;align-items:baseline;justify-content:space-between}
+.findings{list-style:none;margin:.2rem 0 0;padding:0;display:flex;flex-direction:column;gap:.55rem}
+.findings li{display:flex;flex-direction:column;gap:.15rem;padding:.6rem .75rem;border:1px solid var(--rule);border-radius:6px;background:var(--panel)}
+.f-head{font-family:var(--mono);font-size:.86rem;line-height:1.45;overflow-wrap:anywhere}
+.f-detail{font-size:.76rem;color:var(--ink);opacity:.62}
+.fold{border-top:1px solid var(--rule);margin:1.4rem 0 0;padding-top:.9rem}
+.fold>summary{cursor:pointer;font-family:var(--display);font-weight:600;font-size:1rem;list-style:none}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary::before{content:"+ ";font-family:var(--mono);opacity:.5}
+.fold[open]>summary::before{content:"− "}
+.fold>summary:focus-visible{outline:2px solid var(--sole);outline-offset:3px}
+.caveats{font-size:.78rem;color:var(--ink);opacity:.62;line-height:1.6;max-width:70ch;margin:.2rem 0 1.6rem}
 .figure-title{font-family:var(--display);font-weight:600;font-size:1rem}
 .legend{display:flex;gap:1rem;font-size:.79rem;color:var(--ink-2)}
 .legend span{display:inline-flex;align-items:center;gap:.4rem}
@@ -158,14 +169,52 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
   {{end}}
 
   <div class="stats">
-    <div class="stat"><div class="stat-n">{{.States}}</div><div class="stat-l">states replayed, each against the rules in force at the time</div></div>
-    <div class="stat"><div class="stat-n{{if .Approximate}} hot{{end}}">{{.Windows}}</div><div class="stat-l">doctrine windows replayed separately{{if .Approximate}}, paired by tick — the rules have changed since{{else if .Orphaned}} · {{.Orphaned}} states unmatched{{end}}</div></div>
-    <div class="stat"><div class="stat-n">{{.RuleCount}}</div><div class="stat-l">rules in the compiled set</div></div>
-    <div class="stat"><div class="stat-n hot">{{.NeverFired}}</div><div class="stat-l">never satisfiable in any sampled state, and never seen to act</div></div>
-    <div class="stat"><div class="stat-n">{{.SampleMissed}}</div><div class="stat-l">the replay never caught firing, but the engine recorded acting — these WORK; the sample is every 15th evaluation</div></div>
-    <div class="stat"><div class="stat-n">{{.NoCulprit}}</div><div class="stat-l">blocked by more than one thing at once, so no single edit frees them</div></div>
-    <div class="stat"><div class="stat-n{{if .Preempted}} hot{{end}}">{{.Preempted}}</div><div class="stat-l">held their condition but lost their exclusive category to a higher-priority rule — no clause is to blame for these, so relaxing one changes nothing</div></div>
+    <div class="stat"><div class="stat-n">{{.States}}</div><div class="stat-l">states replayed</div></div>
+    <div class="stat"><div class="stat-n{{if .Approximate}} hot{{end}}">{{.Windows}}</div><div class="stat-l">doctrine windows{{if .Approximate}} · paired by tick, rules have changed{{else if .Orphaned}} · {{.Orphaned}} unmatched{{end}}</div></div>
+    <div class="stat"><div class="stat-n">{{.RuleCount}}</div><div class="stat-l">rules compiled</div></div>
   </div>
+
+  {{if .Findings}}
+  <section>
+    <h2>Worth reading first</h2>
+    <ol class="findings">
+      {{range .Findings}}
+      <li><span class="f-head">{{.Headline}}</span><span class="f-detail">{{.Detail}}</span></li>
+      {{end}}
+    </ol>
+  </section>
+  {{end}}
+
+  <p class="caveats">
+    Of {{.RuleCount}} rules: <b>{{.NeverFired}}</b> never satisfiable and never seen to act,
+    {{.SampleMissed}} the replay missed but the engine recorded working,
+    {{.NoCulprit}} blocked by more than one thing at once,
+    {{.Preempted}} that held but lost their category. The sample is every 15th evaluation.
+  </p>
+
+  {{if .Late}}
+  <section>
+    <h2>When each working rule first did something</h2>
+    <p class="lede">
+      A blame count has no clock: a rule that fired seven times reads the same as one that fired
+      seven times too late. Every rule here worked — the order shows when each one <em>started</em>.
+      Bars past the first quarter are marked, and reactive rules belong there.
+    </p>
+    <div class="figure">
+      <div class="figure-head">
+        <span class="figure-title">First action to last</span>
+        <span class="legend"><span style="font-family:var(--mono)">{{.DurationTicks}} ticks · game order</span></span>
+      </div>
+      <div class="onset">
+        {{range .Late}}
+        <span class="on-name">{{.Name}}</span>
+        <span class="on-track"><span class="on-bar{{if not .Late}} early{{end}}" style="left:{{printf "%.1f" .Pct}}%;width:{{printf "%.1f" .SpanPct}}%"></span></span>
+        <span class="on-when">{{printf "%.0f" .Pct}}% · {{.Acted}}×</span>
+        {{end}}
+      </div>
+    </div>
+  </section>
+  {{end}}
 
   <section>
     <h2>The lines that did the blocking</h2>
@@ -175,27 +224,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
       into many rules, so one line here can account for a large share of everything the AI did not do.
     </p>
     <div class="figure">
-      {{if .Late}}
-<section class="figure">
-  <div class="figure-head">
-    <span class="figure-title">When each working rule first did something</span>
-    <span class="legend"><span style="font-family:var(--mono)">first action to last · {{.DurationTicks}} ticks · in the game's own order</span></span>
-  </div>
-  <p class="legend" style="margin:.7rem 0 0;max-width:64ch;line-height:1.5">A blame count has no clock, so a rule that
-  fired seven times reads the same as one that fired seven times too late. Every rule here worked. What the order shows
-  is when each one <em>started</em>, and where the game had gaps. Bars past the first quarter are marked; reactive rules
-  belong there — <code>flee-harvesters</code> cannot fire before a harvester is attacked — but an opener that starts
-  there never opened.</p>
-  <div class="onset">
-    {{range .Late}}
-    <span class="on-name">{{.Name}}</span>
-    <span class="on-track"><span class="on-bar{{if not .Late}} early{{end}}" style="left:{{printf "%.1f" .Pct}}%;width:{{printf "%.1f" .SpanPct}}%"></span></span>
-    <span class="on-when">{{printf "%.0f" .Pct}}% in · {{.Acted}}×</span>
-    {{end}}
-  </div>
-</section>
-{{end}}
-
+      
 <div class="figure-head">
         <span class="figure-title">States where this line alone was responsible, per 100 replayed</span>
         <span class="legend"><span style="font-family:var(--mono)">a rate, so two games of different length compare{{if .InertSites}} · {{.InertSites}} correct lines ranked below: their rules already work, or {{.Faction}} can never satisfy them{{end}}</span></span>
@@ -206,7 +235,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
         <span class="site-src">{{.Source}}</span>
         <span class="site-n">{{printf "%.0f" .SoleRate}}<span style="font-size:.7rem;font-weight:400">/100 states</span></span>
         <div class="bar"><i style="width:{{pct .SolePct}}%"></i></div>
-        <span class="site-meta">{{.File}}:{{.Line}} · blocks {{len .Rules}} rule{{if ne (len .Rules) 1}}s{{end}} · {{.Sole}} sole, {{.Blocked}} blocked over {{$.States}} states{{if .Live}} · <b style="color:var(--calm)">all of them already fire — the sample missed it</b>{{end}}{{if .Impossible}} · <b style="color:var(--calm)">{{$.Faction}} can never have <code>{{.Impossible}}</code>, so this line is correct and inert — nothing to change here</b>{{end}}</span>
+        <span class="site-meta">{{.File}}:{{.Line}} · blocks {{len .Rules}} rule{{if ne (len .Rules) 1}}s{{end}} · {{.Sole}} sole, {{.Blocked}} blocked over {{$.States}} states{{if .Live}} · <b style="color:var(--calm)">already works</b>{{end}}{{if .Impossible}} · <b style="color:var(--calm)">{{$.Faction}} can never have {{.Impossible}}</b>{{end}}</span>
       </div>
       {{else}}
       <div class="site"><span class="site-src">Nothing was ever solely responsible.</span></div>
@@ -282,8 +311,10 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
   {{end}}
 
   {{if .Sensitivity}}
+  <details class="fold">
+  <summary>The rules, or the doctrine?</summary>
   <section>
-    <h2>The rules, or the doctrine?</h2>
+    
     <p class="lede">
       The same sources compile to different thresholds under every doctrine, and this game ran
       {{.Windows}} of them — so the archive already contains the experiment. A clause that blocks
@@ -319,11 +350,14 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
       {{end}}
     </div>
   </section>
+</details>
   {{end}}
 
   {{if .FiredAnyway}}
+  <details class="fold">
+  <summary>The sample missed these</summary>
   <section>
-    <h2>The sample missed these</h2>
+    
     <p class="lede">
       A replay reads the <b>sampled</b> states in the recording, not every tick — so a rule that
       fired a handful of times across a whole game can be absent from every sample and look as
@@ -344,6 +378,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
       {{end}}
     </div>
   </section>
+</details>
   {{end}}
 
   <section>
@@ -387,8 +422,10 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     </div>
   </section>
 
+  <details class="fold">
+  <summary>How to read this</summary>
   <section class="note">
-    <h2>How to read this</h2>
+    
     {{if .Approximate}}
     <p>
       <b>The rule sources have changed since this game was played.</b> Recompiling its doctrines
@@ -416,6 +453,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     </p>
     {{end}}
   </section>
+</details>
 
   <footer>
     Generated by <code>currie report</code>. Rule conditions compiled by vimyc from the
