@@ -114,7 +114,9 @@ FROM games ORDER BY played_at DESC;
 -- name: ListFiringsForGame :many
 -- What each rule actually did during the game, summed over its doctrine
 -- windows. act_count is NULL for games recorded before it was measured.
-SELECT f.rule_name, SUM(f.fire_count) AS matched, SUM(f.act_count) AS acted
+SELECT f.rule_name, SUM(f.fire_count) AS matched, SUM(f.act_count) AS acted,
+       CAST(MIN(f.first_tick) AS INTEGER) AS first_tick,
+       CAST(MAX(f.last_tick) AS INTEGER) AS last_tick
 FROM rule_firings f
 JOIN archived_doctrines d ON d.id = f.doctrine_id
 WHERE d.game_id = ?

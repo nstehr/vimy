@@ -59,6 +59,28 @@ type deadRule struct {
 	SolePct        float64
 }
 
+// LateStart is a rule that worked, but not until late.
+//
+// The replay can say what blocked a rule; it cannot say when a rule that
+// worked did its work, because a blame count has no clock. That gap made a
+// scouting rule which fired seven times look identical to one that was broken,
+// when the finding was that nothing scouted until the game was half over.
+type LateStart struct {
+	Name     string
+	Category string
+	Matched  int
+	Acted    int
+	// Ticks, and how far into the game that is.
+	FirstTick, LastTick int
+	Pct                 float64
+	// Whether onset counts as late. Reactive rules are legitimately late, so
+	// this marks rather than filters.
+	Late bool
+	// Span between first and last action, as a share of the game. A rule that
+	// acts once is a different thing from one that acts throughout.
+	SpanPct float64
+}
+
 type view struct {
 	Title      string
 	States     int
@@ -67,9 +89,13 @@ type view struct {
 	NoCulprit  int
 	// Rules the replay never caught firing but which the engine recorded acting.
 	SampleMissed int
-	Preempted  int
-	Sites      []site
-	Dead       []deadRule
+	// Rules that worked, but did not start until late.
+	Late []LateStart
+	// How far into the game the game's own duration was, for the axis.
+	DurationTicks int
+	Preempted     int
+	Sites         []site
+	Dead          []deadRule
 	// Which blame sites track a doctrine input and which block regardless.
 	Sensitivity []Sensitivity
 	Doctrinal   int
@@ -93,8 +119,8 @@ type view struct {
 }
 
 // buildWith adds the analysis that needs the windows kept apart.
-func buildWith(title string, rep report, windows []windowStats, firings map[string]store.Firing) view {
-	v := build(title, rep, firings)
+func buildWith(title string, rep report, windows []windowStats, firings map[string]store.Firing, durationTicks int) view {
+	v := build(title, rep, firings, durationTicks)
 	byRule := make(map[string][]clauseReport, len(rep.Rules))
 	for _, r := range rep.Rules {
 		byRule[r.Rule] = r.Clauses
@@ -124,7 +150,12 @@ func reconcile(v *view, firings map[string]store.Firing) {
 	}
 }
 
-func build(title string, rep report, firings map[string]store.Firing) view {
+// A rule whose first action lands after this share of the game is worth
+// looking at. A quarter is early enough to catch an opener that never happened
+// and late enough not to list every rule that needs a building first.
+const lateStartPct = 25.0
+
+func build(title string, rep report, firings map[string]store.Firing, durationTicks int) view {
 	v := view{Title: title, States: rep.States, RuleCount: len(rep.Rules)}
 
 	// Aggregate by the line that wrote the requirement, across every rule it
@@ -224,6 +255,41 @@ func build(title string, rep report, firings map[string]store.Firing) view {
 	if len(v.Dead) > 24 {
 		v.Dead = v.Dead[:24]
 	}
+	// When each working rule first did something. Ranked latest-first, because
+	// the interesting ones are the rules whose onset is the finding.
+	v.DurationTicks = durationTicks
+	if v.DurationTicks > 0 {
+		for name, f := range firings {
+			if f.Acted <= 0 || f.FirstTick <= 0 {
+				continue
+			}
+			pct := 100 * float64(f.FirstTick) / float64(v.DurationTicks)
+			l := LateStart{
+				Name: name, Matched: f.Matched, Acted: f.Acted, Late: pct >= lateStartPct,
+				FirstTick: f.FirstTick, LastTick: f.LastTick, Pct: pct,
+				SpanPct: 100 * float64(f.LastTick-f.FirstTick) / float64(v.DurationTicks),
+			}
+			for _, r := range rep.Rules {
+				if r.Rule == name {
+					l.Category = r.Category
+					break
+				}
+			}
+			v.Late = append(v.Late, l)
+		}
+		// Ascending, so it reads as the game's own order: what opened, what
+		// followed, and where the gaps are. Ranking by lateness instead puts
+		// the reactive rules on top — flee-harvesters cannot fire before a
+		// harvester is attacked — and buries the proactive rule that should
+		// have gone first and did not.
+		sort.Slice(v.Late, func(i, j int) bool {
+			if v.Late[i].Pct != v.Late[j].Pct {
+				return v.Late[i].Pct < v.Late[j].Pct
+			}
+			return v.Late[i].Name < v.Late[j].Name
+		})
+	}
+
 	reconcile(&v, firings)
 	return v
 }

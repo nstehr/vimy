@@ -296,7 +296,9 @@ func (q *Queries) ListDoctrinesForGame(ctx context.Context, gameID int64) ([]Lis
 }
 
 const listFiringsForGame = `-- name: ListFiringsForGame :many
-SELECT f.rule_name, SUM(f.fire_count) AS matched, SUM(f.act_count) AS acted
+SELECT f.rule_name, SUM(f.fire_count) AS matched, SUM(f.act_count) AS acted,
+       CAST(MIN(f.first_tick) AS INTEGER) AS first_tick,
+       CAST(MAX(f.last_tick) AS INTEGER) AS last_tick
 FROM rule_firings f
 JOIN archived_doctrines d ON d.id = f.doctrine_id
 WHERE d.game_id = ?
@@ -304,9 +306,11 @@ GROUP BY f.rule_name
 `
 
 type ListFiringsForGameRow struct {
-	RuleName string          `json:"rule_name"`
-	Matched  sql.NullFloat64 `json:"matched"`
-	Acted    sql.NullFloat64 `json:"acted"`
+	RuleName  string          `json:"rule_name"`
+	Matched   sql.NullFloat64 `json:"matched"`
+	Acted     sql.NullFloat64 `json:"acted"`
+	FirstTick int64           `json:"first_tick"`
+	LastTick  int64           `json:"last_tick"`
 }
 
 // What each rule actually did during the game, summed over its doctrine
@@ -320,7 +324,13 @@ func (q *Queries) ListFiringsForGame(ctx context.Context, gameID int64) ([]ListF
 	var items []ListFiringsForGameRow
 	for rows.Next() {
 		var i ListFiringsForGameRow
-		if err := rows.Scan(&i.RuleName, &i.Matched, &i.Acted); err != nil {
+		if err := rows.Scan(
+			&i.RuleName,
+			&i.Matched,
+			&i.Acted,
+			&i.FirstTick,
+			&i.LastTick,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

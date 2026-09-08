@@ -41,6 +41,12 @@ section{display:flex;flex-direction:column;gap:1.05rem}
 .stat{background:var(--panel);padding:1.1rem 1.2rem;display:flex;flex-direction:column;gap:.28rem}
 .stat-n{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:1.9rem;font-weight:600;line-height:1;letter-spacing:-.02em}
 .stat-n.hot{color:var(--sole)}
+.onset{display:grid;grid-template-columns:minmax(11rem,auto) 1fr minmax(6.5rem,auto);gap:.45rem .8rem;align-items:center;margin-top:.9rem}
+.on-name{font-family:var(--mono);font-size:.82rem;color:var(--ink);overflow-wrap:anywhere}
+.on-track{position:relative;height:.62rem;background:var(--rule-soft);border-radius:.31rem;overflow:hidden}
+.on-bar{position:absolute;top:0;bottom:0;background:var(--sole);border-radius:.31rem;min-width:2px}
+.on-bar.early{background:var(--calm)}
+.on-when{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:.78rem;color:var(--ink);opacity:.72;text-align:right}
 .stat-l{font-size:.82rem;color:var(--ink-2);line-height:1.45}
 .figure{border:1px solid var(--rule);background:var(--panel)}
 .figure-head{padding:.85rem 1.1rem;border-bottom:1px solid var(--rule);display:flex;flex-wrap:wrap;gap:.5rem 1.4rem;align-items:baseline;justify-content:space-between}
@@ -169,7 +175,28 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
       into many rules, so one line here can account for a large share of everything the AI did not do.
     </p>
     <div class="figure">
-      <div class="figure-head">
+      {{if .Late}}
+<section class="figure">
+  <div class="figure-head">
+    <span class="figure-title">When each working rule first did something</span>
+    <span class="legend"><span style="font-family:var(--mono)">first action to last · {{.DurationTicks}} ticks · in the game's own order</span></span>
+  </div>
+  <p class="legend" style="margin:.7rem 0 0;max-width:64ch;line-height:1.5">A blame count has no clock, so a rule that
+  fired seven times reads the same as one that fired seven times too late. Every rule here worked. What the order shows
+  is when each one <em>started</em>, and where the game had gaps. Bars past the first quarter are marked; reactive rules
+  belong there — <code>flee-harvesters</code> cannot fire before a harvester is attacked — but an opener that starts
+  there never opened.</p>
+  <div class="onset">
+    {{range .Late}}
+    <span class="on-name">{{.Name}}</span>
+    <span class="on-track"><span class="on-bar{{if not .Late}} early{{end}}" style="left:{{printf "%.1f" .Pct}}%;width:{{printf "%.1f" .SpanPct}}%"></span></span>
+    <span class="on-when">{{printf "%.0f" .Pct}}% in · {{.Acted}}×</span>
+    {{end}}
+  </div>
+</section>
+{{end}}
+
+<div class="figure-head">
         <span class="figure-title">States where this line alone was responsible, per 100 replayed</span>
         <span class="legend"><span style="font-family:var(--mono)">a rate, so two games of different length compare</span></span>
         <span class="legend"><span><i class="chip sole"></i>solely responsible</span></span>

@@ -679,6 +679,12 @@ type Firing struct {
 	// Acted is -1 when the game predates the counter, which is not the same as
 	// zero and must not be read as "it did nothing".
 	Acted int
+	// When the rule first and last did something. A replay can say what blocked
+	// a rule but not when a working rule did its work, and "it fired" and "it
+	// fired for the first time two thirds of the way through" are different
+	// findings — the second is how a scouting rule that works looked like a
+	// scouting rule that was broken.
+	FirstTick, LastTick int
 }
 
 // FiringsForGame is what every rule did, by name.
@@ -696,6 +702,7 @@ func (s *Store) FiringsForGame(ctx context.Context, gameID int64) (map[string]Fi
 		if r.Acted.Valid {
 			f.Acted = int(r.Acted.Float64)
 		}
+		f.FirstTick, f.LastTick = int(r.FirstTick), int(r.LastTick)
 		out[r.RuleName] = f
 	}
 	return out, nil

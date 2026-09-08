@@ -75,7 +75,7 @@ func (l *llmInsighter) Read(ctx context.Context, r *Replay) (*Insight, error) {
 // Deliberately the same numbers the page shows, and only those: a model given a
 // wider view than the reader can make a claim the reader cannot check.
 func facts(r *Replay) types.GameFacts {
-	v := buildWith("", r.Report, r.Windows_, r.Firings)
+	v := buildWith("", r.Report, r.Windows_, r.Firings, r.Game.DurationTicks)
 
 	f := types.GameFacts{
 		Our_faction:      r.Game.OurFaction,
