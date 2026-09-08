@@ -226,14 +226,14 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     <div class="figure">
       
 <div class="figure-head">
-        <span class="figure-title">States where this line alone was responsible, per 100 replayed</span>
-        <span class="legend"><span>a rate, so games of different length compare{{if .InertSites}} · {{.InertSites}} correct lines ranked below{{end}}</span></span>
+        <span class="figure-title">How often this line was the only blocker</span>
+        <span class="legend"><span>share of the states it was evaluated in, per rule it blocks — so games and lines of different size compare{{if .InertSites}} · {{.InertSites}} correct lines ranked below{{end}}</span></span>
         <span class="legend"><span><i class="chip sole"></i>solely responsible</span></span>
       </div>
       {{range .Sites}}
       <div class="site">
         <span class="site-src">{{.Source}}</span>
-        <span class="site-n">{{printf "%.0f" .SoleRate}}<span style="font-size:.7rem;font-weight:400">/100 states</span></span>
+        <span class="site-n">{{printf "%.0f" .SoleRate}}<span style="font-size:.7rem;font-weight:400">% of its chances</span></span>
         <div class="bar"><i style="width:{{pct .SolePct}}%"></i></div>
         <span class="site-meta">{{.File}}:{{.Line}} · blocks {{len .Rules}} rule{{if ne (len .Rules) 1}}s{{end}} · {{.Sole}} sole, {{.Blocked}} blocked over {{$.States}} states{{if .Live}} · <b style="color:var(--calm)">already works</b>{{end}}{{if .Impossible}} · <b style="color:var(--calm)">{{$.Faction}} can never have {{.Impossible}}</b>{{end}}</span>
       </div>

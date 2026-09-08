@@ -276,7 +276,12 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 	for i := range v.Sites {
 		v.Sites[i].SolePct = 100 * float64(v.Sites[i].Sole) / float64(maxSite)
 		if rep.States > 0 {
-			v.Sites[i].SoleRate = 100 * float64(v.Sites[i].Sole) / float64(rep.States)
+			// Per rule, not per state. `Sole` is summed over every rule the
+			// line blocks, so dividing by states alone produced "165 of every
+			// 100 states" for a line inlined into seven rules. The denominator
+			// is the chances it had: one per rule per state.
+			chances := rep.States * max(len(v.Sites[i].Rules), 1)
+			v.Sites[i].SoleRate = 100 * float64(v.Sites[i].Sole) / float64(chances)
 		}
 		v.Sites[i].File = filepath.Base(v.Sites[i].File)
 	}
@@ -363,7 +368,7 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 			continue
 		}
 		v.Findings = append(v.Findings, finding{
-			Headline: fmt.Sprintf("%s was the only thing stopping a rule in %.0f of every 100 states",
+			Headline: fmt.Sprintf("%s was the only thing stopping a rule %.0f%% of the times it could have been",
 				st.Source, st.SoleRate),
 			Detail: fmt.Sprintf("%s:%d · blocks %d rule%s", st.File, st.Line, len(st.Rules), plural(len(st.Rules))),
 		})
