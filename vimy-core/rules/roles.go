@@ -1,6 +1,9 @@
 package rules
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 // typed is a generic constraint for any model type with a TypeName accessor.
 type typed interface {
@@ -312,4 +315,115 @@ var combatNavalRoles = []string{
 // specialistInfantryRoles: most impactful unit first.
 var specialistInfantryRoles = []string{
 	"tanya", "shock_trooper", "flamethrower", "medic",
+}
+
+// Roles only one side can build.
+//
+// The strategist is told which these are and told to list only its own — and
+// still lists the other side's, because a prompt is not a constraint. An
+// unbuildable preference is harmless where a unit is chosen, since
+// `bestBuildableFrom` skips anything the faction cannot make. It is not
+// harmless in `DoctrineParams`, which reads the raw list: `prefers-v2-launcher`,
+// `siege-vehicle-first` and `prefers-radar-gated-primary` all move rule
+// priorities on the strength of a name, whether or not the unit exists for this
+// side. So the list is filtered before anything reads it.
+//
+// Only genuinely locked roles are listed. `medium_tank` covers both sides' mid
+// tanks and stays, as does anything either faction can field.
+var factionLockedRoles = map[string]string{
+	"v2_launcher":   "soviet",
+	"apc":           "soviet",
+	"flak_truck":    "soviet",
+	"demo_truck":    "soviet",
+	"tesla_tank":    "soviet",
+	"shock_trooper": "soviet",
+	"flamethrower":  "soviet",
+	"heavy_tank":    "soviet",
+	"artillery":     "allied",
+	"ranger":        "allied",
+	"light_tank":    "allied",
+	"tanya":         "allied",
+	"missile_sub":   "soviet",
+	"cruiser":       "allied",
+	"destroyer":     "allied",
+}
+
+// sovietFactions are the sides that build from the Soviet tree. Anything else
+// is treated as Allied, which is the safe default: an unknown faction keeps its
+// Allied-legal preferences and loses only the Soviet-locked ones.
+var sovietFactions = map[string]bool{
+	"soviet": true, "russia": true, "ukraine": true, "iraq": true, "russians": true,
+}
+
+// SideOf reports which tree a faction builds from.
+func SideOf(faction string) string {
+	if sovietFactions[strings.ToLower(strings.TrimSpace(faction))] {
+		return "soviet"
+	}
+	return "allied"
+}
+
+// BuildableByFaction reports whether a role is available to a side.
+func BuildableByFaction(role, faction string) bool {
+	locked, ok := factionLockedRoles[strings.ToLower(role)]
+	return !ok || locked == SideOf(faction)
+}
+
+// FilterPreferences drops roles the faction cannot build, and reports what went.
+//
+// Returned rather than logged here so the caller can say which doctrine it
+// came from: how often the strategist names the other side's units is worth
+// knowing, and a silent filter would hide it.
+func FilterPreferences(d Doctrine, faction string) (Doctrine, []string) {
+	var dropped []string
+	keep := func(list []string) []string {
+		if len(list) == 0 {
+			return list
+		}
+		out := make([]string, 0, len(list))
+		for _, role := range list {
+			if BuildableByFaction(role, faction) {
+				out = append(out, role)
+				continue
+			}
+			dropped = append(dropped, role)
+		}
+		return out
+	}
+	d.PreferredInfantry = keep(d.PreferredInfantry)
+	d.PreferredVehicle = keep(d.PreferredVehicle)
+	d.PreferredAircraft = keep(d.PreferredAircraft)
+	d.PreferredNaval = keep(d.PreferredNaval)
+	return d, dropped
+}
+
+// IsRole reports whether a name is something the rule set knows how to build.
+//
+// Exported for analysis: a clause like `count(unassigned-idle-ground) > 0` reads
+// as a test for a thing called "ground", and concluding that no rule produces
+// one is nonsense. A noun that is not a role is not a missing unit, it is a
+// quantity of something the rules never make directly.
+func IsRole(name string) bool {
+	_, ok := roles[strings.ToLower(strings.TrimSpace(name))]
+	return ok
+}
+
+// UnbuildableRoles lists the faction-locked roles this faction cannot build,
+// sorted so the prompt it feeds is stable between windows.
+//
+// The strategist is given both sides' rosters keyed by "Soviet:" and "Allied:",
+// and told its faction by name — which asks it to know that germany is Allied.
+// It does not: four consecutive windows of one game named `v2_launcher` and
+// `flak_truck` for germany, and each was silently dropped downstream. Naming the
+// side and the forbidden units directly is cheaper than filtering the result.
+func UnbuildableRoles(faction string) []string {
+	side := SideOf(faction)
+	var out []string
+	for role, locked := range factionLockedRoles {
+		if locked != side {
+			out = append(out, role)
+		}
+	}
+	sort.Strings(out)
+	return out
 }

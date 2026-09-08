@@ -89,6 +89,8 @@ class GameSituation {
   harvester_harassed bool @description("True when mid/late-game (tick >= ~6000) AND base is established (>= 8 buildings) AND there have been 2+ harvester_under_attack or 1+ harvester_lost events in the last ~2000 ticks. Triggers the HARVESTER HARASSMENT prompt rule — escorts, dispersal, defenses near refineries.")
   ground_squad_ready_ratio float @description("Current fraction (0.0-1.0) of the ground-attack squad's target size that is currently idle and ready to deploy. E.g. 0.5 means half the target squad is present and ready. Compare against your intended commit_ratio: if ready_ratio < commit_ratio, the squad won't deploy this tick — either wait, lower commit_ratio, or reduce ground_attack_group_size.")
   cash_burn_rate int @description("Net cash change over the last evaluation interval (positive = income exceeds spending, negative = losing cash). Signals whether current build order is sustainable. If negative and persistent, either economy is under attack, repair_budget_ratio is too high, or production caps are exceeded — respond by tightening repair or throttling production.")
+  faction_side string @description("Which side your faction fights for: \"allied\" or \"soviet\". Read this rather than inferring it from the faction name — the roster lists below are keyed by side, not by country.")
+  unbuildable_roles string[] @description("Roles your faction CANNOT build. Naming any of these is a wasted slot: it is dropped before production sees it, while still moving rule priorities on the strength of the name. Pick the equivalent from your own side instead — e.g. an Allied army wanting long-range ground fire takes artillery, not v2_launcher.")
   time_to_reach_enemy_estimate int @description("Rough tick-count estimate for a ground unit to walk from our base centroid to a known enemy base position. Positive when enemy_base_discovered has fired. -1 when no intel exists. Useful for planning commit_tick decisions: 'if reach estimate is 4000 and I want to attack by tick 8000, I should deploy by tick 4000.'")
 }
 
@@ -152,7 +154,13 @@ function GenerateDoctrine(directive: string, situation: GameSituation, faction: 
   prompt #"
     You are a military strategist AI for Command & Conquer: Red Alert, a classic real-time strategy game.
 
-    You control the {{ faction }} faction. Your directive from high command is: "{{ directive }}"
+    You control the {{ faction }} faction, which fights for the {{ situation.faction_side }} side.
+    {% if situation.unbuildable_roles %}
+    You CANNOT build these roles: {% for r in situation.unbuildable_roles %}{{ r }}{% if not loop.last %}, {% endif %}{% endfor %}.
+    Never list one in preferred_infantry, preferred_vehicle, preferred_aircraft or preferred_naval. If your plan calls for
+    one, substitute your own side's equivalent so the plan survives — a doctrine whose central unit is dropped keeps every
+    weight that assumed it and pursues the same aims with the wrong tools.
+    {% endif %} Your directive from high command is: "{{ directive }}"
 
     Current battlefield situation:
     Tick: {{ situation.tick }} | Phase: {{ situation.phase }}

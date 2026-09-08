@@ -494,6 +494,10 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	// distance to any known enemy base.
 	situation.Ground_squad_ready_ratio = groundSquadReadyRatio(s.engine.Memory, *gs)
 	situation.Cash_burn_rate = int64(s.computeCashBurnRate(gs))
+	// Named rather than inferred: the roster lists in the prompt are keyed by
+	// side, and asking the model to know that germany is Allied does not work.
+	situation.Faction_side = rules.SideOf(faction)
+	situation.Unbuildable_roles = rules.UnbuildableRoles(faction)
 	situation.Time_to_reach_enemy_estimate = int64(timeToReachEnemyEstimate(s.engine.Memory, *gs))
 	// Push burned axes into engine memory so production rules can hard-gate
 	// on AxisBurned() — previously the constraint was prompt-only and the
@@ -529,6 +533,18 @@ func (s *Strategist) evaluate(ctx context.Context) {
 
 	doctrine := fromBAML(bamlDoctrine)
 	doctrine.Validate()
+
+	// The strategist is told which roles are faction-locked and told to list
+	// only its own. It does so most of the time. When it does not, the unit is
+	// skipped where one is chosen — but `DoctrineParams` reads the raw list, so
+	// naming the other side's unit still moves rule priorities on the strength
+	// of a name. Dropped here, before anything reads it.
+	var dropped []string
+	doctrine, dropped = rules.FilterPreferences(doctrine, faction)
+	if len(dropped) > 0 {
+		slog.Warn("doctrine named units this faction cannot build",
+			"faction", faction, "doctrine", doctrine.Name, "dropped", dropped)
+	}
 
 	// Close out the previous doctrine window: flush the engine's firing
 	// counters and attach them to the last DoctrineRecord. The stats

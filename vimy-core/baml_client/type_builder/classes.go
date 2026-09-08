@@ -759,6 +759,14 @@ func (t *GameSituationClassView) PropertyCash_burn_rate() (ClassPropertyView, er
 	return t.inner.Property("cash_burn_rate")
 }
 
+func (t *GameSituationClassView) PropertyFaction_side() (ClassPropertyView, error) {
+	return t.inner.Property("faction_side")
+}
+
+func (t *GameSituationClassView) PropertyUnbuildable_roles() (ClassPropertyView, error) {
+	return t.inner.Property("unbuildable_roles")
+}
+
 func (t *GameSituationClassView) PropertyTime_to_reach_enemy_estimate() (ClassPropertyView, error) {
 	return t.inner.Property("time_to_reach_enemy_estimate")
 }
