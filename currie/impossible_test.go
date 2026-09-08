@@ -19,3 +19,35 @@ func TestImpossibleForDetects(t *testing.T) {
 		}
 	}
 }
+
+// Completion guards are success, not blame. Game 86 fed the model
+// `not squad-exists(air-attack)` at 372 of 372 states and it came back as the
+// second most important finding of the game — the squad existed, and the rule
+// that forms it had correctly declined to form it twice.
+func TestSatisfiedByCompletionCoversSquadsAndIntel(t *testing.T) {
+	guards := []string{
+		"require (not squad-exists(air-attack) and count(unassigned-idle-air) >= 2)",
+		"require not has-role(construction-yard)",
+		"require not has-unit(mcv)",
+		"require not has-enemy-intel()",
+		"require role-count(radar) == 0",
+	}
+	for _, g := range guards {
+		if !satisfiedByCompletion(g) {
+			t.Errorf("%q should read as a completion guard", g)
+		}
+	}
+	// Real constraints must not be swept up with them.
+	real := []string{
+		"require not queue-busy(Vehicle)",
+		"require cash >= cost",
+		"require not has-retreating-units()",
+		"require count(idle-scouts) > 0",
+		"require not enemies-visible",
+	}
+	for _, r := range real {
+		if satisfiedByCompletion(r) {
+			t.Errorf("%q is a real constraint, not a completion guard", r)
+		}
+	}
+}

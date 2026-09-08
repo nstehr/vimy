@@ -42,6 +42,16 @@ type site struct {
 // Live reports whether every rule this line blocks already works.
 func (s site) Live() bool { return s.Working > 0 && s.Working == len(s.Rules) }
 
+// Guard reports whether the line is a completion guard — a clause satisfied by
+// the thing existing, which a producing rule carries so it stops once it has
+// succeeded. Being blocked by one is success, not failure.
+//
+// Separate from Live because Live asks whether the blocked rules acted IN THIS
+// GAME's counters, and a squad formed in an earlier doctrine window leaves its
+// forming rule with no acts here while the guard still reads as a top blocker.
+// That is how `not squad-exists(air-attack)` reached the model in game 86.
+func (s site) Guard() bool { return satisfiedByCompletion(s.Source) }
+
 type clauseBar struct {
 	clauseReport
 	SolePct    float64
@@ -252,15 +262,15 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 		v.Sites[i].Impossible = impossibleFor(v.Sites[i].Source, faction)
 	}
 	sort.SliceStable(v.Sites, func(i, j int) bool {
-		ai := v.Sites[i].Live() || v.Sites[i].Impossible != ""
-		aj := v.Sites[j].Live() || v.Sites[j].Impossible != ""
+		ai := v.Sites[i].Live() || v.Sites[i].Guard() || v.Sites[i].Impossible != ""
+		aj := v.Sites[j].Live() || v.Sites[j].Guard() || v.Sites[j].Impossible != ""
 		if ai != aj {
 			return aj
 		}
 		return v.Sites[i].Sole > v.Sites[j].Sole
 	})
 	for _, st := range v.Sites {
-		if st.Live() || st.Impossible != "" {
+		if st.Live() || st.Guard() || st.Impossible != "" {
 			v.InertSites++
 		}
 	}
@@ -364,7 +374,7 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 	// the line that blocked most, the rule that fired and did nothing, and the
 	// building that arrived latest.
 	for _, st := range v.Sites {
-		if st.Live() || st.Impossible != "" {
+		if st.Live() || st.Guard() || st.Impossible != "" {
 			continue
 		}
 		v.Findings = append(v.Findings, finding{

@@ -106,6 +106,13 @@ func facts(r *Replay) types.GameFacts {
 		})
 	}
 	for _, s := range v.Sites {
+		// A guard, a line whose rules all already work, or one this faction can
+		// never satisfy is not a finding. The ranking already puts these last,
+		// but the model should never see them at all: it read one as the second
+		// most important thing about game 86.
+		if s.Live() || s.Guard() || s.Impossible != "" {
+			continue
+		}
 		f.Top_clauses = append(f.Top_clauses, types.BlockedClause{
 			Working:   int64(s.Working),
 			Source:    s.Source,

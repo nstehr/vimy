@@ -96,6 +96,15 @@ func (c Chain) Verdict() string {
 func satisfiedByCompletion(source string) bool {
 	return strings.Contains(source, "not has-role(") ||
 		strings.Contains(source, "not has-unit(") ||
+		// A squad that exists is a squad-forming rule that succeeded. Game 86
+		// reported `not squad-exists(air-attack)` as blocking 372 of 372 states
+		// and the model read it as the second most important finding of the
+		// game — it means the air squad was formed and the rule declined to
+		// form it again.
+		strings.Contains(source, "not squad-exists(") ||
+		// Likewise the guard a scouting producer carries: blocked by this means
+		// the enemy was found.
+		strings.Contains(source, "not has-enemy-intel(") ||
 		regexp.MustCompile(`role-count\([a-z0-9-]+\)\s*==\s*0`).MatchString(source) ||
 		strings.Contains(source, "lost-role(")
 }

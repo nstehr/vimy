@@ -82,6 +82,16 @@ func (c *cache) Close() error {
 	return c.db.Close()
 }
 
+// analysisVersion invalidates stored readings when what the model is SHOWN
+// changes, as opposed to what the game did.
+//
+// The key was the game plus a fingerprint of the .vy sources, which catches a
+// rule edit but not a change to the analysis itself. Currie stopped feeding the
+// model completion guards on 2026-09-08; without this, every game already read
+// would keep serving prose written from the old, noisier input. Bump on any
+// change to what goes into Insight.
+const analysisVersion = 2
+
 // fingerprint hashes the rule sources, sorted so a directory listing's order
 // cannot change the answer.
 func fingerprint(rulesDir string) (string, error) {
@@ -91,6 +101,7 @@ func fingerprint(rulesDir string) (string, error) {
 	}
 	sort.Strings(paths)
 	h := sha256.New()
+	fmt.Fprintf(h, "analysis=%d\x00", analysisVersion)
 	for _, p := range paths {
 		b, err := os.ReadFile(p)
 		if err != nil {
