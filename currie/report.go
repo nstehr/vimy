@@ -115,6 +115,9 @@ type view struct {
 	Faction string
 	// The two or three facts worth reading before anything else.
 	Findings []finding
+	// Working rules whose onset the timeline did not have room for. Counted,
+	// because a silent cap reads as "this is all of them".
+	LateOmitted int
 	// Blame sites ranked below the cut because they are correct: their rules
 	// already work, or the faction can never satisfy them. Counted rather than
 	// silently dropped — a report that hides what it excluded is how a reader
@@ -284,6 +287,12 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 		if r.Held > 0 || r.Culprit == nil {
 			continue
 		}
+		// A rule the engine recorded acting is not a rule that never fired. It
+		// has its own section; listing it here too produced rows reading
+		// "fired 5x" under the heading "Rules that never fired".
+		if f, ok := firings[r.Rule]; ok && f.Acted > 0 {
+			continue
+		}
 		d := deadRule{
 			Name: r.Rule, Category: r.Category, Seen: r.Seen,
 			Blocked: r.Blocked, Preempted: r.Preempted,
@@ -384,6 +393,11 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 			Detail:   "the last building to arrive",
 		})
 		break
+	}
+
+	if len(v.Late) > 24 {
+		v.LateOmitted = len(v.Late) - 24
+		v.Late = v.Late[:24]
 	}
 
 	reconcile(&v, firings)

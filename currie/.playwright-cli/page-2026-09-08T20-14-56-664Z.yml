@@ -1,0 +1,365 @@
+- generic [ref=f1e2]:
+  - banner [ref=f1e3]:
+    - generic [ref=f1e4]:
+      - link "Currie" [ref=f1e5] [cursor=pointer]:
+        - /url: /
+      - text: · rule-set post mortem · game 85 · germany vs russia · loss
+    - heading "What stopped each rule" [level=1] [ref=f1e6]
+  - generic [ref=f1e7]:
+    - generic [ref=f1e8]:
+      - generic [ref=f1e9]: "475"
+      - generic [ref=f1e10]: states replayed
+    - generic [ref=f1e11]:
+      - generic [ref=f1e12]: "42"
+      - generic [ref=f1e13]: doctrine windows · paired by tick, rules have changed
+    - generic [ref=f1e14]:
+      - generic [ref=f1e15]: "99"
+      - generic [ref=f1e16]: rules compiled
+  - generic [ref=f1e17]:
+    - heading "Worth reading first" [level=2] [ref=f1e18]
+    - list [ref=f1e19]:
+      - listitem [ref=f1e20]:
+        - generic [ref=f1e21]: require count(idle-minelayers) > 0 was the only thing stopping a rule in 100 of every 100 states
+        - generic [ref=f1e22]: production.vy:365 · blocks 1 rule
+      - listitem [ref=f1e23]:
+        - generic [ref=f1e24]: repair-buildings matched 1300 times and ordered nothing 1300 of them
+        - generic [ref=f1e25]: a condition holding is not an action doing something
+      - listitem [ref=f1e26]:
+        - generic [ref=f1e27]: build-tech-center first acted 54% into the game
+        - generic [ref=f1e28]: the last building to arrive
+  - paragraph [ref=f1e29]: "Of 99 rules: 41 never satisfiable and never seen to act, 27 the replay missed but the engine recorded working, 10 blocked by more than one thing at once, 0 that held but lost their category. The sample is every 15th evaluation."
+  - generic [ref=f1e30]:
+    - heading "When each working rule first did something" [level=2] [ref=f1e31]
+    - paragraph [ref=f1e32]:
+      - text: "A blame count has no clock: a rule that fired seven times reads the same as one that fired seven times too late. Every rule here worked — the order shows when each one"
+      - emphasis [ref=f1e33]: started
+      - text: . Bars past the first quarter are marked, and reactive rules belong there.
+    - generic [ref=f1e34]:
+      - generic [ref=f1e35]:
+        - generic [ref=f1e36]: First action to last
+        - generic [ref=f1e37]: 33090 ticks · game order · earliest 24, 32 more not shown
+      - generic [ref=f1e39]:
+        - generic [ref=f1e40]: place-ready-building
+        - generic [ref=f1e43]: 5% · 22×
+        - generic [ref=f1e44]: build-base-defense
+        - generic [ref=f1e47]: 5% · 7×
+        - generic [ref=f1e48]: build-war-factory
+        - generic [ref=f1e51]: 5% · 1×
+        - generic [ref=f1e52]: produce-infantry
+        - generic [ref=f1e55]: 5% · 54×
+        - generic [ref=f1e56]: scout-with-idle-units
+        - generic [ref=f1e59]: 5% · 89×
+        - generic [ref=f1e60]: place-ready-defense
+        - generic [ref=f1e63]: 6% · 16×
+        - generic [ref=f1e64]: produce-bridge-infantry
+        - generic [ref=f1e67]: 7% · 21×
+        - generic [ref=f1e68]: build-second-refinery
+        - generic [ref=f1e71]: 14% · 1×
+        - generic [ref=f1e72]: produce-extra-harvester
+        - generic [ref=f1e75]: 14% · 1×
+        - generic [ref=f1e76]: produce-rocket-soldier
+        - generic [ref=f1e79]: 14% · 5×
+        - generic [ref=f1e80]: form-ground-attack
+        - generic [ref=f1e83]: 16% · 13×
+        - generic [ref=f1e84]: squad-attack-known-base
+        - generic [ref=f1e87]: 16% · 12×
+        - generic [ref=f1e88]: squad-focus-fire
+        - generic [ref=f1e91]: 16% · 1×
+        - generic [ref=f1e92]: squad-reengage
+        - generic [ref=f1e95]: 16% · 12×
+        - generic [ref=f1e96]: form-defense-squad
+        - generic [ref=f1e99]: 20% · 11×
+        - generic [ref=f1e100]: unblock-war-factory-egress
+        - generic [ref=f1e103]: 22% · 2×
+        - generic [ref=f1e104]: emergency-base-defense
+        - generic [ref=f1e107]: 27% · 141×
+        - generic [ref=f1e108]: squad-defend-base
+        - generic [ref=f1e111]: 27% · 10×
+        - generic [ref=f1e112]: build-radar
+        - generic [ref=f1e115]: 27% · 1×
+        - generic [ref=f1e116]: flee-harvesters
+        - generic [ref=f1e119]: 28% · 83×
+        - generic [ref=f1e120]: build-base-defense-rush
+        - generic [ref=f1e123]: 29% · 1×
+        - generic [ref=f1e124]: produce-infantry-rush
+        - generic [ref=f1e127]: 29% · 7×
+        - generic [ref=f1e128]: return-idle-harvesters
+        - generic [ref=f1e131]: 29% · 48×
+        - generic [ref=f1e132]: defend-critical-building
+        - generic [ref=f1e135]: 30% · 314×
+  - generic [ref=f1e136]:
+    - heading "The lines that did the blocking" [level=2] [ref=f1e137]
+    - paragraph [ref=f1e138]:
+      - text: Every
+      - code [ref=f1e139]: require
+      - text: that was the only thing standing between a rule and firing, totalled across every rule it appears in. A requirement written once inside a def is inlined into many rules, so one line here can account for a large share of everything the AI did not do.
+    - generic [ref=f1e140]:
+      - generic [ref=f1e141]:
+        - generic [ref=f1e142]: States where this line alone was responsible, per 100 replayed
+        - generic [ref=f1e143]: a rate, so games of different length compare · 117 correct lines ranked below
+        - generic [ref=f1e145]: solely responsible
+      - generic [ref=f1e148]:
+        - generic [ref=f1e149]: require count(idle-minelayers) > 0
+        - generic [ref=f1e150]: 100/100 states
+        - generic [ref=f1e153]: production.vy:365 · blocks 1 rule · 475 sole, 475 blocked over 475 states
+      - generic [ref=f1e154]:
+        - generic [ref=f1e155]: require (not squad-exists(harvester-guard)
+        - generic [ref=f1e156]: 100/100 states
+        - generic [ref=f1e159]: micro.vy:109 · blocks 1 rule · 474 sole, 474 blocked over 475 states
+      - generic [ref=f1e160]:
+        - generic [ref=f1e161]: cash >= cost
+        - generic [ref=f1e162]: 58/100 states
+        - generic [ref=f1e165]: core.vy:11 · blocks 5 rules · 275 sole, 1231 blocked over 475 states
+      - generic [ref=f1e166]:
+        - generic [ref=f1e167]: require count(idle-engineer-loaded-apcs) > 0
+        - generic [ref=f1e168]: 52/100 states
+        - generic [ref=f1e171]: core.vy:87 · blocks 1 rule · 245 sole, 391 blocked over 475 states
+      - generic [ref=f1e172]:
+        - generic [ref=f1e173]: require count(damaged-buildings) > 0
+        - generic [ref=f1e174]: 39/100 states
+        - generic [ref=f1e177]: core.vy:357 · blocks 1 rule · 185 sole, 185 blocked over 475 states
+      - generic [ref=f1e178]:
+        - generic [ref=f1e179]: require can-build-role(tech-center)
+        - generic [ref=f1e180]: 35/100 states
+        - generic [ref=f1e183]: core.vy:252 · blocks 1 rule · 168 sole, 374 blocked over 475 states
+      - generic [ref=f1e184]:
+        - generic [ref=f1e185]: require not queue-busy(Vehicle)
+        - generic [ref=f1e186]: 30/100 states
+        - generic [ref=f1e189]: production.vy:355 · blocks 1 rule · 141 sole, 286 blocked over 475 states
+      - generic [ref=f1e190]:
+        - generic [ref=f1e191]: require squad-exists(harvester-guard)
+        - generic [ref=f1e192]: 21/100 states
+        - generic [ref=f1e195]: micro.vy:120 · blocks 1 rule · 102 sole, 475 blocked over 475 states
+      - generic [ref=f1e196]:
+        - generic [ref=f1e197]: require capture-priority >= 0.3 or capturable-count > 0
+        - generic [ref=f1e198]: 18/100 states
+        - generic [ref=f1e201]: core.vy:86 · blocks 1 rule · 84 sole, 230 blocked over 475 states
+      - generic [ref=f1e202]:
+        - generic [ref=f1e203]: require count(idle-combat-loaded-apcs) > 0
+        - generic [ref=f1e204]: 15/100 states
+        - generic [ref=f1e207]: core.vy:159 · blocks 1 rule · 71 sole, 78 blocked over 475 states
+      - generic [ref=f1e208]:
+        - generic [ref=f1e209]: require support-power-ready(NukePowerInfoOrder)
+        - generic [ref=f1e210]: 11/100 states
+        - generic [ref=f1e213]: combat.vy:197 · blocks 1 rule · 53 sole, 53 blocked over 475 states
+      - generic [ref=f1e214]:
+        - generic [ref=f1e215]: require role-count(harvester) < role-count(refinery)
+        - generic [ref=f1e216]: 9/100 states
+        - generic [ref=f1e219]: core.vy:199 · blocks 1 rule · 45 sole, 475 blocked over 475 states
+  - generic [ref=f1e220]:
+    - heading "What the strategist did not try" [level=2] [ref=f1e221]
+    - paragraph [ref=f1e224]: Replaying the game at values the doctrines never used…
+  - generic [ref=f1e226]:
+    - heading "Missing things, and what should have made them" [level=2] [ref=f1e227]
+    - paragraph [ref=f1e228]:
+      - text: A clause like
+      - code [ref=f1e229]: count(idle-minelayers) > 0
+      - text: is not a threshold — it is a report that no minelayer exists. Relaxing it changes nothing, because the problem is a rule further back. Each row follows the missing thing to whichever rule was supposed to produce it.
+    - generic [ref=f1e230]:
+      - generic [ref=f1e231]:
+        - generic [ref=f1e232]: One hop upstream
+        - generic [ref=f1e233]: the question is not why the gate is closed
+      - generic [ref=f1e235]:
+        - generic [ref=f1e236]: lay-mines
+        - generic [ref=f1e237]: the rule that makes one was itself blocked
+        - generic [ref=f1e238]:
+          - text: blocked by
+          - code [ref=f1e239]: require count(idle-minelayers) > 0
+          - text: — no minelayer existed
+        - generic [ref=f1e240]:
+          - text: ↳ produce-minelayer never fired, stopped by
+          - code [ref=f1e241]: require not queue-busy(Vehicle)
+          - text: at ../vimy-core/rules/vy/production.vy:355
+  - generic [ref=f1e242]:
+    - heading "Gates worth moving" [level=2] [ref=f1e243]
+    - paragraph [ref=f1e244]:
+      - text: A numeric
+      - code [ref=f1e245]: require
+      - text: "compared against a constant is a dial. This lists the ones where turning it would actually buy something — measured only at values the compared side really reached, because a cash gate improves all the way to zero on paper and \"set it to zero\" is not a recommendation. Gates set above anything that ever happened are left out: they are asking for something that did not occur, and the rule is what to change, not the number."
+    - generic [ref=f1e246]:
+      - generic [ref=f1e247]:
+        - generic [ref=f1e248]: Blocked now, and blocked at the best reachable value
+        - generic [ref=f1e249]:
+          - generic [ref=f1e250]: still blocked
+          - generic [ref=f1e252]: freed by moving it
+      - generic [ref=f1e254]:
+        - generic [ref=f1e255]: cash >= cost
+        - generic [ref=f1e256]: 1524 freed
+        - generic [ref=f1e257]: core.vy:11 · 14 rules · at 100–2000 → 1–1569 · highest reached 4813
+      - generic [ref=f1e261]:
+        - generic [ref=f1e262]: cash >= cost
+        - generic [ref=f1e263]: 410 freed
+        - generic [ref=f1e264]: buildings.vy:36 · 3 rules · at 480–920 → 1–735 · highest reached 4813
+      - generic [ref=f1e268]:
+        - generic [ref=f1e269]: cash >= cost
+        - generic [ref=f1e270]: 303 freed
+        - generic [ref=f1e271]: production.vy:26 · 2 rules · at 800–900 → 1–735 · highest reached 4813
+      - generic [ref=f1e275]:
+        - generic [ref=f1e276]: require cash >= 2500
+        - generic [ref=f1e277]: 232 freed
+        - generic [ref=f1e278]: core.vy:296 · 1 rule · at 2500 → 1–2331 · highest reached 4813
+      - generic [ref=f1e282]:
+        - generic [ref=f1e283]: require cash >= 2500
+        - generic [ref=f1e284]: 232 freed
+        - generic [ref=f1e285]: core.vy:306 · 1 rule · at 2500 → 1–2331 · highest reached 4813
+      - generic [ref=f1e289]:
+        - generic [ref=f1e290]: require cash >= war-factory-cash()
+        - generic [ref=f1e291]: 229 freed
+        - generic [ref=f1e292]: buildings.vy:94 · 1 rule · at 2200–2400 → 1–2331 · highest reached 4813
+      - generic [ref=f1e296]:
+        - generic [ref=f1e297]: require cash >= 1500
+        - generic [ref=f1e298]: 198 freed
+        - generic [ref=f1e299]: buildings.vy:228 · 1 rule · at 1500 → 1–1078 · highest reached 4813
+      - generic [ref=f1e303]:
+        - generic [ref=f1e304]: require cash >= 1000
+        - generic [ref=f1e305]: 172 freed
+        - generic [ref=f1e306]: buildings.vy:60 · 1 rule · at 1000 → 1–988 · highest reached 4813
+      - generic [ref=f1e310]:
+        - generic [ref=f1e311]: require cash >= 1000
+        - generic [ref=f1e312]: 172 freed
+        - generic [ref=f1e313]: core.vy:40 · 1 rule · at 1000 → 1–988 · highest reached 4813
+      - generic [ref=f1e317]:
+        - generic [ref=f1e318]: require cash >= 1000
+        - generic [ref=f1e319]: 172 freed
+        - generic [ref=f1e320]: core.vy:232 · 1 rule · at 1000 → 1–988 · highest reached 4813
+  - group [ref=f1e324]:
+    - generic "+ The rules, or the doctrine?" [ref=f1e325] [cursor=pointer]
+  - generic [ref=f1e326]:
+    - heading "Rules that never fired" [level=2] [ref=f1e327]
+    - paragraph [ref=f1e328]: "Ranked by how often one requirement was solely to blame — the ones closest to working. Open a rule for its full breakdown: solid is where that clause was the only failure, faded is where it failed alongside others."
+    - generic [ref=f1e329]:
+      - generic [ref=f1e330]:
+        - generic [ref=f1e331]: Share of replayed states each clause was false
+        - generic [ref=f1e332]:
+          - generic [ref=f1e333]: only failure
+          - generic [ref=f1e335]: failed with others
+      - group [ref=f1e337]:
+        - generic "lay-mines 475 sole require count(idle-minelayers) > 0 365 · minelayer" [ref=f1e338] [cursor=pointer]:
+          - generic [ref=f1e339]: lay-mines
+          - generic [ref=f1e340]: 475 sole
+          - generic [ref=f1e341]: require count(idle-minelayers) > 0 365 · minelayer
+      - group [ref=f1e342]:
+        - generic "fire-paratroopers 445 sole require support-power-ready(SovietParatroopers) 233 · superweapon" [ref=f1e343] [cursor=pointer]:
+          - generic [ref=f1e344]: fire-paratroopers
+          - generic [ref=f1e345]: 445 sole
+          - generic [ref=f1e346]: require support-power-ready(SovietParatroopers) 233 · superweapon
+      - group [ref=f1e347]:
+        - generic "fire-parabombs 445 sole require support-power-ready(UkraineParabombs) 242 · superweapon" [ref=f1e348] [cursor=pointer]:
+          - generic [ref=f1e349]: fire-parabombs
+          - generic [ref=f1e350]: 445 sole
+          - generic [ref=f1e351]: require support-power-ready(UkraineParabombs) 242 · superweapon
+      - group [ref=f1e352]:
+        - generic "deliver-apc-to-target 245 sole require count(idle-engineer-loaded-apcs) > 0 87 · capture" [ref=f1e353] [cursor=pointer]:
+          - generic [ref=f1e354]: deliver-apc-to-target
+          - generic [ref=f1e355]: 245 sole
+          - generic [ref=f1e356]: require count(idle-engineer-loaded-apcs) > 0 87 · capture
+      - group [ref=f1e357]:
+        - generic "rebuild-tech-center 168 sole require can-build-role(tech-center) 252 · rebuild" [ref=f1e358] [cursor=pointer]:
+          - generic [ref=f1e359]: rebuild-tech-center
+          - generic [ref=f1e360]: 168 sole
+          - generic [ref=f1e361]: require can-build-role(tech-center) 252 · rebuild
+      - group [ref=f1e362]:
+        - generic "fire-spy-plane-update 161 sole require support-power-ready(SovietSpyPlane) 223 · superweapon" [ref=f1e363] [cursor=pointer]:
+          - generic [ref=f1e364]: fire-spy-plane-update
+          - generic [ref=f1e365]: 161 sole
+          - generic [ref=f1e366]: require support-power-ready(SovietSpyPlane) 223 · superweapon
+      - group [ref=f1e367]:
+        - generic "produce-minelayer 141 sole require not queue-busy(Vehicle) 355 · produce-vehicle" [ref=f1e368] [cursor=pointer]:
+          - generic [ref=f1e369]: produce-minelayer
+          - generic [ref=f1e370]: 141 sole
+          - generic [ref=f1e371]: require not queue-busy(Vehicle) 355 · produce-vehicle
+      - group [ref=f1e372]:
+        - generic "guard-harvesters 102 sole require squad-exists(harvester-guard) 120 · combat" [ref=f1e373] [cursor=pointer]:
+          - generic [ref=f1e374]: guard-harvesters
+          - generic [ref=f1e375]: 102 sole
+          - generic [ref=f1e376]: require squad-exists(harvester-guard) 120 · combat
+      - group [ref=f1e377]:
+        - generic "deliver-assault-apc 71 sole require count(idle-combat-loaded-apcs) > 0 159 · transport" [ref=f1e378] [cursor=pointer]:
+          - generic [ref=f1e379]: deliver-assault-apc
+          - generic [ref=f1e380]: 71 sole
+          - generic [ref=f1e381]: require count(idle-combat-loaded-apcs) > 0 159 · transport
+      - group [ref=f1e382]:
+        - generic "produce-basic-aircraft 69 sole cash >= cost 11 · produce-aircraft" [ref=f1e383] [cursor=pointer]:
+          - generic [ref=f1e384]: produce-basic-aircraft
+          - generic [ref=f1e385]: 69 sole
+          - generic [ref=f1e386]: cash >= cost 11 · produce-aircraft
+      - group [ref=f1e387]:
+        - generic "fire-nuke 53 sole require support-power-ready(NukePowerInfoOrder) 197 · superweapon" [ref=f1e388] [cursor=pointer]:
+          - generic [ref=f1e389]: fire-nuke
+          - generic [ref=f1e390]: 53 sole
+          - generic [ref=f1e391]: require support-power-ready(NukePowerInfoOrder) 197 · superweapon
+      - group [ref=f1e392]:
+        - generic "rebuild-harvester 45 sole require role-count(harvester) < role-count(refinery) 199 · rebuild" [ref=f1e393] [cursor=pointer]:
+          - generic [ref=f1e394]: rebuild-harvester
+          - generic [ref=f1e395]: 45 sole
+          - generic [ref=f1e396]: require role-count(harvester) < role-count(refinery) 199 · rebuild
+      - group [ref=f1e397]:
+        - generic "rebuild-barracks 37 sole require lost-role(barracks) 219 · rebuild" [ref=f1e398] [cursor=pointer]:
+          - generic [ref=f1e399]: rebuild-barracks
+          - generic [ref=f1e400]: 37 sole
+          - generic [ref=f1e401]: require lost-role(barracks) 219 · rebuild
+      - group [ref=f1e402]:
+        - generic "recall-overextended-ground-attack 35 sole require count(overextended-squad-members(ground-attack, round2(leash()))) > 0 32 · micro" [ref=f1e403] [cursor=pointer]:
+          - generic [ref=f1e404]: recall-overextended-ground-attack
+          - generic [ref=f1e405]: 35 sole
+          - generic [ref=f1e406]: require count(overextended-squad-members(ground-attack, round2(leash()))) > 0 32 · micro
+      - group [ref=f1e407]:
+        - generic "squad-disengage-ground-attack 35 sole require squad-threat-ratio(ground-attack, 0.1) > round2(lerpf(1.5, 3.0, aggression)) 52 · micro" [ref=f1e408] [cursor=pointer]:
+          - generic [ref=f1e409]: squad-disengage-ground-attack
+          - generic [ref=f1e410]: 35 sole
+          - generic [ref=f1e411]: require squad-threat-ratio(ground-attack, 0.1) > round2(lerpf(1.5, 3.0, aggression)) 52 · micro
+      - group [ref=f1e412]:
+        - generic "build-ore-silo 33 sole require can-build-role(ore-silo) 74 · economy" [ref=f1e413] [cursor=pointer]:
+          - generic [ref=f1e414]: build-ore-silo
+          - generic [ref=f1e415]: 33 sole
+          - generic [ref=f1e416]: require can-build-role(ore-silo) 74 · economy
+      - group [ref=f1e417]:
+        - generic "fire-spy-plane 31 sole require support-power-ready(SovietSpyPlane) 214 · superweapon" [ref=f1e418] [cursor=pointer]:
+          - generic [ref=f1e419]: fire-spy-plane
+          - generic [ref=f1e420]: 31 sole
+          - generic [ref=f1e421]: require support-power-ready(SovietSpyPlane) 214 · superweapon
+      - group [ref=f1e422]:
+        - generic "build-barracks 22 sole require not has-role(barracks) 73 · economy" [ref=f1e423] [cursor=pointer]:
+          - generic [ref=f1e424]: build-barracks
+          - generic [ref=f1e425]: 22 sole
+          - generic [ref=f1e426]: require not has-role(barracks) 73 · economy
+      - group [ref=f1e427]:
+        - generic "produce-capture-defense-infantry 18 sole require count(e1) < 3 136 · produce-infantry" [ref=f1e428] [cursor=pointer]:
+          - generic [ref=f1e429]: produce-capture-defense-infantry
+          - generic [ref=f1e430]: 18 sole
+          - generic [ref=f1e431]: require count(e1) < 3 136 · produce-infantry
+      - group [ref=f1e432]:
+        - generic "rebuild-refinery 17 sole require lost-role(refinery) 209 · rebuild" [ref=f1e433] [cursor=pointer]:
+          - generic [ref=f1e434]: rebuild-refinery
+          - generic [ref=f1e435]: 17 sole
+          - generic [ref=f1e436]: require lost-role(refinery) 209 · rebuild
+      - group [ref=f1e437]:
+        - generic "rebuild-radar 17 sole require lost-role(radar) 239 · rebuild" [ref=f1e438] [cursor=pointer]:
+          - generic [ref=f1e439]: rebuild-radar
+          - generic [ref=f1e440]: 17 sole
+          - generic [ref=f1e441]: require lost-role(radar) 239 · rebuild
+      - group [ref=f1e442]:
+        - generic "rebuild-airfield 15 sole require lost-role(airfield) 261 · rebuild" [ref=f1e443] [cursor=pointer]:
+          - generic [ref=f1e444]: rebuild-airfield
+          - generic [ref=f1e445]: 15 sole
+          - generic [ref=f1e446]: require lost-role(airfield) 261 · rebuild
+      - group [ref=f1e447]:
+        - generic "squad-attack 15 sole require squad-ready-ratio(ground-attack) >= round2(activation()) 78 · ground-attack-choice" [ref=f1e448] [cursor=pointer]:
+          - generic [ref=f1e449]: squad-attack
+          - generic [ref=f1e450]: 15 sole
+          - generic [ref=f1e451]: require squad-ready-ratio(ground-attack) >= round2(activation()) 78 · ground-attack-choice
+      - group [ref=f1e452]:
+        - generic "build-gap-generator 11 sole require power-excess >= 0 210 · defense" [ref=f1e453] [cursor=pointer]:
+          - generic [ref=f1e454]: build-gap-generator
+          - generic [ref=f1e455]: 11 sole
+          - generic [ref=f1e456]: require power-excess >= 0 210 · defense
+  - group [ref=f1e457]:
+    - generic "+ How to read this" [ref=f1e458] [cursor=pointer]
+  - contentinfo [ref=f1e459]:
+    - text: Generated by
+    - code [ref=f1e460]: currie report
+    - text: . Rule conditions compiled by vimyc from the
+    - code [ref=f1e461]: .vy
+    - text: sources; clause attribution comes from
+    - code [ref=f1e462]: IrRule.requires
+    - text: ", which the runtime has already flattened by the time a rule reaches it."

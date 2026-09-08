@@ -203,7 +203,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     <div class="figure">
       <div class="figure-head">
         <span class="figure-title">First action to last</span>
-        <span class="legend"><span style="font-family:var(--mono)">{{.DurationTicks}} ticks · game order</span></span>
+        <span class="legend"><span style="font-family:var(--mono)">{{.DurationTicks}} ticks · game order{{if .LateOmitted}} · earliest 24, {{.LateOmitted}} more not shown{{end}}</span></span>
       </div>
       <div class="onset">
         {{range .Late}}
@@ -227,7 +227,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
       
 <div class="figure-head">
         <span class="figure-title">States where this line alone was responsible, per 100 replayed</span>
-        <span class="legend"><span style="font-family:var(--mono)">a rate, so two games of different length compare{{if .InertSites}} · {{.InertSites}} correct lines ranked below: their rules already work, or {{.Faction}} can never satisfy them{{end}}</span></span>
+        <span class="legend"><span>a rate, so games of different length compare{{if .InertSites}} · {{.InertSites}} correct lines ranked below{{end}}</span></span>
         <span class="legend"><span><i class="chip sole"></i>solely responsible</span></span>
       </div>
       {{range .Sites}}
