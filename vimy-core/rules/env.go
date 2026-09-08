@@ -111,6 +111,20 @@ func (e RuleEnv) Cash() int {
 	return e.State.Player.Cash + e.State.Player.Resources
 }
 
+// IncomeRate is net cash change over the last sampling window, in credits.
+//
+// Net, not gross: it is negative or zero exactly when every credit is being
+// committed as it arrives, which is the pathology the savings model exists to
+// answer. Game 85 ran at cash 0 with a 500-tick delta of 0 while its build
+// queue never paused. A gross figure would report a healthy economy there.
+//
+// Sampled by the engine rather than derived here, because a rule environment
+// sees one tick and a rate needs two.
+func (e RuleEnv) IncomeRate() int {
+	v, _ := e.Memory["incomeRate"].(int)
+	return v
+}
+
 func (e RuleEnv) PowerExcess() int {
 	return e.State.Player.PowerProvided - e.State.Player.PowerDrained
 }

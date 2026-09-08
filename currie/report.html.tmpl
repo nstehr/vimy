@@ -198,7 +198,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
 
 <div class="figure-head">
         <span class="figure-title">States where this line alone was responsible, per 100 replayed</span>
-        <span class="legend"><span style="font-family:var(--mono)">a rate, so two games of different length compare</span></span>
+        <span class="legend"><span style="font-family:var(--mono)">a rate, so two games of different length compare{{if .InertSites}} · {{.InertSites}} correct lines ranked below: their rules already work, or {{.Faction}} can never satisfy them{{end}}</span></span>
         <span class="legend"><span><i class="chip sole"></i>solely responsible</span></span>
       </div>
       {{range .Sites}}
@@ -206,7 +206,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
         <span class="site-src">{{.Source}}</span>
         <span class="site-n">{{printf "%.0f" .SoleRate}}<span style="font-size:.7rem;font-weight:400">/100 states</span></span>
         <div class="bar"><i style="width:{{pct .SolePct}}%"></i></div>
-        <span class="site-meta">{{.File}}:{{.Line}} · blocks {{len .Rules}} rule{{if ne (len .Rules) 1}}s{{end}} · {{.Sole}} sole, {{.Blocked}} blocked over {{$.States}} states{{if .Live}} · <b style="color:var(--calm)">all of them already fire — the sample missed it</b>{{end}}</span>
+        <span class="site-meta">{{.File}}:{{.Line}} · blocks {{len .Rules}} rule{{if ne (len .Rules) 1}}s{{end}} · {{.Sole}} sole, {{.Blocked}} blocked over {{$.States}} states{{if .Live}} · <b style="color:var(--calm)">all of them already fire — the sample missed it</b>{{end}}{{if .Impossible}} · <b style="color:var(--calm)">{{$.Faction}} can never have <code>{{.Impossible}}</code>, so this line is correct and inert — nothing to change here</b>{{end}}</span>
       </div>
       {{else}}
       <div class="site"><span class="site-src">Nothing was ever solely responsible.</span></div>

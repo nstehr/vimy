@@ -172,3 +172,44 @@ func chains(rep report, dead []deadRule, firings map[string]int) []Chain {
 	}
 	return out
 }
+
+// --- Clauses this faction can never satisfy ---
+//
+// Game 85 was germany, and four of its top eight blame sites were
+// support-power-ready(SovietParatroopers), support-power-ready(UkraineParabombs)
+// and friends at 445 sole out of 475 states. Every one is correct and inert: an
+// Allied player never holds a Soviet power, so the rule cannot fire and nothing
+// about it should be changed.
+//
+// Blame cannot tell "this gate is too tight" from "this gate is shut for the
+// whole game by something no doctrine controls", so they rank as though they
+// were the tightest constraints in the game. They are the third kind of noise
+// found today, after guards that already succeeded and rules the sample missed.
+
+var supportPowerClause = regexp.MustCompile(`support-power-ready\(([A-Za-z]+)\)`)
+var roleClause = regexp.MustCompile(`(?:has-role|can-build-role|role-count)\(([a-z0-9-]+)\)`)
+
+// impossibleFor returns what a clause asks for that this faction can never
+// have, or "" when the clause is satisfiable in principle.
+func impossibleFor(source, faction string) string {
+	if faction == "" {
+		return ""
+	}
+	if m := supportPowerClause.FindStringSubmatch(source); m != nil {
+		if !rules.SupportPowerReachable(m[1], faction) {
+			return m[1]
+		}
+	}
+	for _, m := range roleClause.FindAllStringSubmatch(source, -1) {
+		role := strings.ReplaceAll(m[1], "-", "_")
+		// Only a positive mention: `not has-role(x)` is satisfied by never
+		// having x, which is the opposite of impossible.
+		if strings.Contains(source, "not has-role("+m[1]+")") {
+			continue
+		}
+		if !rules.BuildableByFaction(role, faction) {
+			return m[1]
+		}
+	}
+	return ""
+}

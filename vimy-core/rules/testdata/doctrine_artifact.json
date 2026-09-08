@@ -1,419 +1,111 @@
 [
   {
-    "name": "deploy-mcv",
-    "priority": 1000,
-    "category": "setup",
-    "exclusive": true,
-    "action": "deploy-mcv",
-    "condition": "HasUnit(\"mcv\") && !HasRole(\"construction_yard\")"
-  },
-  {
-    "name": "recover-mcv",
-    "priority": 950,
-    "category": "setup",
-    "exclusive": true,
-    "action": "produce-mcv",
-    "condition": "!HasRole(\"construction_yard\") && !HasUnit(\"mcv\") && HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuild(\"Vehicle\",\"mcv\") && Cash() >= 1000"
-  },
-  {
-    "name": "place-ready-building",
-    "priority": 900,
-    "category": "economy",
-    "exclusive": true,
-    "action": "place-building",
-    "condition": "QueueReady(\"Building\")"
-  },
-  {
-    "name": "place-ready-defense",
-    "priority": 895,
-    "category": "defense",
-    "exclusive": true,
-    "action": "place-defense",
-    "condition": "QueueReady(\"Defense\")"
-  },
-  {
-    "name": "unblock-war-factory-egress",
-    "priority": 892,
-    "category": "vehicle-maintenance",
-    "exclusive": true,
-    "action": "unblock-war-factory-egress",
-    "condition": "HasRole(\"war_factory\") && QueueReady(\"Vehicle\")"
-  },
-  {
-    "name": "cancel-stuck-aircraft",
-    "priority": 891,
-    "category": "aircraft-maintenance",
-    "exclusive": true,
-    "action": "cancel-stuck-aircraft",
-    "condition": "QueueReady(\"Aircraft\")"
-  },
-  {
-    "name": "capture-building",
-    "priority": 850,
-    "category": "capture",
-    "exclusive": false,
-    "action": "capture-building",
-    "condition": "CapturableCount() > 0 && len(IdleEngineers()) > 0 && (!CanBuildTransport() || EngineerNearCapturable())"
-  },
-  {
-    "name": "deliver-apc-to-target",
-    "priority": 847,
-    "category": "capture",
-    "exclusive": false,
-    "action": "unload-apc-near-target",
-    "condition": "CapturableCount() > 0 && len(IdleEngineerLoadedAPCs()) > 0"
-  },
-  {
-    "name": "load-engineer-into-apc",
-    "priority": 845,
-    "category": "capture",
-    "exclusive": false,
-    "action": "load-engineer-into-apc",
-    "condition": "(RoleCount(\"engineer\") > 0 || TransportCount() > 0) && len(IdleEngineers()) > 0 && len(IdleEmptyAPCs()) > 0 && !EngineerNearCapturable()"
-  },
-  {
-    "name": "produce-apc",
-    "priority": 470,
-    "category": "produce-vehicle",
-    "exclusive": true,
-    "action": "produce-apc",
-    "condition": "CapturableCount() > 0 && RoleCount(\"engineer\") > 0 && HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuildTransport() && TransportCount() < 1 && Cash() >= 800"
-  },
-  {
-    "name": "produce-engineer",
-    "priority": 450,
-    "category": "produce-infantry",
-    "exclusive": true,
-    "action": "produce-engineer",
-    "condition": "CapturableCount() > 0 && !QueueBusy(\"Infantry\") && CanBuildRole(\"engineer\") && RoleCount(\"engineer\") < CapturableCount() && RoleCount(\"engineer\") < 2 && Cash() >= 500"
-  },
-  {
-    "name": "produce-capture-defense-infantry",
-    "priority": 440,
-    "category": "produce-infantry",
-    "exclusive": true,
-    "action": "produce-infantry",
-    "condition": "HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuild(\"Infantry\",\"e1\") && UnitCount(\"e1\") < 3 && Cash() >= 100"
-  },
-  {
-    "name": "produce-assault-apc",
-    "priority": 477,
-    "category": "produce-vehicle",
-    "exclusive": true,
-    "action": "produce-apc",
-    "condition": "HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuildTransport() && TransportCount() < 1 && Cash() >= 800 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2800) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2300)"
-  },
-  {
-    "name": "deliver-assault-apc",
-    "priority": 840,
-    "category": "transport",
-    "exclusive": false,
-    "action": "deliver-assault-apc",
-    "condition": "HasEnemyIntel() && len(IdleCombatLoadedAPCs()) > 0"
-  },
-  {
-    "name": "load-assault-infantry",
-    "priority": 838,
-    "category": "transport",
-    "exclusive": false,
-    "action": "load-combat-infantry",
-    "condition": "len(IdleCombatInfantry()) > 0 && len(IdleEmptyAPCs()) > 0"
-  },
-  {
-    "name": "rebuild-power-plant",
-    "priority": 840,
-    "category": "rebuild",
-    "exclusive": true,
-    "action": "produce-power-plant",
-    "condition": "LostRole(\"power_plant\") && PowerExcess() < 0 && !QueueBusy(\"Building\") && CanBuildRole(\"power_plant\") && Cash() >= 300"
-  },
-  {
-    "name": "rebuild-advanced-power",
-    "priority": 835,
-    "category": "rebuild",
-    "exclusive": true,
-    "action": "produce-advanced-power",
-    "condition": "LostRole(\"advanced_power\") && PowerExcess() < 0 && !QueueBusy(\"Building\") && CanBuildRole(\"advanced_power\") && Cash() >= 500"
-  },
-  {
-    "name": "rebuild-harvester",
-    "priority": 830,
-    "category": "rebuild",
-    "exclusive": true,
-    "action": "produce-harvester",
-    "condition": "HasRole(\"refinery\") && RoleCount(\"harvester\") == 0 && !QueueBusy(\"Vehicle\") && CanBuildRole(\"harvester\") && Cash() >= 600"
-  },
-  {
-    "name": "rebuild-refinery",
-    "priority": 825,
-    "category": "rebuild",
-    "exclusive": true,
-    "action": "produce-refinery",
-    "condition": "LostRole(\"refinery\") && !QueueBusy(\"Building\") && CanBuildRole(\"refinery\") && Cash() >= 500"
-  },
-  {
-    "name": "rebuild-barracks",
-    "priority": 820,
-    "category": "rebuild",
-    "exclusive": true,
-    "action": "produce-barracks",
-    "condition": "LostRole(\"barracks\") && !QueueBusy(\"Building\") && CanBuildRole(\"barracks\") && Cash() >= 200"
-  },
-  {
-    "name": "rebuild-war-factory",
-    "priority": 815,
-    "category": "rebuild",
-    "exclusive": true,
-    "action": "produce-war-factory",
-    "condition": "LostRole(\"war_factory\") && !QueueBusy(\"Building\") && CanBuildRole(\"war_factory\") && Cash() >= 1000"
-  },
-  {
-    "name": "rebuild-radar",
-    "priority": 810,
-    "category": "rebuild",
-    "exclusive": true,
-    "action": "produce-radar",
-    "condition": "LostRole(\"radar\") && !QueueBusy(\"Building\") && !QueueProducingRole(\"radar\") && CanBuildRole(\"radar\") && Cash() >= 500"
-  },
-  {
-    "name": "rebuild-tech-center",
-    "priority": 805,
-    "category": "rebuild",
-    "exclusive": true,
-    "action": "produce-tech-center",
-    "condition": "LostRole(\"tech_center\") && !QueueBusy(\"Building\") && CanBuildRole(\"tech_center\") && HasRole(\"radar\") && Cash() >= 1000"
-  },
-  {
-    "name": "rebuild-airfield",
-    "priority": 800,
-    "category": "rebuild",
-    "exclusive": true,
-    "action": "produce-airfield",
-    "condition": "LostRole(\"airfield\") && !QueueBusy(\"Building\") && CanBuildRole(\"airfield\") && Cash() >= 300"
-  },
-  {
-    "name": "rebuild-naval-yard",
-    "priority": 800,
-    "category": "rebuild",
-    "exclusive": true,
-    "action": "produce-naval-yard",
-    "condition": "MapHasWater() && LostRole(\"naval_yard\") && !QueueBusy(\"Building\") && CanBuildRole(\"naval_yard\") && Cash() >= 300"
-  },
-  {
-    "name": "rebuild-service-depot",
-    "priority": 795,
-    "category": "rebuild",
-    "exclusive": true,
-    "action": "produce-service-depot",
-    "condition": "LostRole(\"service_depot\") && !QueueBusy(\"Building\") && CanBuildRole(\"service_depot\") && Cash() >= 800"
-  },
-  {
-    "name": "rebuild-missile-silo",
-    "priority": 790,
-    "category": "rebuild",
-    "exclusive": true,
-    "action": "produce-missile-silo",
-    "condition": "LostRole(\"missile_silo\") && !QueueBusy(\"Defense\") && CanBuildRole(\"missile_silo\") && Cash() >= 2500"
-  },
-  {
-    "name": "rebuild-iron-curtain",
-    "priority": 785,
-    "category": "rebuild",
-    "exclusive": true,
-    "action": "produce-iron-curtain",
-    "condition": "LostRole(\"iron_curtain\") && !QueueBusy(\"Defense\") && CanBuildRole(\"iron_curtain\") && Cash() >= 2500"
-  },
-  {
-    "name": "rebuild-kennel",
-    "priority": 780,
-    "category": "rebuild",
-    "exclusive": true,
-    "action": "produce-kennel",
-    "condition": "LostRole(\"kennel\") && !QueueBusy(\"Building\") && CanBuildRole(\"kennel\") && Cash() >= 200"
-  },
-  {
-    "name": "defend-critical-building",
-    "priority": 360,
-    "category": "combat",
-    "exclusive": false,
-    "action": "defend-critical-building",
-    "condition": "CriticalBuildingUnderAttack() && len(NearBaseGroundUnits()) > 0"
-  },
-  {
-    "name": "scramble-base-defense",
-    "priority": 350,
-    "category": "combat",
-    "exclusive": false,
-    "action": "defend-base",
-    "condition": "BaseUnderAttack() && len(UnassignedIdleGround()) > 0"
-  },
-  {
-    "name": "scramble-naval-defense",
-    "priority": 350,
-    "category": "naval-combat",
-    "exclusive": false,
-    "action": "naval-defend-base",
-    "condition": "MapHasWater() && BaseUnderAttack() && len(IdleNavalUnits()) > 0"
-  },
-  {
-    "name": "emergency-base-defense",
-    "priority": 349,
-    "category": "emergency-defense",
-    "exclusive": false,
-    "action": "emergency-defend-base",
-    "condition": "BaseUnderAttack() && len(IdleGroundUnits()) == 0 && len(NearBaseGroundUnits()) > 0"
-  },
-  {
-    "name": "repair-buildings",
-    "priority": 200,
-    "category": "maintenance",
-    "exclusive": false,
-    "action": "repair-buildings",
-    "condition": "len(DamagedBuildings()) > 0"
-  },
-  {
-    "name": "return-idle-harvesters",
-    "priority": 100,
-    "category": "harvester",
-    "exclusive": false,
-    "action": "send-harvesters",
-    "condition": "len(IdleHarvesters()) > 0"
-  },
-  {
-    "name": "build-power",
-    "priority": 800,
-    "category": "economy",
-    "exclusive": true,
-    "action": "produce-power-plant",
-    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"power_plant\") && (PowerExcess() < 0 || RoleCount(\"power_plant\") == 0) && Cash() >= 290"
-  },
-  {
-    "name": "build-refinery",
-    "priority": 750,
-    "category": "economy",
-    "exclusive": true,
-    "action": "produce-refinery",
-    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"refinery\") && RoleCount(\"refinery\") < 1 && Cash() >= 1160"
-  },
-  {
-    "name": "build-second-refinery",
-    "priority": 658,
-    "category": "economy",
-    "exclusive": true,
-    "action": "produce-refinery",
-    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"refinery\") && RoleCount(\"refinery\") == 1 && (HasRole(\"barracks\") || HasRole(\"war_factory\")) && Cash() >= 800"
-  },
-  {
-    "name": "build-extra-refinery",
-    "priority": 632,
-    "category": "economy",
-    "exclusive": true,
-    "action": "produce-refinery",
-    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"refinery\") && RoleCount(\"refinery\") >= 2 && RoleCount(\"refinery\") < 4 && (HasRole(\"barracks\") || HasRole(\"war_factory\")) && Cash() >= 1160"
-  },
-  {
-    "name": "build-advanced-power",
-    "priority": 790,
-    "category": "economy",
-    "exclusive": true,
-    "action": "produce-advanced-power",
-    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"advanced_power\") && PowerExcess() < 50 && Cash() >= 500"
-  },
-  {
-    "name": "build-ore-silo",
-    "priority": 300,
-    "category": "economy",
-    "exclusive": true,
-    "action": "produce-ore-silo",
-    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"ore_silo\") && ResourcesNearCap() && RoleCount(\"ore_silo\") < 1 && Cash() >= 150"
-  },
-  {
-    "name": "produce-extra-harvester",
-    "priority": 510,
-    "category": "produce-vehicle",
-    "exclusive": true,
-    "action": "produce-harvester",
-    "condition": "HasRole(\"refinery\") && HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuildRole(\"harvester\") && RoleCount(\"harvester\") < RoleCount(\"refinery\") + 1 && Cash() >= 1400"
-  },
-  {
     "name": "build-radar",
-    "priority": 710,
+    "priority": 570,
     "category": "economy",
     "exclusive": true,
+    "because": "radar is the tech gate for vehicles, aircraft and naval",
     "action": "produce-radar",
-    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"radar\") && !HasRole(\"radar\") && !QueueProducingRole(\"radar\") && (HasRole(\"barracks\") || HasRole(\"war_factory\")) && PowerExcess() >= 0 && Cash() >= 1000"
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"radar\") && !HasRole(\"radar\") && !QueueProducingRole(\"radar\") && (HasRole(\"barracks\") || HasRole(\"war_factory\")) && PowerExcess() >= 0 && Cash() >= 1000",
+    "source": "rule build-radar {\n  priority 570\n  category economy exclusive\n  because \"radar is the tech gate for vehicles, aircraft and naval\"\n  do produce-radar\n  require not is-rushed\n  require not queue-busy(Building)\n  require can-build-role(radar)\n  require not has-role(radar)\n  require not queue-producing-role(radar)\n  require has-role(barracks) or has-role(war-factory)\n  require power-excess >= 0\n  require cash >= 1000\n}"
   },
   {
     "name": "build-barracks",
     "priority": 745,
     "category": "economy",
     "exclusive": true,
+    "because": "barracks unblocks the whole infantry queue, so it outranks radar",
     "action": "produce-barracks",
-    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"barracks\") && !HasRole(\"barracks\") && PowerExcess() >= 0 && Cash() >= 300"
+    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"barracks\") && !HasRole(\"barracks\") && PowerExcess() >= 0 && Cash() >= 300",
+    "source": "rule build-barracks {\n  priority 745\n  category economy exclusive\n  because \"barracks unblocks the whole infantry queue, so it outranks radar\"\n  do produce-barracks\n  require not queue-busy(Building)\n  require can-build-role(barracks)\n  require not has-role(barracks)\n  require power-excess >= 0\n  require cash >= 300\n}"
   },
   {
     "name": "build-war-factory",
-    "priority": 720,
+    "priority": 751,
     "category": "economy",
     "exclusive": true,
+    "because": "vehicles are universally useful, so the war factory precedes naval and air yards",
     "action": "produce-war-factory",
-    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"war_factory\") && !HasRole(\"war_factory\") && PowerExcess() >= 0 && Cash() >= 2225"
+    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"war_factory\") && !HasRole(\"war_factory\") && PowerExcess() >= 0 && Cash() >= 2020",
+    "source": "rule build-war-factory {\n  priority 751\n  category economy exclusive\n  because \"vehicles are universally useful, so the war factory precedes naval and air yards\"\n  do produce-war-factory\n  require not queue-busy(Building)\n  require can-build-role(war-factory)\n  require not has-role(war-factory)\n  require power-excess >= 0\n  require cash >= 2020\n}"
   },
   {
     "name": "build-airfield",
-    "priority": 600,
+    "priority": 670,
     "category": "economy",
     "exclusive": true,
+    "because": "does not spend the war factory's money: an exclusive category picks the highest-priority rule whose condition HOLDS, so a cash gate keeps the dearer rule out of the running entirely and the category builds cheapest-first — the war factory outranks this by fifty points and in game 83 was built thirty-five points of game later",
     "action": "produce-airfield",
-    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"airfield\") && !HasRole(\"airfield\") && PowerExcess() >= 0 && Cash() >= 500"
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"airfield\") && !HasRole(\"airfield\") && PowerExcess() >= 0 && Cash() >= 500 && (HasRole(\"war_factory\") || Cash() >= 2520) && (HasRole(\"service_depot\") || Cash() >= 1700)",
+    "source": "rule build-airfield {\n  priority 670\n  category economy exclusive\n  because \"does not spend the war factory's money: an exclusive category picks the highest-priority rule whose condition HOLDS, so a cash gate keeps the dearer rule out of the running entirely and the category builds cheapest-first — the war factory outranks this by fifty points and in game 83 was built thirty-five points of game later\"\n  do produce-airfield\n  require not is-rushed\n  require not queue-busy(Building)\n  require can-build-role(airfield)\n  require not has-role(airfield)\n  require power-excess >= 0\n  require cash >= 500\n  require has-role(war-factory) or cash >= 2520\n  require has-role(service-depot) or cash >= 1700\n}"
   },
   {
     "name": "build-service-depot",
-    "priority": 570,
+    "priority": 680,
     "category": "economy",
     "exclusive": true,
+    "because": "not a repair bay — fix is the prerequisite for the medium tank, the heavy tank and the mammoth, so without one the only armour either side can field is the Allied light tank; game 84 never built it, fought with light tanks and artillery, and met six tesla tanks and two mammoths",
     "action": "produce-service-depot",
-    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"service_depot\") && !HasRole(\"service_depot\") && HasRole(\"war_factory\") && PowerExcess() >= 0 && Cash() >= 1200"
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"service_depot\") && !HasRole(\"service_depot\") && HasRole(\"war_factory\") && PowerExcess() >= 0 && Cash() >= 1200",
+    "source": "rule build-service-depot {\n  priority 680\n  category economy exclusive\n  because \"not a repair bay — fix is the prerequisite for the medium tank, the heavy tank and the mammoth, so without one the only armour either side can field is the Allied light tank; game 84 never built it, fought with light tanks and artillery, and met six tesla tanks and two mammoths\"\n  do produce-service-depot\n  require not is-rushed\n  require not queue-busy(Building)\n  require can-build-role(service-depot)\n  require not has-role(service-depot)\n  require has-role(war-factory)\n  require power-excess >= 0\n  require cash >= 1200\n}"
+  },
+  {
+    "name": "build-naval-yard",
+    "priority": 669,
+    "category": "economy",
+    "exclusive": true,
+    "because": "below the airfield when air and naval are weighted the same",
+    "action": "produce-naval-yard",
+    "condition": "!IsRushed() && MapHasWater() && !QueueBusy(\"Building\") && CanBuildRole(\"naval_yard\") && !HasRole(\"naval_yard\") && PowerExcess() >= 0 && Cash() >= 500",
+    "source": "rule build-naval-yard {\n  priority 669\n  category economy exclusive\n  because \"below the airfield when air and naval are weighted the same\"\n  do produce-naval-yard\n  require not is-rushed\n  require map-has-water\n  require not queue-busy(Building)\n  require can-build-role(naval-yard)\n  require not has-role(naval-yard)\n  require power-excess >= 0\n  require cash >= 500\n}"
   },
   {
     "name": "build-base-defense",
-    "priority": 490,
+    "priority": 580,
     "category": "defense",
     "exclusive": true,
     "action": "produce-defense",
-    "condition": "!QueueBusy(\"Defense\") && PowerExcess() >= 0 && (CanBuildRole(\"pillbox\") || CanBuildRole(\"camo_pillbox\") || CanBuildRole(\"turret\") || CanBuildRole(\"flame_tower\") || CanBuildRole(\"tesla_coil\")) && RoleCount(\"pillbox\") + RoleCount(\"camo_pillbox\") + RoleCount(\"turret\") + RoleCount(\"flame_tower\") + RoleCount(\"tesla_coil\") < 6 && Cash() >= 960"
+    "condition": "!QueueBusy(\"Defense\") && PowerExcess() >= 0 && (CanBuildRole(\"pillbox\") || CanBuildRole(\"camo_pillbox\") || CanBuildRole(\"turret\") || CanBuildRole(\"flame_tower\") || CanBuildRole(\"tesla_coil\")) && RoleCount(\"pillbox\") + RoleCount(\"camo_pillbox\") + RoleCount(\"turret\") + RoleCount(\"flame_tower\") + RoleCount(\"tesla_coil\") < 9 && Cash() >= 420 && (HasRole(\"radar\") || Cash() >= 1420) && (IncomeRate() > 0 || HasRole(\"refinery\") || Cash() >= 1820) && (IncomeRate() > 0 || HasRole(\"war_factory\") || Cash() >= 2440) && (IncomeRate() > 0 || HasRole(\"service_depot\") || Cash() >= 1620) && (IncomeRate() > 0 || HasRole(\"radar\") || Cash() >= 1420)",
+    "source": "rule build-base-defense {\n  priority 580\n  category defense exclusive\n  do produce-defense\n  require not queue-busy(Defense)\n  require power-excess >= 0\n  require can-build-role(pillbox) or can-build-role(camo-pillbox) or can-build-role(turret) or can-build-role(flame-tower) or can-build-role(tesla-coil)\n  require role-count(pillbox) + role-count(camo-pillbox) + role-count(turret) + role-count(flame-tower) + role-count(tesla-coil) < 9\n  require cash >= 420 and (has-role(radar) or cash >= 1420) and (income-rate > 0 or has-role(refinery) or cash >= 1820) and (income-rate > 0 or has-role(war-factory) or cash >= 2440) and (income-rate > 0 or has-role(service-depot) or cash >= 1620) and (income-rate > 0 or has-role(radar) or cash >= 1420)\n}"
   },
   {
     "name": "build-base-defense-rush",
-    "priority": 590,
+    "priority": 680,
     "category": "defense",
     "exclusive": true,
+    "because": "under a rush, defenses go up before the next refinery",
     "action": "produce-defense",
-    "condition": "IsRushed() && !QueueBusy(\"Defense\") && PowerExcess() >= 0 && (CanBuildRole(\"pillbox\") || CanBuildRole(\"camo_pillbox\") || CanBuildRole(\"turret\") || CanBuildRole(\"flame_tower\") || CanBuildRole(\"tesla_coil\")) && RoleCount(\"pillbox\") + RoleCount(\"camo_pillbox\") + RoleCount(\"turret\") + RoleCount(\"flame_tower\") + RoleCount(\"tesla_coil\") < 6 && Cash() >= 200"
+    "condition": "IsRushed() && !QueueBusy(\"Defense\") && PowerExcess() >= 0 && (CanBuildRole(\"pillbox\") || CanBuildRole(\"camo_pillbox\") || CanBuildRole(\"turret\") || CanBuildRole(\"flame_tower\") || CanBuildRole(\"tesla_coil\")) && RoleCount(\"pillbox\") + RoleCount(\"camo_pillbox\") + RoleCount(\"turret\") + RoleCount(\"flame_tower\") + RoleCount(\"tesla_coil\") < 9 && Cash() >= 200",
+    "source": "rule build-base-defense-rush {\n  priority 680\n  category defense exclusive\n  because \"under a rush, defenses go up before the next refinery\"\n  do produce-defense\n  require is-rushed\n  require not queue-busy(Defense)\n  require power-excess >= 0\n  require can-build-role(pillbox) or can-build-role(camo-pillbox) or can-build-role(turret) or can-build-role(flame-tower) or can-build-role(tesla-coil)\n  require role-count(pillbox) + role-count(camo-pillbox) + role-count(turret) + role-count(flame-tower) + role-count(tesla-coil) < 9\n  require cash >= 200\n}"
   },
   {
     "name": "build-aa-defense",
-    "priority": 470,
+    "priority": 579,
     "category": "defense",
     "exclusive": true,
+    "because": "below base defense when the doctrine weights air and ground the same, which is how the strategist usually sets them",
     "action": "produce-aa-defense",
-    "condition": "!QueueBusy(\"Defense\") && PowerExcess() >= 0 && CanBuildRole(\"aa_defense\") && RoleCount(\"aa_defense\") < 3 && Cash() >= 955"
+    "condition": "!QueueBusy(\"Defense\") && PowerExcess() >= 0 && CanBuildRole(\"aa_defense\") && RoleCount(\"aa_defense\") < 5 && Cash() >= 570 && (HasRole(\"radar\") || Cash() >= 1570) && (IncomeRate() > 0 || HasRole(\"refinery\") || Cash() >= 1970) && (IncomeRate() > 0 || HasRole(\"war_factory\") || Cash() >= 2590) && (IncomeRate() > 0 || HasRole(\"service_depot\") || Cash() >= 1770) && (IncomeRate() > 0 || HasRole(\"radar\") || Cash() >= 1570)",
+    "source": "rule build-aa-defense {\n  priority 579\n  category defense exclusive\n  because \"below base defense when the doctrine weights air and ground the same, which is how the strategist usually sets them\"\n  do produce-aa-defense\n  require not queue-busy(Defense)\n  require power-excess >= 0\n  require can-build-role(aa-defense)\n  require role-count(aa-defense) < 5\n  require cash >= 570 and (has-role(radar) or cash >= 1570) and (income-rate > 0 or has-role(refinery) or cash >= 1970) and (income-rate > 0 or has-role(war-factory) or cash >= 2590) and (income-rate > 0 or has-role(service-depot) or cash >= 1770) and (income-rate > 0 or has-role(radar) or cash >= 1570)\n}"
   },
   {
     "name": "build-gap-generator",
-    "priority": 468,
+    "priority": 533,
     "category": "defense",
     "exclusive": true,
+    "because": "the least urgent of the three defenses, so it goes below both",
     "action": "produce-gap-generator",
-    "condition": "!IsRushed() && !QueueBusy(\"Defense\") && PowerExcess() >= 0 && CanBuildRole(\"gap_generator\") && HasRole(\"tech_center\") && RoleCount(\"gap_generator\") < 1 && Cash() >= 800"
+    "condition": "!IsRushed() && !QueueBusy(\"Defense\") && PowerExcess() >= 0 && CanBuildRole(\"gap_generator\") && HasRole(\"tech_center\") && RoleCount(\"gap_generator\") < 2 && Cash() >= 800 && (HasRole(\"radar\") || Cash() >= 1800) && (IncomeRate() > 0 || HasRole(\"refinery\") || Cash() >= 2200) && (IncomeRate() > 0 || HasRole(\"war_factory\") || Cash() >= 2820) && (IncomeRate() > 0 || HasRole(\"service_depot\") || Cash() >= 2000) && (IncomeRate() > 0 || HasRole(\"radar\") || Cash() >= 1800)",
+    "source": "rule build-gap-generator {\n  priority 533\n  category defense exclusive\n  because \"the least urgent of the three defenses, so it goes below both\"\n  do produce-gap-generator\n  require not is-rushed\n  require not queue-busy(Defense)\n  require power-excess >= 0\n  require can-build-role(gap-generator)\n  require has-role(tech-center)\n  require role-count(gap-generator) < 2\n  require cash >= 800 and (has-role(radar) or cash >= 1800) and (income-rate > 0 or has-role(refinery) or cash >= 2200) and (income-rate > 0 or has-role(war-factory) or cash >= 2820) and (income-rate > 0 or has-role(service-depot) or cash >= 2000) and (income-rate > 0 or has-role(radar) or cash >= 1800)\n}"
   },
   {
     "name": "build-tech-center",
-    "priority": 636,
+    "priority": 654,
     "category": "economy",
     "exclusive": true,
     "action": "produce-tech-center",
-    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"tech_center\") && !HasRole(\"tech_center\") && HasRole(\"radar\") && PowerExcess() >= 0 && Cash() >= 1500"
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"tech_center\") && !HasRole(\"tech_center\") && HasRole(\"radar\") && PowerExcess() >= 0 && Cash() >= 1500",
+    "source": "rule build-tech-center {\n  priority 654\n  category economy exclusive\n  do produce-tech-center\n  require not is-rushed\n  require not queue-busy(Building)\n  require can-build-role(tech-center)\n  require not has-role(tech-center)\n  require has-role(radar)\n  require power-excess >= 0\n  require cash >= 1500\n}"
   },
   {
     "name": "build-missile-silo",
@@ -421,7 +113,8 @@
     "category": "superweapon-build",
     "exclusive": true,
     "action": "produce-missile-silo",
-    "condition": "!IsRushed() && !QueueBusy(\"Defense\") && CanBuildRole(\"missile_silo\") && !HasRole(\"missile_silo\") && HasRole(\"tech_center\") && PowerExcess() >= 0 && Cash() >= 2500"
+    "condition": "!IsRushed() && !QueueBusy(\"Defense\") && CanBuildRole(\"missile_silo\") && !HasRole(\"missile_silo\") && HasRole(\"tech_center\") && PowerExcess() >= 0 && Cash() >= 2500",
+    "source": "rule build-missile-silo {\n  priority 650\n  category superweapon-build exclusive\n  do produce-missile-silo\n  require not is-rushed\n  require not queue-busy(Defense)\n  require can-build-role(missile-silo)\n  require not has-role(missile-silo)\n  require has-role(tech-center)\n  require power-excess >= 0\n  require cash >= 2500\n}"
   },
   {
     "name": "build-iron-curtain",
@@ -429,255 +122,183 @@
     "category": "superweapon-build",
     "exclusive": true,
     "action": "produce-iron-curtain",
-    "condition": "!IsRushed() && !QueueBusy(\"Defense\") && CanBuildRole(\"iron_curtain\") && !HasRole(\"iron_curtain\") && HasRole(\"tech_center\") && PowerExcess() >= 0 && Cash() >= 2500"
+    "condition": "!IsRushed() && !QueueBusy(\"Defense\") && CanBuildRole(\"iron_curtain\") && !HasRole(\"iron_curtain\") && HasRole(\"tech_center\") && PowerExcess() >= 0 && Cash() >= 2500",
+    "source": "rule build-iron-curtain {\n  priority 640\n  category superweapon-build exclusive\n  do produce-iron-curtain\n  require not is-rushed\n  require not queue-busy(Defense)\n  require can-build-role(iron-curtain)\n  require not has-role(iron-curtain)\n  require has-role(tech-center)\n  require power-excess >= 0\n  require cash >= 2500\n}"
+  },
+  {
+    "name": "build-extra-barracks",
+    "priority": 500,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-barracks",
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"barracks\") && RoleCount(\"barracks\") < 3 && PowerExcess() >= 0 && Cash() >= 300",
+    "source": "rule build-extra-barracks {\n  priority 500\n  category economy exclusive\n  do produce-barracks\n  require not is-rushed\n  require not queue-busy(Building)\n  require can-build-role(barracks)\n  require role-count(barracks) < 3\n  require power-excess >= 0\n  require cash >= 300\n}"
+  },
+  {
+    "name": "build-extra-war-factory",
+    "priority": 490,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-war-factory",
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"war_factory\") && RoleCount(\"war_factory\") < 2 && PowerExcess() >= 0 && Cash() >= 2000",
+    "source": "rule build-extra-war-factory {\n  priority 490\n  category economy exclusive\n  do produce-war-factory\n  require not is-rushed\n  require not queue-busy(Building)\n  require can-build-role(war-factory)\n  require role-count(war-factory) < 2\n  require power-excess >= 0\n  require cash >= 2000\n}"
   },
   {
     "name": "build-extra-airfield",
     "priority": 480,
     "category": "economy",
     "exclusive": true,
+    "because": "grow pads to match the doctrine's aircraft ambition, but only once the ones we have fill up",
     "action": "produce-airfield",
-    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"airfield\") && AircraftCapacity() < 3 && CombatAircraftCount() >= AircraftCapacity() - 1 && PowerExcess() >= 0 && Cash() >= 500"
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"airfield\") && AircraftCapacity() < 7 && CombatAircraftCount() >= AircraftCapacity() - 1 && PowerExcess() >= 0 && Cash() >= 500",
+    "source": "rule build-extra-airfield {\n  priority 480\n  category economy exclusive\n  because \"grow pads to match the doctrine's aircraft ambition, but only once the ones we have fill up\"\n  do produce-airfield\n  require not is-rushed\n  require not queue-busy(Building)\n  require can-build-role(airfield)\n  require aircraft-capacity < 7\n  require combat-aircraft-count >= aircraft-capacity - 1\n  require power-excess >= 0\n  require cash >= 500\n}"
   },
   {
-    "name": "produce-specialist-infantry",
-    "priority": 490,
-    "category": "produce-infantry",
-    "exclusive": true,
-    "action": "produce-specialist-infantry",
-    "condition": "HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuildAnySpecialist() && SpecialistInfantryCount() < 2 && Cash() >= 300 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2300) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1800) && (CombatVehicleCount() >= 7 || Cash() >= 540)"
-  },
-  {
-    "name": "produce-infantry",
-    "priority": 500,
-    "category": "produce-infantry",
-    "exclusive": true,
-    "action": "produce-infantry",
-    "condition": "!AxisBurned(\"infantry\") && HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuild(\"Infantry\",\"e1\") && UnitCount(\"e1\") < 11 && Cash() >= 100 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2100) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1600) && (CombatVehicleCount() >= 7 || Cash() >= 340)"
-  },
-  {
-    "name": "produce-infantry-rush",
-    "priority": 520,
-    "category": "produce-infantry",
-    "exclusive": true,
-    "action": "produce-infantry",
-    "condition": "IsRushed() && !AxisBurned(\"infantry\") && HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuild(\"Infantry\",\"e1\") && UnitCount(\"e1\") < 22 && Cash() >= 50"
-  },
-  {
-    "name": "produce-bridge-infantry",
-    "priority": 495,
-    "category": "produce-infantry",
-    "exclusive": true,
-    "action": "produce-infantry",
-    "condition": "!AxisBurned(\"infantry\") && HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuild(\"Infantry\",\"e1\") && (!HasRole(\"airfield\") || !HasRole(\"war_factory\")) && UnitCount(\"e1\") >= 11 && UnitCount(\"e1\") < 16 && Cash() >= 100 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2100) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1600) && (CombatVehicleCount() >= 7 || Cash() >= 340)"
-  },
-  {
-    "name": "produce-grenadier",
-    "priority": 498,
-    "category": "produce-infantry",
-    "exclusive": true,
-    "action": "produce-grenadier",
-    "condition": "!AxisBurned(\"infantry\") && HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuildRole(\"grenadier\") && RoleCount(\"grenadier\") < 3 && Cash() >= 160 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2160) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1660) && (CombatVehicleCount() >= 7 || Cash() >= 400)"
-  },
-  {
-    "name": "build-kennel",
-    "priority": 550,
+    "name": "build-extra-naval-yard",
+    "priority": 470,
     "category": "economy",
     "exclusive": true,
-    "action": "produce-kennel",
-    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"kennel\") && !HasRole(\"kennel\") && PowerExcess() >= 0 && Cash() >= 300"
-  },
-  {
-    "name": "produce-attack-dog",
-    "priority": 510,
-    "category": "produce-infantry",
-    "exclusive": true,
-    "action": "produce-attack-dog",
-    "condition": "HasRole(\"kennel\") && !QueueBusy(\"Infantry\") && CanBuildRole(\"attack_dog\") && RoleCount(\"attack_dog\") < 2 && Cash() >= 200 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2200) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1700) && (CombatVehicleCount() >= 7 || Cash() >= 440)"
-  },
-  {
-    "name": "produce-spy",
-    "priority": 440,
-    "category": "produce-infantry",
-    "exclusive": true,
-    "action": "produce-spy",
-    "condition": "HasRole(\"barracks\") && HasRole(\"radar\") && !QueueBusy(\"Infantry\") && CanBuildRole(\"spy\") && RoleCount(\"spy\") < 1 && Cash() >= 500 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2500) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2000) && (CombatVehicleCount() >= 7 || Cash() >= 740)"
-  },
-  {
-    "name": "produce-vehicle",
-    "priority": 480,
-    "category": "produce-vehicle",
-    "exclusive": true,
-    "action": "produce-vehicle",
-    "condition": "!AxisBurned(\"vehicle\") && HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuildAnyCombatVehicle() && CombatVehicleCount() < 7 && Cash() >= 800 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 1699) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1474)"
-  },
-  {
-    "name": "produce-aircraft",
-    "priority": 460,
-    "category": "produce-aircraft",
-    "exclusive": true,
-    "action": "produce-aircraft",
-    "condition": "!AxisBurned(\"air\") && HasRole(\"airfield\") && !QueueBusy(\"Aircraft\") && CanBuildAnyCombatAircraft() && CombatAircraftCount() < 3 && CombatAircraftCount() < AircraftCapacity() && Cash() >= 800 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2800) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2300)"
-  },
-  {
-    "name": "produce-rocket-soldier",
-    "priority": 495,
-    "category": "produce-infantry",
-    "exclusive": true,
-    "action": "produce-rocket-soldier",
-    "condition": "!AxisBurned(\"infantry\") && HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuildRole(\"rocket_soldier\") && RoleCount(\"rocket_soldier\") < 3 && Cash() >= 300 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2300) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1800) && (CombatVehicleCount() >= 7 || Cash() >= 540)"
-  },
-  {
-    "name": "produce-heavy-vehicle",
-    "priority": 475,
-    "category": "produce-vehicle",
-    "exclusive": true,
-    "action": "produce-heavy-vehicle",
-    "condition": "HasRole(\"war_factory\") && HasRole(\"tech_center\") && !QueueBusy(\"Vehicle\") && (CanBuildRole(\"heavy_tank\") || CanBuildRole(\"medium_tank\")) && RoleCount(\"heavy_tank\") + RoleCount(\"medium_tank\") < 2 && Cash() >= 1200 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 3200) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2700)"
-  },
-  {
-    "name": "produce-scout-vehicle",
-    "priority": 465,
-    "category": "produce-vehicle",
-    "exclusive": true,
-    "action": "produce-scout-vehicle",
-    "condition": "!HasEnemyIntel() && HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && (CanBuildRole(\"ranger\") || CanBuildRole(\"light_tank\")) && !HasRole(\"ranger\") && !HasScout() && Cash() >= 500 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2500) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2000)"
-  },
-  {
-    "name": "produce-siege-vehicle",
-    "priority": 485,
-    "category": "produce-vehicle",
-    "exclusive": true,
-    "action": "produce-siege-vehicle",
-    "condition": "HasRole(\"war_factory\") && HasRole(\"radar\") && !QueueBusy(\"Vehicle\") && (CanBuildRole(\"artillery\") || CanBuildRole(\"v2_launcher\")) && RoleCount(\"artillery\") + RoleCount(\"v2_launcher\") < 2 && Cash() >= 900 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 1799) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1574)"
-  },
-  {
-    "name": "produce-flak-truck",
-    "priority": 470,
-    "category": "produce-vehicle",
-    "exclusive": true,
-    "action": "produce-flak-truck",
-    "condition": "HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuildRole(\"flak_truck\") && RoleCount(\"flak_truck\") < 2 && Cash() >= 600 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2600) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2100)"
-  },
-  {
-    "name": "produce-mad-tank",
-    "priority": 455,
-    "category": "produce-vehicle",
-    "exclusive": true,
-    "action": "produce-mad-tank",
-    "condition": "HasRole(\"war_factory\") && HasRole(\"tech_center\") && !QueueBusy(\"Vehicle\") && CanBuildRole(\"mad_tank\") && RoleCount(\"mad_tank\") < 2 && Cash() >= 2000 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 4000) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 3500)"
-  },
-  {
-    "name": "produce-minelayer",
-    "priority": 450,
-    "category": "produce-vehicle",
-    "exclusive": true,
-    "action": "produce-minelayer",
-    "condition": "HasRole(\"war_factory\") && HasRole(\"service_depot\") && !QueueBusy(\"Vehicle\") && CanBuildRole(\"minelayer\") && RoleCount(\"minelayer\") < 1 && Cash() >= 800 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2800) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2300)"
-  },
-  {
-    "name": "lay-mines",
-    "priority": 300,
-    "category": "minelayer",
-    "exclusive": false,
-    "action": "lay-mines",
-    "condition": "len(IdleMinelayers()) > 0"
-  },
-  {
-    "name": "produce-attack-aircraft",
-    "priority": 455,
-    "category": "produce-aircraft",
-    "exclusive": true,
-    "action": "produce-advanced-aircraft",
-    "condition": "HasRole(\"airfield\") && !QueueBusy(\"Aircraft\") && CanBuildRole(\"advanced_aircraft\") && RoleCount(\"advanced_aircraft\") < 1 && CombatAircraftCount() < AircraftCapacity() && Cash() >= 1500 && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 3500) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 3000)"
+    "action": "produce-naval-yard",
+    "condition": "!IsRushed() && MapHasWater() && !QueueBusy(\"Building\") && CanBuildRole(\"naval_yard\") && RoleCount(\"naval_yard\") < 2 && RoleCount(\"submarine\") + RoleCount(\"destroyer\") >= 7 && PowerExcess() >= 0 && Cash() >= 500",
+    "source": "rule build-extra-naval-yard {\n  priority 470\n  category economy exclusive\n  do produce-naval-yard\n  require not is-rushed\n  require map-has-water\n  require not queue-busy(Building)\n  require can-build-role(naval-yard)\n  require role-count(naval-yard) < 2\n  require role-count(submarine) + role-count(destroyer) >= 7\n  require power-excess >= 0\n  require cash >= 500\n}"
   },
   {
     "name": "form-defense-squad",
-    "priority": 423,
+    "priority": 490,
     "category": "squad-form",
     "exclusive": false,
-    "action": "form-squad(ground-defense, Ground, 3, Defend)",
-    "condition": "(!SquadExists(\"ground-defense\") && len(UnassignedIdleGround()) >= 3 || SquadNeedsReinforcement(\"ground-defense\") && len(UnassignedIdleGround()) >= 1) && (BaseUnderAttack() || len(UnassignedIdleGround()) >= 7)"
+    "because": "formed at its own size — it used to demand enough surplus for an attack squad on top, which needed a pool of eight and so only ever formed once the base was already under attack",
+    "action": "form-squad(ground-defense, Ground, 5, Defend)",
+    "condition": "(!SquadExists(\"ground-defense\") && len(UnassignedIdleGround()) >= 5 || SquadNeedsReinforcement(\"ground-defense\") && len(UnassignedIdleGround()) >= 1)",
+    "source": "rule form-defense-squad {\n  priority 490\n  category squad-form\n  because \"formed at its own size — it used to demand enough surplus for an attack squad on top, which needed a pool of eight and so only ever formed once the base was already under attack\"\n  do form-squad(ground-defense, Ground, 5, Defend)\n  require not squad-exists(ground-defense) and count(unassigned-idle-ground) >= 5 or squad-needs-reinforcement(ground-defense) and count(unassigned-idle-ground) >= 1\n}"
   },
   {
     "name": "squad-defend-base",
-    "priority": 418,
+    "priority": 485,
     "category": "combat",
     "exclusive": false,
     "action": "squad-defend(ground-defense)",
-    "condition": "SquadExists(\"ground-defense\") && SquadIdleCount(\"ground-defense\") > 0 && BaseUnderAttack()"
+    "condition": "SquadExists(\"ground-defense\") && SquadIdleCount(\"ground-defense\") > 0 && BaseUnderAttack()",
+    "source": "rule squad-defend-base {\n  priority 485\n  category combat\n  do squad-defend(ground-defense)\n  require squad-exists(ground-defense)\n  require squad-idle-count(ground-defense) > 0\n  require base-under-attack\n}"
   },
   {
     "name": "defend-base-air",
-    "priority": 403,
+    "priority": 485,
     "category": "air-combat",
     "exclusive": false,
     "action": "air-defend-base",
-    "condition": "BaseUnderAttack() && len(IdleCombatAircraft()) > 0"
+    "condition": "BaseUnderAttack() && len(IdleCombatAircraft()) > 0",
+    "source": "rule defend-base-air {\n  priority 485\n  category air-combat\n  do air-defend-base\n  require base-under-attack\n  require count(idle-combat-aircraft) > 0\n}"
   },
   {
     "name": "form-ground-attack",
-    "priority": 335,
+    "priority": 385,
     "category": "squad-form",
     "exclusive": false,
-    "action": "form-squad(ground-attack, Ground, 8, Attack)",
-    "condition": "(!SquadExists(\"ground-attack\") && len(UnassignedIdleGround()) >= 4 || SquadNeedsReinforcement(\"ground-attack\") && len(UnassignedIdleGround()) >= 1)"
+    "action": "form-squad(ground-attack, Ground, 6, Attack)",
+    "condition": "(!SquadExists(\"ground-attack\") && len(UnassignedIdleGround()) >= 3 || SquadNeedsReinforcement(\"ground-attack\") && len(UnassignedIdleGround()) >= 1)",
+    "source": "rule form-ground-attack {\n  priority 385\n  category squad-form\n  do form-squad(ground-attack, Ground, 6, Attack)\n  require not squad-exists(ground-attack) and count(unassigned-idle-ground) >= 3 or squad-needs-reinforcement(ground-attack) and count(unassigned-idle-ground) >= 1\n}"
   },
   {
     "name": "squad-attack",
-    "priority": 330,
+    "priority": 380,
     "category": "ground-attack-choice",
     "exclusive": true,
     "action": "squad-attack-move(ground-attack)",
-    "condition": "SquadExists(\"ground-attack\") && SquadReadyRatio(\"ground-attack\") >= 0.74 && (BestGroundTarget() != nil || NearestEnemy() != nil)"
+    "condition": "SquadExists(\"ground-attack\") && SquadReadyRatio(\"ground-attack\") >= 0.5 && (BestGroundTarget() != nil || NearestEnemy() != nil) && (SquadExists(\"ground-defense\") || RoleCount(\"pillbox\") + RoleCount(\"camo_pillbox\") + RoleCount(\"turret\") + RoleCount(\"flame_tower\") + RoleCount(\"tesla_coil\") >= 2)",
+    "source": "rule squad-attack {\n  priority 380\n  category ground-attack-choice exclusive\n  do squad-attack-move(ground-attack)\n  require squad-exists(ground-attack)\n  require squad-ready-ratio(ground-attack) >= 0.5\n  require exists best-ground-target or exists nearest-enemy\n  require squad-exists(ground-defense) or role-count(pillbox) + role-count(camo-pillbox) + role-count(turret) + role-count(flame-tower) + role-count(tesla-coil) >= 2\n}"
   },
   {
     "name": "squad-reengage",
-    "priority": 328,
+    "priority": 378,
     "category": "combat",
     "exclusive": false,
+    "because": "catches stragglers finishing an order while the squad presses forward",
     "action": "squad-attack-move(ground-attack)",
-    "condition": "SquadExists(\"ground-attack\") && SquadIdleCount(\"ground-attack\") > 0 && (BestGroundTarget() != nil || NearestEnemy() != nil)"
+    "condition": "SquadExists(\"ground-attack\") && SquadIdleCount(\"ground-attack\") > 0 && (BestGroundTarget() != nil || NearestEnemy() != nil)",
+    "source": "rule squad-reengage {\n  priority 378\n  category combat\n  because \"catches stragglers finishing an order while the squad presses forward\"\n  do squad-attack-move(ground-attack)\n  require squad-exists(ground-attack)\n  require squad-idle-count(ground-attack) > 0\n  require exists best-ground-target or exists nearest-enemy\n}"
   },
   {
     "name": "squad-attack-known-base",
-    "priority": 335,
+    "priority": 385,
     "category": "ground-attack-choice",
     "exclusive": true,
-    "action": "squad-attack-known-base(ground-attack, 0.65)",
-    "condition": "SquadExists(\"ground-attack\") && SquadReadyRatio(\"ground-attack\") >= 0.74 && HasEnemyIntel()"
+    "because": "aggressive doctrines press the base and let base defenses handle raiders — but the threshold sat at 0.3, below anything the strategist ever chose, so this always won and squad-attack never fired in eighty games",
+    "action": "squad-attack-known-base(ground-attack, 0.9)",
+    "condition": "SquadExists(\"ground-attack\") && SquadReadyRatio(\"ground-attack\") >= 0.5 && HasEnemyIntel() && (SquadExists(\"ground-defense\") || RoleCount(\"pillbox\") + RoleCount(\"camo_pillbox\") + RoleCount(\"turret\") + RoleCount(\"flame_tower\") + RoleCount(\"tesla_coil\") >= 2)",
+    "source": "rule squad-attack-known-base {\n  priority 385\n  category ground-attack-choice exclusive\n  because \"aggressive doctrines press the base and let base defenses handle raiders — but the threshold sat at 0.3, below anything the strategist ever chose, so this always won and squad-attack never fired in eighty games\"\n  do squad-attack-known-base(ground-attack, 0.9)\n  require squad-exists(ground-attack)\n  require squad-ready-ratio(ground-attack) >= 0.5\n  require has-enemy-intel\n  require squad-exists(ground-defense) or role-count(pillbox) + role-count(camo-pillbox) + role-count(turret) + role-count(flame-tower) + role-count(tesla-coil) >= 2\n}"
   },
   {
     "name": "form-air-attack",
-    "priority": 330,
+    "priority": 380,
     "category": "squad-form",
     "exclusive": false,
     "action": "form-squad(air-attack, Air, 3, Attack)",
-    "condition": "(!SquadExists(\"air-attack\") && len(UnassignedIdleAir()) >= 2 || SquadNeedsReinforcement(\"air-attack\") && len(UnassignedIdleAir()) >= 1)"
+    "condition": "(!SquadExists(\"air-attack\") && len(UnassignedIdleAir()) >= 2 || SquadNeedsReinforcement(\"air-attack\") && len(UnassignedIdleAir()) >= 1)",
+    "source": "rule form-air-attack {\n  priority 380\n  category squad-form\n  do form-squad(air-attack, Air, 3, Attack)\n  require not squad-exists(air-attack) and count(unassigned-idle-air) >= 2 or squad-needs-reinforcement(air-attack) and count(unassigned-idle-air) >= 1\n}"
   },
   {
     "name": "squad-air-attack",
-    "priority": 325,
+    "priority": 375,
     "category": "air-combat",
     "exclusive": false,
     "action": "squad-air-strike(air-attack)",
-    "condition": "SquadExists(\"air-attack\") && SquadReadyRatio(\"air-attack\") >= 0.74 && BestAirTarget() != nil"
+    "condition": "SquadExists(\"air-attack\") && SquadReadyRatio(\"air-attack\") >= 0.5 && BestAirTarget() != nil",
+    "source": "rule squad-air-attack {\n  priority 375\n  category air-combat\n  do squad-air-strike(air-attack)\n  require squad-exists(air-attack)\n  require squad-ready-ratio(air-attack) >= 0.5\n  require exists best-air-target\n}"
   },
   {
     "name": "squad-air-reengage",
-    "priority": 323,
+    "priority": 373,
     "category": "air-combat",
     "exclusive": false,
     "action": "squad-air-strike(air-attack)",
-    "condition": "SquadExists(\"air-attack\") && SquadIdleCount(\"air-attack\") > 0 && BestAirTarget() != nil"
+    "condition": "SquadExists(\"air-attack\") && SquadIdleCount(\"air-attack\") > 0 && BestAirTarget() != nil",
+    "source": "rule squad-air-reengage {\n  priority 373\n  category air-combat\n  do squad-air-strike(air-attack)\n  require squad-exists(air-attack)\n  require squad-idle-count(air-attack) > 0\n  require exists best-air-target\n}"
   },
   {
     "name": "squad-air-attack-known-base",
-    "priority": 315,
+    "priority": 365,
     "category": "air-combat",
     "exclusive": false,
-    "action": "squad-attack-known-base(air-attack, 0.65)",
-    "condition": "SquadExists(\"air-attack\") && SquadReadyRatio(\"air-attack\") >= 0.74 && !EnemiesVisible() && HasEnemyIntel()"
+    "action": "squad-attack-known-base(air-attack, 0.9)",
+    "condition": "SquadExists(\"air-attack\") && SquadReadyRatio(\"air-attack\") >= 0.5 && !EnemiesVisible() && HasEnemyIntel()",
+    "source": "rule squad-air-attack-known-base {\n  priority 365\n  category air-combat\n  do squad-attack-known-base(air-attack, 0.9)\n  require squad-exists(air-attack)\n  require squad-ready-ratio(air-attack) >= 0.5\n  require not enemies-visible\n  require has-enemy-intel\n}"
+  },
+  {
+    "name": "form-naval-attack",
+    "priority": 370,
+    "category": "squad-form",
+    "exclusive": false,
+    "action": "form-squad(naval-attack, Naval, 3, Attack)",
+    "condition": "MapHasWater() && (!SquadExists(\"naval-attack\") && len(UnassignedIdleNaval()) >= 2 || SquadNeedsReinforcement(\"naval-attack\") && len(UnassignedIdleNaval()) >= 1)",
+    "source": "rule form-naval-attack {\n  priority 370\n  category squad-form\n  do form-squad(naval-attack, Naval, 3, Attack)\n  require map-has-water\n  require not squad-exists(naval-attack) and count(unassigned-idle-naval) >= 2 or squad-needs-reinforcement(naval-attack) and count(unassigned-idle-naval) >= 1\n}"
+  },
+  {
+    "name": "squad-naval-attack",
+    "priority": 365,
+    "category": "naval-combat",
+    "exclusive": false,
+    "action": "squad-attack-move(naval-attack)",
+    "condition": "MapHasWater() && SquadExists(\"naval-attack\") && SquadReadyRatio(\"naval-attack\") >= 0.5 && NearestEnemy() != nil",
+    "source": "rule squad-naval-attack {\n  priority 365\n  category naval-combat\n  do squad-attack-move(naval-attack)\n  require map-has-water\n  require squad-exists(naval-attack)\n  require squad-ready-ratio(naval-attack) >= 0.5\n  require exists nearest-enemy\n}"
+  },
+  {
+    "name": "squad-naval-reengage",
+    "priority": 363,
+    "category": "naval-combat",
+    "exclusive": false,
+    "action": "squad-attack-move(naval-attack)",
+    "condition": "MapHasWater() && SquadExists(\"naval-attack\") && SquadIdleCount(\"naval-attack\") > 0 && NearestEnemy() != nil",
+    "source": "rule squad-naval-reengage {\n  priority 363\n  category naval-combat\n  do squad-attack-move(naval-attack)\n  require map-has-water\n  require squad-exists(naval-attack)\n  require squad-idle-count(naval-attack) > 0\n  require exists nearest-enemy\n}"
+  },
+  {
+    "name": "squad-naval-attack-known-base",
+    "priority": 355,
+    "category": "naval-combat",
+    "exclusive": false,
+    "action": "squad-attack-known-base(naval-attack, 0.9)",
+    "condition": "MapHasWater() && SquadExists(\"naval-attack\") && SquadReadyRatio(\"naval-attack\") >= 0.5 && !EnemiesVisible() && HasEnemyIntel()",
+    "source": "rule squad-naval-attack-known-base {\n  priority 355\n  category naval-combat\n  do squad-attack-known-base(naval-attack, 0.9)\n  require map-has-water\n  require squad-exists(naval-attack)\n  require squad-ready-ratio(naval-attack) >= 0.5\n  require not enemies-visible\n  require has-enemy-intel\n}"
   },
   {
     "name": "fire-nuke",
@@ -685,7 +306,8 @@
     "category": "superweapon",
     "exclusive": true,
     "action": "fire-nuke",
-    "condition": "SupportPowerReady(\"NukePowerInfoOrder\")"
+    "condition": "SupportPowerReady(\"NukePowerInfoOrder\")",
+    "source": "rule fire-nuke {\n  priority 880\n  category superweapon exclusive\n  do fire-nuke\n  require support-power-ready(NukePowerInfoOrder)\n}"
   },
   {
     "name": "fire-iron-curtain",
@@ -693,7 +315,8 @@
     "category": "superweapon",
     "exclusive": true,
     "action": "fire-iron-curtain",
-    "condition": "SupportPowerReady(\"GrantExternalConditionPowerInfoOrder\") && len(IdleGroundUnits()) >= 3"
+    "condition": "SupportPowerReady(\"GrantExternalConditionPowerInfoOrder\") && len(IdleGroundUnits()) >= 3",
+    "source": "rule fire-iron-curtain {\n  priority 870\n  category superweapon exclusive\n  do fire-iron-curtain\n  require support-power-ready(GrantExternalConditionPowerInfoOrder)\n  require count(idle-ground-units) >= 3\n}"
   },
   {
     "name": "fire-spy-plane",
@@ -701,7 +324,8 @@
     "category": "superweapon",
     "exclusive": true,
     "action": "fire-spy-plane",
-    "condition": "SupportPowerReady(\"SovietSpyPlane\") && !HasEnemyIntel()"
+    "condition": "SupportPowerReady(\"SovietSpyPlane\") && !HasEnemyIntel()",
+    "source": "rule fire-spy-plane {\n  priority 860\n  category superweapon exclusive\n  do fire-spy-plane\n  require support-power-ready(SovietSpyPlane)\n  require not has-enemy-intel\n}"
   },
   {
     "name": "fire-spy-plane-update",
@@ -709,7 +333,8 @@
     "category": "superweapon",
     "exclusive": true,
     "action": "fire-spy-plane",
-    "condition": "SupportPowerReady(\"SovietSpyPlane\") && HasEnemyIntel() && !EnemiesVisible()"
+    "condition": "SupportPowerReady(\"SovietSpyPlane\") && HasEnemyIntel() && !EnemiesVisible()",
+    "source": "rule fire-spy-plane-update {\n  priority 250\n  category superweapon exclusive\n  do fire-spy-plane\n  require support-power-ready(SovietSpyPlane)\n  require has-enemy-intel\n  require not enemies-visible\n}"
   },
   {
     "name": "fire-paratroopers",
@@ -717,7 +342,8 @@
     "category": "superweapon",
     "exclusive": true,
     "action": "fire-paratroopers",
-    "condition": "SupportPowerReady(\"SovietParatroopers\") && (HasEnemyIntel() || EnemiesVisible())"
+    "condition": "SupportPowerReady(\"SovietParatroopers\") && (HasEnemyIntel() || EnemiesVisible())",
+    "source": "rule fire-paratroopers {\n  priority 855\n  category superweapon exclusive\n  do fire-paratroopers\n  require support-power-ready(SovietParatroopers)\n  require has-enemy-intel or enemies-visible\n}"
   },
   {
     "name": "fire-parabombs",
@@ -725,86 +351,724 @@
     "category": "superweapon",
     "exclusive": true,
     "action": "fire-parabombs",
-    "condition": "SupportPowerReady(\"UkraineParabombs\") && (HasEnemyIntel() || EnemiesVisible())"
+    "condition": "SupportPowerReady(\"UkraineParabombs\") && (HasEnemyIntel() || EnemiesVisible())",
+    "source": "rule fire-parabombs {\n  priority 845\n  category superweapon exclusive\n  do fire-parabombs\n  require support-power-ready(UkraineParabombs)\n  require has-enemy-intel or enemies-visible\n}"
+  },
+  {
+    "name": "deploy-mcv",
+    "priority": 1000,
+    "category": "setup",
+    "exclusive": true,
+    "action": "deploy-mcv",
+    "condition": "HasUnit(\"mcv\") && !HasRole(\"construction_yard\")",
+    "source": "rule deploy-mcv {\n  priority 1000\n  category setup exclusive\n  do deploy-mcv\n  require has-unit(mcv)\n  require not has-role(construction-yard)\n}"
+  },
+  {
+    "name": "recover-mcv",
+    "priority": 950,
+    "category": "setup",
+    "exclusive": true,
+    "action": "produce-mcv",
+    "condition": "!HasRole(\"construction_yard\") && !HasUnit(\"mcv\") && HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuild(\"Vehicle\",\"mcv\") && Cash() >= 1000",
+    "source": "rule recover-mcv {\n  priority 950\n  category setup exclusive\n  do produce-mcv\n  require not has-role(construction-yard)\n  require not has-unit(mcv)\n  require has-role(war-factory)\n  require not queue-busy(Vehicle)\n  require can-build(Vehicle, mcv)\n  require cash >= 1000\n}"
+  },
+  {
+    "name": "place-ready-building",
+    "priority": 900,
+    "category": "economy",
+    "exclusive": true,
+    "action": "place-building",
+    "condition": "QueueReady(\"Building\")",
+    "source": "rule place-ready-building {\n  priority 900\n  category economy exclusive\n  do place-building\n  require queue-ready(Building)\n}"
+  },
+  {
+    "name": "place-ready-defense",
+    "priority": 895,
+    "category": "defense",
+    "exclusive": true,
+    "action": "place-defense",
+    "condition": "QueueReady(\"Defense\")",
+    "source": "rule place-ready-defense {\n  priority 895\n  category defense exclusive\n  do place-defense\n  require queue-ready(Defense)\n}"
+  },
+  {
+    "name": "unblock-war-factory-egress",
+    "priority": 892,
+    "category": "vehicle-maintenance",
+    "exclusive": true,
+    "action": "unblock-war-factory-egress",
+    "condition": "HasRole(\"war_factory\") && QueueReady(\"Vehicle\")",
+    "source": "rule unblock-war-factory-egress {\n  priority 892\n  category vehicle-maintenance exclusive\n  do unblock-war-factory-egress\n  require has-role(war-factory)\n  require queue-ready(Vehicle)\n}"
+  },
+  {
+    "name": "cancel-stuck-aircraft",
+    "priority": 891,
+    "category": "aircraft-maintenance",
+    "exclusive": true,
+    "action": "cancel-stuck-aircraft",
+    "condition": "QueueReady(\"Aircraft\")",
+    "source": "rule cancel-stuck-aircraft {\n  priority 891\n  category aircraft-maintenance exclusive\n  do cancel-stuck-aircraft\n  require queue-ready(Aircraft)\n}"
+  },
+  {
+    "name": "capture-building",
+    "priority": 850,
+    "category": "capture",
+    "exclusive": false,
+    "action": "capture-building",
+    "condition": "CapturableCount() > 0 && len(IdleEngineers()) > 0 && (!CanBuildTransport() || EngineerNearCapturable())",
+    "source": "rule capture-building {\n  priority 850\n  category capture\n  do capture-building\n  require capturable-count > 0\n  require count(idle-engineers) > 0\n  require not can-build-transport or engineer-near-capturable\n}"
+  },
+  {
+    "name": "deliver-apc-to-target",
+    "priority": 847,
+    "category": "capture",
+    "exclusive": false,
+    "because": "an aggressive capture doctrine sends a loaded APC without waiting for a target",
+    "action": "unload-apc-near-target",
+    "condition": "len(IdleEngineerLoadedAPCs()) > 0",
+    "source": "rule deliver-apc-to-target {\n  priority 847\n  category capture\n  because \"an aggressive capture doctrine sends a loaded APC without waiting for a target\"\n  do unload-apc-near-target\n  require count(idle-engineer-loaded-apcs) > 0\n}"
+  },
+  {
+    "name": "load-engineer-into-apc",
+    "priority": 845,
+    "category": "capture",
+    "exclusive": false,
+    "action": "load-engineer-into-apc",
+    "condition": "(RoleCount(\"engineer\") > 0 || TransportCount() > 0) && len(IdleEngineers()) > 0 && len(IdleEmptyAPCs()) > 0 && !EngineerNearCapturable()",
+    "source": "rule load-engineer-into-apc {\n  priority 845\n  category capture\n  do load-engineer-into-apc\n  require role-count(engineer) > 0 or transport-count > 0\n  require count(idle-engineers) > 0\n  require count(idle-empty-apcs) > 0\n  require not engineer-near-capturable\n}"
+  },
+  {
+    "name": "produce-apc",
+    "priority": 471,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "because": "above the flak truck: an engineer is already built and waiting for the ride",
+    "action": "produce-apc",
+    "condition": "RoleCount(\"engineer\") > 0 && HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuildTransport() && TransportCount() < 1 && Cash() >= 800",
+    "source": "rule produce-apc {\n  priority 471\n  category produce-vehicle exclusive\n  because \"above the flak truck: an engineer is already built and waiting for the ride\"\n  do produce-apc\n  require role-count(engineer) > 0\n  require has-role(war-factory)\n  require not queue-busy(Vehicle)\n  require can-build-transport\n  require transport-count < 1\n  require cash >= 800\n}"
+  },
+  {
+    "name": "produce-engineer",
+    "priority": 450,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-engineer",
+    "condition": "!QueueBusy(\"Infantry\") && CanBuildRole(\"engineer\") && RoleCount(\"engineer\") < 3 && Cash() >= 500",
+    "source": "rule produce-engineer {\n  priority 450\n  category produce-infantry exclusive\n  do produce-engineer\n  require not queue-busy(Infantry)\n  require can-build-role(engineer)\n  require role-count(engineer) < 3\n  require cash >= 500\n}"
+  },
+  {
+    "name": "produce-capture-defense-infantry",
+    "priority": 440,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-infantry",
+    "condition": "HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuild(\"Infantry\",\"e1\") && UnitCount(\"e1\") < 3 && Cash() >= 100",
+    "source": "rule produce-capture-defense-infantry {\n  priority 440\n  category produce-infantry exclusive\n  do produce-infantry\n  require has-role(barracks)\n  require not queue-busy(Infantry)\n  require can-build(Infantry, e1)\n  require unit-count(e1) < 3\n  require cash >= 100\n}"
+  },
+  {
+    "name": "produce-assault-apc",
+    "priority": 495,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "because": "above the vehicle rules it used to tie with: a doctrine has to opt into transport-assault, and the transports it buys are capped",
+    "action": "produce-apc",
+    "condition": "HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuildTransport() && TransportCount() < 3 && Cash() >= 800 && (HasRole(\"radar\") || Cash() >= 1600) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2400) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2300) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 3200)",
+    "source": "rule produce-assault-apc {\n  priority 495\n  category produce-vehicle exclusive\n  because \"above the vehicle rules it used to tie with: a doctrine has to opt into transport-assault, and the transports it buys are capped\"\n  do produce-apc\n  require has-role(war-factory)\n  require not queue-busy(Vehicle)\n  require can-build-transport\n  require transport-count < 3\n  require cash >= 800 and (has-role(radar) or cash >= 1600) and (has-role(war-factory) or not has-role(radar) or cash >= 2400) and (has-role(tech-center) or not has-role(radar) or cash >= 2300) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 3200)\n}"
+  },
+  {
+    "name": "deliver-assault-apc",
+    "priority": 840,
+    "category": "transport",
+    "exclusive": false,
+    "action": "deliver-assault-apc",
+    "condition": "len(IdleCombatLoadedAPCs()) > 0",
+    "source": "rule deliver-assault-apc {\n  priority 840\n  category transport\n  do deliver-assault-apc\n  require count(idle-combat-loaded-apcs) > 0\n}"
+  },
+  {
+    "name": "load-assault-infantry",
+    "priority": 838,
+    "category": "transport",
+    "exclusive": false,
+    "action": "load-combat-infantry",
+    "condition": "len(IdleCombatInfantry()) > 0 && len(IdleEmptyAPCs()) > 0",
+    "source": "rule load-assault-infantry {\n  priority 838\n  category transport\n  do load-combat-infantry\n  require count(idle-combat-infantry) > 0\n  require count(idle-empty-apcs) > 0\n}"
+  },
+  {
+    "name": "rebuild-power-plant",
+    "priority": 840,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-power-plant",
+    "condition": "LostRole(\"power_plant\") && PowerExcess() < 0 && !QueueBusy(\"Building\") && CanBuildRole(\"power_plant\") && Cash() >= 300",
+    "source": "rule rebuild-power-plant {\n  priority 840\n  category rebuild exclusive\n  do produce-power-plant\n  require lost-role(power-plant)\n  require power-excess < 0\n  require not queue-busy(Building)\n  require can-build-role(power-plant)\n  require cash >= 300\n}"
+  },
+  {
+    "name": "rebuild-advanced-power",
+    "priority": 835,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-advanced-power",
+    "condition": "LostRole(\"advanced_power\") && PowerExcess() < 0 && !QueueBusy(\"Building\") && CanBuildRole(\"advanced_power\") && Cash() >= 500",
+    "source": "rule rebuild-advanced-power {\n  priority 835\n  category rebuild exclusive\n  do produce-advanced-power\n  require lost-role(advanced-power)\n  require power-excess < 0\n  require not queue-busy(Building)\n  require can-build-role(advanced-power)\n  require cash >= 500\n}"
+  },
+  {
+    "name": "rebuild-harvester",
+    "priority": 830,
+    "category": "rebuild",
+    "exclusive": true,
+    "because": "a refinery with no harvester of its own is idle capital, so replace against the refineries rather than waiting for the last harvester to die",
+    "action": "produce-harvester",
+    "condition": "HasRole(\"refinery\") && RoleCount(\"harvester\") < RoleCount(\"refinery\") && !QueueBusy(\"Vehicle\") && CanBuildRole(\"harvester\") && Cash() >= 600",
+    "source": "rule rebuild-harvester {\n  priority 830\n  category rebuild exclusive\n  because \"a refinery with no harvester of its own is idle capital, so replace against the refineries rather than waiting for the last harvester to die\"\n  do produce-harvester\n  require has-role(refinery)\n  require role-count(harvester) < role-count(refinery)\n  require not queue-busy(Vehicle)\n  require can-build-role(harvester)\n  require cash >= 600\n}"
+  },
+  {
+    "name": "rebuild-refinery",
+    "priority": 825,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-refinery",
+    "condition": "LostRole(\"refinery\") && !QueueBusy(\"Building\") && CanBuildRole(\"refinery\") && Cash() >= 500",
+    "source": "rule rebuild-refinery {\n  priority 825\n  category rebuild exclusive\n  do produce-refinery\n  require lost-role(refinery)\n  require not queue-busy(Building)\n  require can-build-role(refinery)\n  require cash >= 500\n}"
+  },
+  {
+    "name": "rebuild-barracks",
+    "priority": 820,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-barracks",
+    "condition": "LostRole(\"barracks\") && !QueueBusy(\"Building\") && CanBuildRole(\"barracks\") && Cash() >= 200",
+    "source": "rule rebuild-barracks {\n  priority 820\n  category rebuild exclusive\n  do produce-barracks\n  require lost-role(barracks)\n  require not queue-busy(Building)\n  require can-build-role(barracks)\n  require cash >= 200\n}"
+  },
+  {
+    "name": "rebuild-war-factory",
+    "priority": 815,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-war-factory",
+    "condition": "LostRole(\"war_factory\") && !QueueBusy(\"Building\") && CanBuildRole(\"war_factory\") && Cash() >= 1000",
+    "source": "rule rebuild-war-factory {\n  priority 815\n  category rebuild exclusive\n  do produce-war-factory\n  require lost-role(war-factory)\n  require not queue-busy(Building)\n  require can-build-role(war-factory)\n  require cash >= 1000\n}"
+  },
+  {
+    "name": "rebuild-radar",
+    "priority": 810,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-radar",
+    "condition": "LostRole(\"radar\") && !QueueBusy(\"Building\") && !QueueProducingRole(\"radar\") && CanBuildRole(\"radar\") && Cash() >= 500",
+    "source": "rule rebuild-radar {\n  priority 810\n  category rebuild exclusive\n  do produce-radar\n  require lost-role(radar)\n  require not queue-busy(Building)\n  require not queue-producing-role(radar)\n  require can-build-role(radar)\n  require cash >= 500\n}"
+  },
+  {
+    "name": "rebuild-tech-center",
+    "priority": 805,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-tech-center",
+    "condition": "LostRole(\"tech_center\") && !QueueBusy(\"Building\") && CanBuildRole(\"tech_center\") && HasRole(\"radar\") && Cash() >= 1000",
+    "source": "rule rebuild-tech-center {\n  priority 805\n  category rebuild exclusive\n  do produce-tech-center\n  require lost-role(tech-center)\n  require not queue-busy(Building)\n  require can-build-role(tech-center)\n  require has-role(radar)\n  require cash >= 1000\n}"
+  },
+  {
+    "name": "rebuild-airfield",
+    "priority": 800,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-airfield",
+    "condition": "LostRole(\"airfield\") && !QueueBusy(\"Building\") && CanBuildRole(\"airfield\") && Cash() >= 300",
+    "source": "rule rebuild-airfield {\n  priority 800\n  category rebuild exclusive\n  do produce-airfield\n  require lost-role(airfield)\n  require not queue-busy(Building)\n  require can-build-role(airfield)\n  require cash >= 300\n}"
+  },
+  {
+    "name": "rebuild-naval-yard",
+    "priority": 799,
+    "category": "rebuild",
+    "exclusive": true,
+    "because": "below the airfield, which is useful on a map without water",
+    "action": "produce-naval-yard",
+    "condition": "MapHasWater() && LostRole(\"naval_yard\") && !QueueBusy(\"Building\") && CanBuildRole(\"naval_yard\") && Cash() >= 300",
+    "source": "rule rebuild-naval-yard {\n  priority 799\n  category rebuild exclusive\n  because \"below the airfield, which is useful on a map without water\"\n  do produce-naval-yard\n  require map-has-water\n  require lost-role(naval-yard)\n  require not queue-busy(Building)\n  require can-build-role(naval-yard)\n  require cash >= 300\n}"
+  },
+  {
+    "name": "rebuild-service-depot",
+    "priority": 795,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-service-depot",
+    "condition": "LostRole(\"service_depot\") && !QueueBusy(\"Building\") && CanBuildRole(\"service_depot\") && Cash() >= 800",
+    "source": "rule rebuild-service-depot {\n  priority 795\n  category rebuild exclusive\n  do produce-service-depot\n  require lost-role(service-depot)\n  require not queue-busy(Building)\n  require can-build-role(service-depot)\n  require cash >= 800\n}"
+  },
+  {
+    "name": "rebuild-missile-silo",
+    "priority": 790,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-missile-silo",
+    "condition": "LostRole(\"missile_silo\") && !QueueBusy(\"Defense\") && CanBuildRole(\"missile_silo\") && Cash() >= 2500",
+    "source": "rule rebuild-missile-silo {\n  priority 790\n  category rebuild exclusive\n  do produce-missile-silo\n  require lost-role(missile-silo)\n  require not queue-busy(Defense)\n  require can-build-role(missile-silo)\n  require cash >= 2500\n}"
+  },
+  {
+    "name": "rebuild-iron-curtain",
+    "priority": 785,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-iron-curtain",
+    "condition": "LostRole(\"iron_curtain\") && !QueueBusy(\"Defense\") && CanBuildRole(\"iron_curtain\") && Cash() >= 2500",
+    "source": "rule rebuild-iron-curtain {\n  priority 785\n  category rebuild exclusive\n  do produce-iron-curtain\n  require lost-role(iron-curtain)\n  require not queue-busy(Defense)\n  require can-build-role(iron-curtain)\n  require cash >= 2500\n}"
+  },
+  {
+    "name": "rebuild-kennel",
+    "priority": 780,
+    "category": "rebuild",
+    "exclusive": true,
+    "action": "produce-kennel",
+    "condition": "LostRole(\"kennel\") && !QueueBusy(\"Building\") && CanBuildRole(\"kennel\") && Cash() >= 200",
+    "source": "rule rebuild-kennel {\n  priority 780\n  category rebuild exclusive\n  do produce-kennel\n  require lost-role(kennel)\n  require not queue-busy(Building)\n  require can-build-role(kennel)\n  require cash >= 200\n}"
+  },
+  {
+    "name": "defend-critical-building",
+    "priority": 360,
+    "category": "combat",
+    "exclusive": false,
+    "action": "defend-critical-building",
+    "condition": "CriticalBuildingUnderAttack() && len(NearBaseGroundUnits()) > 0",
+    "source": "rule defend-critical-building {\n  priority 360\n  category combat\n  do defend-critical-building\n  require critical-building-under-attack\n  require count(near-base-ground-units) > 0\n}"
+  },
+  {
+    "name": "scramble-base-defense",
+    "priority": 350,
+    "category": "combat",
+    "exclusive": false,
+    "action": "defend-base",
+    "condition": "BaseUnderAttack() && len(UnassignedIdleGround()) > 0",
+    "source": "rule scramble-base-defense {\n  priority 350\n  category combat\n  do defend-base\n  require base-under-attack\n  require count(unassigned-idle-ground) > 0\n}"
+  },
+  {
+    "name": "scramble-naval-defense",
+    "priority": 350,
+    "category": "naval-combat",
+    "exclusive": false,
+    "action": "naval-defend-base",
+    "condition": "MapHasWater() && BaseUnderAttack() && len(IdleNavalUnits()) > 0",
+    "source": "rule scramble-naval-defense {\n  priority 350\n  category naval-combat\n  do naval-defend-base\n  require map-has-water\n  require base-under-attack\n  require count(idle-naval-units) > 0\n}"
+  },
+  {
+    "name": "emergency-base-defense",
+    "priority": 349,
+    "category": "emergency-defense",
+    "exclusive": false,
+    "action": "emergency-defend-base",
+    "condition": "BaseUnderAttack() && len(IdleGroundUnits()) == 0 && len(NearBaseGroundUnits()) > 0",
+    "source": "rule emergency-base-defense {\n  priority 349\n  category emergency-defense\n  do emergency-defend-base\n  require base-under-attack\n  require count(idle-ground-units) == 0\n  require count(near-base-ground-units) > 0\n}"
+  },
+  {
+    "name": "repair-buildings",
+    "priority": 200,
+    "category": "maintenance",
+    "exclusive": false,
+    "action": "repair-buildings",
+    "condition": "len(DamagedBuildings()) > 0",
+    "source": "rule repair-buildings {\n  priority 200\n  category maintenance\n  do repair-buildings\n  require count(damaged-buildings) > 0\n}"
+  },
+  {
+    "name": "return-idle-harvesters",
+    "priority": 100,
+    "category": "harvester",
+    "exclusive": false,
+    "action": "send-harvesters",
+    "condition": "len(IdleHarvesters()) > 0",
+    "source": "rule return-idle-harvesters {\n  priority 100\n  category harvester\n  do send-harvesters\n  require count(idle-harvesters) > 0\n}"
+  },
+  {
+    "name": "build-power",
+    "priority": 800,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-power-plant",
+    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"power_plant\") && (PowerExcess() < 0 || RoleCount(\"power_plant\") == 0) && Cash() >= 230",
+    "source": "rule build-power {\n  priority 800\n  category economy exclusive\n  do produce-power-plant\n  require not queue-busy(Building)\n  require can-build-role(power-plant)\n  require power-excess < 0 or role-count(power-plant) == 0\n  require cash >= 230\n}"
+  },
+  {
+    "name": "build-refinery",
+    "priority": 750,
+    "category": "economy",
+    "exclusive": true,
+    "because": "the first refinery is the whole economy, so it outranks everything but power",
+    "action": "produce-refinery",
+    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"refinery\") && RoleCount(\"refinery\") < 1 && Cash() >= 920",
+    "source": "rule build-refinery {\n  priority 750\n  category economy exclusive\n  because \"the first refinery is the whole economy, so it outranks everything but power\"\n  do produce-refinery\n  require not queue-busy(Building)\n  require can-build-role(refinery)\n  require role-count(refinery) < 1\n  require cash >= 920\n}"
+  },
+  {
+    "name": "build-second-refinery",
+    "priority": 687,
+    "category": "economy",
+    "exclusive": true,
+    "because": "above the tech centre when economy and tech are weighted the same: the tech centre is paid for out of an income that has to exist first",
+    "action": "produce-refinery",
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"refinery\") && RoleCount(\"refinery\") == 1 && (HasRole(\"barracks\") || HasRole(\"war_factory\")) && Cash() >= 600",
+    "source": "rule build-second-refinery {\n  priority 687\n  category economy exclusive\n  because \"above the tech centre when economy and tech are weighted the same: the tech centre is paid for out of an income that has to exist first\"\n  do produce-refinery\n  require not is-rushed\n  require not queue-busy(Building)\n  require can-build-role(refinery)\n  require role-count(refinery) == 1\n  require has-role(barracks) or has-role(war-factory)\n  require cash >= 600\n}"
+  },
+  {
+    "name": "build-extra-refinery",
+    "priority": 665,
+    "category": "economy",
+    "exclusive": true,
+    "because": "above the tech centre when economy and tech are weighted the same",
+    "action": "produce-refinery",
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"refinery\") && RoleCount(\"refinery\") >= 2 && RoleCount(\"refinery\") < 5 && (HasRole(\"barracks\") || HasRole(\"war_factory\")) && Cash() >= 920",
+    "source": "rule build-extra-refinery {\n  priority 665\n  category economy exclusive\n  because \"above the tech centre when economy and tech are weighted the same\"\n  do produce-refinery\n  require not is-rushed\n  require not queue-busy(Building)\n  require can-build-role(refinery)\n  require role-count(refinery) >= 2\n  require role-count(refinery) < 5\n  require has-role(barracks) or has-role(war-factory)\n  require cash >= 920\n}"
+  },
+  {
+    "name": "build-advanced-power",
+    "priority": 790,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-advanced-power",
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"advanced_power\") && PowerExcess() < 50 && Cash() >= 500",
+    "source": "rule build-advanced-power {\n  priority 790\n  category economy exclusive\n  do produce-advanced-power\n  require not is-rushed\n  require not queue-busy(Building)\n  require can-build-role(advanced-power)\n  require power-excess < 50\n  require cash >= 500\n}"
+  },
+  {
+    "name": "build-ore-silo",
+    "priority": 300,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-ore-silo",
+    "condition": "!IsRushed() && !QueueBusy(\"Building\") && CanBuildRole(\"ore_silo\") && ResourcesNearCap() && RoleCount(\"ore_silo\") < 2 && Cash() >= 150",
+    "source": "rule build-ore-silo {\n  priority 300\n  category economy exclusive\n  do produce-ore-silo\n  require not is-rushed\n  require not queue-busy(Building)\n  require can-build-role(ore-silo)\n  require resources-near-cap\n  require role-count(ore-silo) < 2\n  require cash >= 150\n}"
+  },
+  {
+    "name": "produce-extra-harvester",
+    "priority": 510,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "because": "above every combat-vehicle rule, so the exclusive queue cannot starve income",
+    "action": "produce-harvester",
+    "condition": "HasRole(\"refinery\") && HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuildRole(\"harvester\") && RoleCount(\"harvester\") < RoleCount(\"refinery\") + 1 && Cash() >= 600",
+    "source": "rule produce-extra-harvester {\n  priority 510\n  category produce-vehicle exclusive\n  because \"above every combat-vehicle rule, so the exclusive queue cannot starve income\"\n  do produce-harvester\n  require has-role(refinery)\n  require has-role(war-factory)\n  require not queue-busy(Vehicle)\n  require can-build-role(harvester)\n  require role-count(harvester) < role-count(refinery) + 1\n  require cash >= 600\n}"
   },
   {
     "name": "retreat-damaged-units",
-    "priority": 405,
+    "priority": 387,
     "category": "micro",
     "exclusive": false,
-    "action": "retreat-damaged-units(0.2725)",
-    "condition": "len(DamagedCombatUnits(0.27)) > 0"
+    "action": "retreat-damaged-units(0.18500000000000003)",
+    "condition": "len(DamagedCombatUnits(0.19)) > 0",
+    "source": "rule retreat-damaged-units {\n  priority 387\n  category micro\n  do retreat-damaged-units(0.18500000000000003)\n  require count(damaged-combat-units(0.19)) > 0\n}"
   },
   {
     "name": "clear-healed-units",
     "priority": 500,
     "category": "micro",
     "exclusive": false,
-    "action": "clear-healed-units(0.2725)",
-    "condition": "HasRetreatingUnits()"
+    "because": "runs every tick so healed units rejoin the combat pool promptly",
+    "action": "clear-healed-units(0.18500000000000003)",
+    "condition": "HasRetreatingUnits()",
+    "source": "rule clear-healed-units {\n  priority 500\n  category micro\n  because \"runs every tick so healed units rejoin the combat pool promptly\"\n  do clear-healed-units(0.18500000000000003)\n  require has-retreating-units\n}"
   },
   {
     "name": "recall-overextended-ground-attack",
-    "priority": 395,
+    "priority": 377,
     "category": "micro",
     "exclusive": false,
-    "action": "recall-overextended(ground-attack, 0.4125)",
-    "condition": "SquadExists(\"ground-attack\") && len(OverextendedSquadMembers(\"ground-attack\",0.41)) > 0"
+    "because": "aggressive doctrines let units roam further before the leash pulls",
+    "action": "recall-overextended(ground-attack, 0.475)",
+    "condition": "SquadExists(\"ground-attack\") && len(OverextendedSquadMembers(\"ground-attack\",0.47)) > 0",
+    "source": "rule recall-overextended-ground-attack {\n  priority 377\n  category micro\n  because \"aggressive doctrines let units roam further before the leash pulls\"\n  do recall-overextended(ground-attack, 0.475)\n  require squad-exists(ground-attack)\n  require count(overextended-squad-members(ground-attack, 0.47)) > 0\n}"
   },
   {
     "name": "recall-overextended-naval-attack",
-    "priority": 395,
+    "priority": 376,
     "category": "micro",
     "exclusive": false,
-    "action": "recall-overextended(naval-attack, 0.4125)",
-    "condition": "SquadExists(\"naval-attack\") && len(OverextendedSquadMembers(\"naval-attack\",0.41)) > 0"
+    "because": "below its ground mirror, so the two do not tie on every doctrine",
+    "action": "recall-overextended(naval-attack, 0.475)",
+    "condition": "SquadExists(\"naval-attack\") && len(OverextendedSquadMembers(\"naval-attack\",0.47)) > 0",
+    "source": "rule recall-overextended-naval-attack {\n  priority 376\n  category micro\n  because \"below its ground mirror, so the two do not tie on every doctrine\"\n  do recall-overextended(naval-attack, 0.475)\n  require squad-exists(naval-attack)\n  require count(overextended-squad-members(naval-attack, 0.47)) > 0\n}"
   },
   {
     "name": "squad-disengage-ground-attack",
-    "priority": 400,
+    "priority": 382,
     "category": "micro",
     "exclusive": false,
+    "because": "pure aggression never disengages, so this is absent at aggression 1",
     "action": "squad-disengage(ground-attack)",
-    "condition": "SquadExists(\"ground-attack\") && SquadAwayFromBase(\"ground-attack\",0.1) && SquadThreatRatio(\"ground-attack\",0.1) > 2.48"
+    "condition": "SquadExists(\"ground-attack\") && SquadAwayFromBase(\"ground-attack\",0.1) && SquadThreatRatio(\"ground-attack\",0.1) > 2.85",
+    "source": "rule squad-disengage-ground-attack {\n  priority 382\n  category micro\n  because \"pure aggression never disengages, so this is absent at aggression 1\"\n  do squad-disengage(ground-attack)\n  require squad-exists(ground-attack)\n  require squad-away-from-base(ground-attack, 0.1)\n  require squad-threat-ratio(ground-attack, 0.1) > 2.85\n}"
   },
   {
     "name": "squad-disengage-naval-attack",
-    "priority": 400,
+    "priority": 381,
     "category": "micro",
     "exclusive": false,
+    "because": "below its ground mirror, so the two do not tie on every doctrine",
     "action": "squad-disengage(naval-attack)",
-    "condition": "SquadExists(\"naval-attack\") && SquadAwayFromBase(\"naval-attack\",0.1) && SquadThreatRatio(\"naval-attack\",0.1) > 2.48"
+    "condition": "SquadExists(\"naval-attack\") && SquadAwayFromBase(\"naval-attack\",0.1) && SquadThreatRatio(\"naval-attack\",0.1) > 2.85",
+    "source": "rule squad-disengage-naval-attack {\n  priority 381\n  category micro\n  because \"below its ground mirror, so the two do not tie on every doctrine\"\n  do squad-disengage(naval-attack)\n  require squad-exists(naval-attack)\n  require squad-away-from-base(naval-attack, 0.1)\n  require squad-threat-ratio(naval-attack, 0.1) > 2.85\n}"
   },
   {
     "name": "squad-focus-fire",
-    "priority": 331,
+    "priority": 345,
     "category": "micro",
     "exclusive": false,
+    "because": "capped below the retreat band: keeping a unit alive outranks improving what it shoots at",
     "action": "squad-focus-fire(ground-attack)",
-    "condition": "SquadExists(\"ground-attack\") && SquadReadyRatio(\"ground-attack\") >= 0.74 && BestGroundTarget() != nil"
+    "condition": "SquadExists(\"ground-attack\") && SquadReadyRatio(\"ground-attack\") >= 0.5 && BestGroundTarget() != nil",
+    "source": "rule squad-focus-fire {\n  priority 345\n  category micro\n  because \"capped below the retreat band: keeping a unit alive outranks improving what it shoots at\"\n  do squad-focus-fire(ground-attack)\n  require squad-exists(ground-attack)\n  require squad-ready-ratio(ground-attack) >= 0.5\n  require exists best-ground-target\n}"
   },
   {
     "name": "flee-harvesters",
-    "priority": 255,
+    "priority": 285,
     "category": "micro",
     "exclusive": false,
-    "action": "flee-harvesters(0.12)",
-    "condition": "EnemiesVisible() && len(HarvestersInDanger(0.12)) > 0"
+    "action": "flee-harvesters(0.13999999999999999)",
+    "condition": "EnemiesVisible() && len(HarvestersInDanger(0.14)) > 0",
+    "source": "rule flee-harvesters {\n  priority 285\n  category micro\n  do flee-harvesters(0.13999999999999999)\n  require enemies-visible\n  require count(harvesters-in-danger(0.14)) > 0\n}"
   },
   {
     "name": "scout-with-scouts",
-    "priority": 345,
+    "priority": 390,
     "category": "recon",
     "exclusive": false,
+    "because": "rangers keep patrolling so intel stays fresh rather than going stale",
     "action": "scout-patrol",
-    "condition": "len(IdleScouts()) > 0"
+    "condition": "len(IdleScouts()) > 0",
+    "source": "rule scout-with-scouts {\n  priority 390\n  category recon\n  because \"rangers keep patrolling so intel stays fresh rather than going stale\"\n  do scout-patrol\n  require count(idle-scouts) > 0\n}"
   },
   {
     "name": "scout-with-idle-units",
-    "priority": 340,
+    "priority": 385,
     "category": "recon",
     "exclusive": false,
+    "because": "two idle units, because the action sends at most two — it used to ask for a whole attack group, so the only path to early intel waited on six spare units the squads were consuming, and game 83 saw nothing at all until tick 13250 of 24020",
     "action": "scout",
-    "condition": "!EnemiesVisible() && len(UnassignedIdleGround()) >= 8"
+    "condition": "!EnemiesVisible() && len(UnassignedIdleGround()) >= 2",
+    "source": "rule scout-with-idle-units {\n  priority 385\n  category recon\n  because \"two idle units, because the action sends at most two — it used to ask for a whole attack group, so the only path to early intel waited on six spare units the squads were consuming, and game 83 saw nothing at all until tick 13250 of 24020\"\n  do scout\n  require not enemies-visible\n  require count(unassigned-idle-ground) >= 2\n}"
+  },
+  {
+    "name": "form-harvester-guard",
+    "priority": 428,
+    "category": "squad-form",
+    "exclusive": false,
+    "because": "a squad reserved for the economy, so the attack rules cannot poach it back — formed at its own size, since the surplus it used to demand on top never arrived",
+    "action": "form-squad(harvester-guard, Ground, 4, Defend)",
+    "condition": "(!SquadExists(\"harvester-guard\") && len(UnassignedIdleGround()) >= 4 || SquadNeedsReinforcement(\"harvester-guard\") && len(UnassignedIdleGround()) >= 1)",
+    "source": "rule form-harvester-guard {\n  priority 428\n  category squad-form\n  because \"a squad reserved for the economy, so the attack rules cannot poach it back — formed at its own size, since the surplus it used to demand on top never arrived\"\n  do form-squad(harvester-guard, Ground, 4, Defend)\n  require not squad-exists(harvester-guard) and count(unassigned-idle-ground) >= 4 or squad-needs-reinforcement(harvester-guard) and count(unassigned-idle-ground) >= 1\n}"
+  },
+  {
+    "name": "guard-harvesters",
+    "priority": 423,
+    "category": "combat",
+    "exclusive": false,
+    "because": "every other defensive rule is anchored at the base, so a harvester raided at an ore patch summoned nobody — and it no longer waits for the squad to be idle, because a guard already riding to one raid is not idle and harassment does not wait its turn: across games 84 and 85 this fired five times while the harvesters fled a thousand",
+    "action": "squad-guard-harvesters(harvester-guard, 0.13999999999999999)",
+    "condition": "SquadExists(\"harvester-guard\") && len(HarvestersInDanger(0.14)) > 0",
+    "source": "rule guard-harvesters {\n  priority 423\n  category combat\n  because \"every other defensive rule is anchored at the base, so a harvester raided at an ore patch summoned nobody — and it no longer waits for the squad to be idle, because a guard already riding to one raid is not idle and harassment does not wait its turn: across games 84 and 85 this fired five times while the harvesters fled a thousand\"\n  do squad-guard-harvesters(harvester-guard, 0.13999999999999999)\n  require squad-exists(harvester-guard)\n  require count(harvesters-in-danger(0.14)) > 0\n}"
+  },
+  {
+    "name": "produce-specialist-infantry",
+    "priority": 490,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-specialist-infantry",
+    "condition": "HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuildAnySpecialist() && SpecialistInfantryCount() < 6 && Cash() >= 300 && (HasRole(\"radar\") || Cash() >= 600) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 900) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 900) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 1200)",
+    "source": "rule produce-specialist-infantry {\n  priority 490\n  category produce-infantry exclusive\n  do produce-specialist-infantry\n  require has-role(barracks)\n  require not queue-busy(Infantry)\n  require can-build-any-specialist\n  require specialist-infantry-count < 6\n  require cash >= 300 and (has-role(radar) or cash >= 600) and (has-role(war-factory) or not has-role(radar) or cash >= 900) and (has-role(tech-center) or not has-role(radar) or cash >= 900) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 1200)\n}"
+  },
+  {
+    "name": "produce-infantry",
+    "priority": 500,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-infantry",
+    "condition": "!AxisBurned(\"infantry\") && HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuild(\"Infantry\",\"e1\") && UnitCount(\"e1\") < 19 && Cash() >= 100 && (HasRole(\"radar\") || Cash() >= 200) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 300) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 300) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 400)",
+    "source": "rule produce-infantry {\n  priority 500\n  category produce-infantry exclusive\n  do produce-infantry\n  require not axis-burned(infantry)\n  require has-role(barracks)\n  require not queue-busy(Infantry)\n  require can-build(Infantry, e1)\n  require unit-count(e1) < 19\n  require cash >= 100 and (has-role(radar) or cash >= 200) and (has-role(war-factory) or not has-role(radar) or cash >= 300) and (has-role(tech-center) or not has-role(radar) or cash >= 300) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 400)\n}"
+  },
+  {
+    "name": "produce-infantry-rush",
+    "priority": 520,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "because": "under a rush, cheap rifles have to spawn now rather than behind tech savings",
+    "action": "produce-infantry",
+    "condition": "IsRushed() && !AxisBurned(\"infantry\") && HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuild(\"Infantry\",\"e1\") && UnitCount(\"e1\") < 38 && Cash() >= 50",
+    "source": "rule produce-infantry-rush {\n  priority 520\n  category produce-infantry exclusive\n  because \"under a rush, cheap rifles have to spawn now rather than behind tech savings\"\n  do produce-infantry\n  require is-rushed\n  require not axis-burned(infantry)\n  require has-role(barracks)\n  require not queue-busy(Infantry)\n  require can-build(Infantry, e1)\n  require unit-count(e1) < 38\n  require cash >= 50\n}"
+  },
+  {
+    "name": "produce-bridge-infantry",
+    "priority": 494,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "because": "extra rifles while the doctrine's production buildings are still missing, and below the rocket soldier because a rifle top-up is the more disposable of the two",
+    "action": "produce-infantry",
+    "condition": "!AxisBurned(\"infantry\") && HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuild(\"Infantry\",\"e1\") && (!HasRole(\"airfield\") || !HasRole(\"naval_yard\") || !HasRole(\"war_factory\")) && UnitCount(\"e1\") >= 19 && UnitCount(\"e1\") < 31 && Cash() >= 100 && (HasRole(\"radar\") || Cash() >= 200) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 300) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 300) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 400)",
+    "source": "rule produce-bridge-infantry {\n  priority 494\n  category produce-infantry exclusive\n  because \"extra rifles while the doctrine's production buildings are still missing, and below the rocket soldier because a rifle top-up is the more disposable of the two\"\n  do produce-infantry\n  require not axis-burned(infantry)\n  require has-role(barracks)\n  require not queue-busy(Infantry)\n  require can-build(Infantry, e1)\n  require not has-role(airfield) or not has-role(naval-yard) or not has-role(war-factory)\n  require unit-count(e1) >= 19\n  require unit-count(e1) < 31\n  require cash >= 100 and (has-role(radar) or cash >= 200) and (has-role(war-factory) or not has-role(radar) or cash >= 300) and (has-role(tech-center) or not has-role(radar) or cash >= 300) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 400)\n}"
+  },
+  {
+    "name": "produce-grenadier",
+    "priority": 498,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-grenadier",
+    "condition": "!AxisBurned(\"infantry\") && HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuildRole(\"grenadier\") && RoleCount(\"grenadier\") < 6 && Cash() >= 160 && (HasRole(\"radar\") || Cash() >= 320) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 480) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 480) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 640)",
+    "source": "rule produce-grenadier {\n  priority 498\n  category produce-infantry exclusive\n  do produce-grenadier\n  require not axis-burned(infantry)\n  require has-role(barracks)\n  require not queue-busy(Infantry)\n  require can-build-role(grenadier)\n  require role-count(grenadier) < 6\n  require cash >= 160 and (has-role(radar) or cash >= 320) and (has-role(war-factory) or not has-role(radar) or cash >= 480) and (has-role(tech-center) or not has-role(radar) or cash >= 480) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 640)\n}"
+  },
+  {
+    "name": "build-kennel",
+    "priority": 550,
+    "category": "economy",
+    "exclusive": true,
+    "action": "produce-kennel",
+    "condition": "!QueueBusy(\"Building\") && CanBuildRole(\"kennel\") && !HasRole(\"kennel\") && PowerExcess() >= 0 && Cash() >= 300",
+    "source": "rule build-kennel {\n  priority 550\n  category economy exclusive\n  do produce-kennel\n  require not queue-busy(Building)\n  require can-build-role(kennel)\n  require not has-role(kennel)\n  require power-excess >= 0\n  require cash >= 300\n}"
+  },
+  {
+    "name": "produce-attack-dog",
+    "priority": 509,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "because": "the first dog out of the kennel is the scout, so it outranks rifles until the cap — but not the specialists, when the doctrine asks for those first",
+    "action": "produce-attack-dog",
+    "condition": "HasRole(\"kennel\") && !QueueBusy(\"Infantry\") && CanBuildRole(\"attack_dog\") && RoleCount(\"attack_dog\") < 3 && Cash() >= 200 && (HasRole(\"radar\") || Cash() >= 400) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 600) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 600) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 800)",
+    "source": "rule produce-attack-dog {\n  priority 509\n  category produce-infantry exclusive\n  because \"the first dog out of the kennel is the scout, so it outranks rifles until the cap — but not the specialists, when the doctrine asks for those first\"\n  do produce-attack-dog\n  require has-role(kennel)\n  require not queue-busy(Infantry)\n  require can-build-role(attack-dog)\n  require role-count(attack-dog) < 3\n  require cash >= 200 and (has-role(radar) or cash >= 400) and (has-role(war-factory) or not has-role(radar) or cash >= 600) and (has-role(tech-center) or not has-role(radar) or cash >= 600) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 800)\n}"
+  },
+  {
+    "name": "produce-spy",
+    "priority": 438,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "because": "below the capture-defense rifles, which are cheaper and hold what was taken",
+    "action": "produce-spy",
+    "condition": "HasRole(\"barracks\") && HasRole(\"radar\") && !QueueBusy(\"Infantry\") && CanBuildRole(\"spy\") && RoleCount(\"spy\") < 1 && Cash() >= 500 && (HasRole(\"radar\") || Cash() >= 1000) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 1500) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1500) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 2000)",
+    "source": "rule produce-spy {\n  priority 438\n  category produce-infantry exclusive\n  because \"below the capture-defense rifles, which are cheaper and hold what was taken\"\n  do produce-spy\n  require has-role(barracks)\n  require has-role(radar)\n  require not queue-busy(Infantry)\n  require can-build-role(spy)\n  require role-count(spy) < 1\n  require cash >= 500 and (has-role(radar) or cash >= 1000) and (has-role(war-factory) or not has-role(radar) or cash >= 1500) and (has-role(tech-center) or not has-role(radar) or cash >= 1500) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 2000)\n}"
+  },
+  {
+    "name": "produce-vehicle",
+    "priority": 480,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-vehicle",
+    "condition": "!AxisBurned(\"vehicle\") && HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuildAnyCombatVehicle() && CombatVehicleCount() < 9 && Cash() >= 800 && (HasRole(\"radar\") || Cash() >= 899) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 999) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 949) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 1049)",
+    "source": "rule produce-vehicle {\n  priority 480\n  category produce-vehicle exclusive\n  do produce-vehicle\n  require not axis-burned(vehicle)\n  require has-role(war-factory)\n  require not queue-busy(Vehicle)\n  require can-build-any-combat-vehicle\n  require combat-vehicle-count < 9\n  require cash >= 800 and (has-role(radar) or cash >= 899) and (has-role(war-factory) or not has-role(radar) or cash >= 999) and (has-role(tech-center) or not has-role(radar) or cash >= 949) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 1049)\n}"
+  },
+  {
+    "name": "produce-aircraft",
+    "priority": 460,
+    "category": "produce-aircraft",
+    "exclusive": true,
+    "action": "produce-aircraft",
+    "condition": "!AxisBurned(\"air\") && HasRole(\"airfield\") && !QueueBusy(\"Aircraft\") && CanBuildAnyCombatAircraft() && CombatAircraftCount() < 7 && CombatAircraftCount() < AircraftCapacity() && Cash() >= 800 && (HasRole(\"radar\") || Cash() >= 1600) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2400) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2300) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 3200)",
+    "source": "rule produce-aircraft {\n  priority 460\n  category produce-aircraft exclusive\n  do produce-aircraft\n  require not axis-burned(air)\n  require has-role(airfield)\n  require not queue-busy(Aircraft)\n  require can-build-any-combat-aircraft\n  require combat-aircraft-count < 7\n  require combat-aircraft-count < aircraft-capacity\n  require cash >= 800 and (has-role(radar) or cash >= 1600) and (has-role(war-factory) or not has-role(radar) or cash >= 2400) and (has-role(tech-center) or not has-role(radar) or cash >= 2300) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 3200)\n}"
+  },
+  {
+    "name": "produce-ship",
+    "priority": 440,
+    "category": "produce-ship",
+    "exclusive": true,
+    "action": "produce-ship",
+    "condition": "!AxisBurned(\"naval\") && MapHasWater() && HasRole(\"naval_yard\") && !QueueBusy(\"Ship\") && (CanBuildRole(\"submarine\") || CanBuildRole(\"destroyer\")) && RoleCount(\"submarine\") + RoleCount(\"destroyer\") < 8 && Cash() >= 800 && (HasRole(\"radar\") || Cash() >= 1600) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2400) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2300) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 3200)",
+    "source": "rule produce-ship {\n  priority 440\n  category produce-ship exclusive\n  do produce-ship\n  require not axis-burned(naval)\n  require map-has-water\n  require has-role(naval-yard)\n  require not queue-busy(Ship)\n  require can-build-role(submarine) or can-build-role(destroyer)\n  require role-count(submarine) + role-count(destroyer) < 8\n  require cash >= 800 and (has-role(radar) or cash >= 1600) and (has-role(war-factory) or not has-role(radar) or cash >= 2400) and (has-role(tech-center) or not has-role(radar) or cash >= 2300) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 3200)\n}"
+  },
+  {
+    "name": "produce-gunboat",
+    "priority": 435,
+    "category": "produce-ship",
+    "exclusive": true,
+    "action": "produce-gunboat",
+    "condition": "MapHasWater() && HasRole(\"naval_yard\") && !QueueBusy(\"Ship\") && CanBuildRole(\"gunboat\") && RoleCount(\"gunboat\") < 4 && Cash() >= 500 && (HasRole(\"radar\") || Cash() >= 1000) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 1500) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1500) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 2000)",
+    "source": "rule produce-gunboat {\n  priority 435\n  category produce-ship exclusive\n  do produce-gunboat\n  require map-has-water\n  require has-role(naval-yard)\n  require not queue-busy(Ship)\n  require can-build-role(gunboat)\n  require role-count(gunboat) < 4\n  require cash >= 500 and (has-role(radar) or cash >= 1000) and (has-role(war-factory) or not has-role(radar) or cash >= 1500) and (has-role(tech-center) or not has-role(radar) or cash >= 1500) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 2000)\n}"
+  },
+  {
+    "name": "produce-rocket-soldier",
+    "priority": 495,
+    "category": "produce-infantry",
+    "exclusive": true,
+    "action": "produce-rocket-soldier",
+    "condition": "!AxisBurned(\"infantry\") && HasRole(\"barracks\") && !QueueBusy(\"Infantry\") && CanBuildRole(\"rocket_soldier\") && RoleCount(\"rocket_soldier\") < 7 && Cash() >= 300 && (HasRole(\"radar\") || Cash() >= 600) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 900) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 900) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 1200)",
+    "source": "rule produce-rocket-soldier {\n  priority 495\n  category produce-infantry exclusive\n  do produce-rocket-soldier\n  require not axis-burned(infantry)\n  require has-role(barracks)\n  require not queue-busy(Infantry)\n  require can-build-role(rocket-soldier)\n  require role-count(rocket-soldier) < 7\n  require cash >= 300 and (has-role(radar) or cash >= 600) and (has-role(war-factory) or not has-role(radar) or cash >= 900) and (has-role(tech-center) or not has-role(radar) or cash >= 900) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 1200)\n}"
+  },
+  {
+    "name": "produce-heavy-vehicle",
+    "priority": 475,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-heavy-vehicle",
+    "condition": "HasRole(\"war_factory\") && HasRole(\"tech_center\") && !QueueBusy(\"Vehicle\") && (CanBuildRole(\"heavy_tank\") || CanBuildRole(\"medium_tank\")) && RoleCount(\"heavy_tank\") + RoleCount(\"medium_tank\") < 4 && Cash() >= 1200 && (HasRole(\"radar\") || Cash() >= 2200) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 3200) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2700) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 3700)",
+    "source": "rule produce-heavy-vehicle {\n  priority 475\n  category produce-vehicle exclusive\n  do produce-heavy-vehicle\n  require has-role(war-factory)\n  require has-role(tech-center)\n  require not queue-busy(Vehicle)\n  require can-build-role(heavy-tank) or can-build-role(medium-tank)\n  require role-count(heavy-tank) + role-count(medium-tank) < 4\n  require cash >= 1200 and (has-role(radar) or cash >= 2200) and (has-role(war-factory) or not has-role(radar) or cash >= 3200) and (has-role(tech-center) or not has-role(radar) or cash >= 2700) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 3700)\n}"
+  },
+  {
+    "name": "produce-scout-vehicle",
+    "priority": 465,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-scout-vehicle",
+    "condition": "!HasEnemyIntel() && HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && (CanBuildRole(\"ranger\") || CanBuildRole(\"light_tank\")) && !HasRole(\"ranger\") && !HasScout() && Cash() >= 500 && (HasRole(\"radar\") || Cash() >= 1000) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 1500) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1500) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 2000)",
+    "source": "rule produce-scout-vehicle {\n  priority 465\n  category produce-vehicle exclusive\n  do produce-scout-vehicle\n  require not has-enemy-intel\n  require has-role(war-factory)\n  require not queue-busy(Vehicle)\n  require can-build-role(ranger) or can-build-role(light-tank)\n  require not has-role(ranger)\n  require not has-scout\n  require cash >= 500 and (has-role(radar) or cash >= 1000) and (has-role(war-factory) or not has-role(radar) or cash >= 1500) and (has-role(tech-center) or not has-role(radar) or cash >= 1500) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 2000)\n}"
+  },
+  {
+    "name": "produce-siege-vehicle",
+    "priority": 460,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "because": "when stand-off is the plan, siege has to beat generic vehicles to the queue",
+    "action": "produce-siege-vehicle",
+    "condition": "HasRole(\"war_factory\") && HasRole(\"radar\") && !QueueBusy(\"Vehicle\") && (CanBuildRole(\"artillery\") || CanBuildRole(\"v2_launcher\")) && RoleCount(\"artillery\") + RoleCount(\"v2_launcher\") < 3 && Cash() >= 900 && (HasRole(\"radar\") || Cash() >= 999) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 1099) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1049) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 1149)",
+    "source": "rule produce-siege-vehicle {\n  priority 460\n  category produce-vehicle exclusive\n  because \"when stand-off is the plan, siege has to beat generic vehicles to the queue\"\n  do produce-siege-vehicle\n  require has-role(war-factory)\n  require has-role(radar)\n  require not queue-busy(Vehicle)\n  require can-build-role(artillery) or can-build-role(v2-launcher)\n  require role-count(artillery) + role-count(v2-launcher) < 3\n  require cash >= 900 and (has-role(radar) or cash >= 999) and (has-role(war-factory) or not has-role(radar) or cash >= 1099) and (has-role(tech-center) or not has-role(radar) or cash >= 1049) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 1149)\n}"
+  },
+  {
+    "name": "produce-flak-truck",
+    "priority": 470,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-flak-truck",
+    "condition": "HasRole(\"war_factory\") && !QueueBusy(\"Vehicle\") && CanBuildRole(\"flak_truck\") && RoleCount(\"flak_truck\") < 3 && Cash() >= 600 && (HasRole(\"radar\") || Cash() >= 1200) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 1800) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 1800) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 2400)",
+    "source": "rule produce-flak-truck {\n  priority 470\n  category produce-vehicle exclusive\n  do produce-flak-truck\n  require has-role(war-factory)\n  require not queue-busy(Vehicle)\n  require can-build-role(flak-truck)\n  require role-count(flak-truck) < 3\n  require cash >= 600 and (has-role(radar) or cash >= 1200) and (has-role(war-factory) or not has-role(radar) or cash >= 1800) and (has-role(tech-center) or not has-role(radar) or cash >= 1800) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 2400)\n}"
+  },
+  {
+    "name": "produce-mad-tank",
+    "priority": 455,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-mad-tank",
+    "condition": "HasRole(\"war_factory\") && HasRole(\"tech_center\") && !QueueBusy(\"Vehicle\") && CanBuildRole(\"mad_tank\") && RoleCount(\"mad_tank\") < 2 && Cash() >= 2000 && (HasRole(\"radar\") || Cash() >= 3000) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 4000) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 3500) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 4500)",
+    "source": "rule produce-mad-tank {\n  priority 455\n  category produce-vehicle exclusive\n  do produce-mad-tank\n  require has-role(war-factory)\n  require has-role(tech-center)\n  require not queue-busy(Vehicle)\n  require can-build-role(mad-tank)\n  require role-count(mad-tank) < 2\n  require cash >= 2000 and (has-role(radar) or cash >= 3000) and (has-role(war-factory) or not has-role(radar) or cash >= 4000) and (has-role(tech-center) or not has-role(radar) or cash >= 3500) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 4500)\n}"
+  },
+  {
+    "name": "produce-minelayer",
+    "priority": 450,
+    "category": "produce-vehicle",
+    "exclusive": true,
+    "action": "produce-minelayer",
+    "condition": "HasRole(\"war_factory\") && HasRole(\"service_depot\") && !QueueBusy(\"Vehicle\") && CanBuildRole(\"minelayer\") && RoleCount(\"minelayer\") < 2 && Cash() >= 800 && (HasRole(\"radar\") || Cash() >= 1600) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 2400) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 2300) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 3200)",
+    "source": "rule produce-minelayer {\n  priority 450\n  category produce-vehicle exclusive\n  do produce-minelayer\n  require has-role(war-factory)\n  require has-role(service-depot)\n  require not queue-busy(Vehicle)\n  require can-build-role(minelayer)\n  require role-count(minelayer) < 2\n  require cash >= 800 and (has-role(radar) or cash >= 1600) and (has-role(war-factory) or not has-role(radar) or cash >= 2400) and (has-role(tech-center) or not has-role(radar) or cash >= 2300) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 3200)\n}"
+  },
+  {
+    "name": "lay-mines",
+    "priority": 300,
+    "category": "minelayer",
+    "exclusive": false,
+    "action": "lay-mines",
+    "condition": "len(IdleMinelayers()) > 0",
+    "source": "rule lay-mines {\n  priority 300\n  category minelayer\n  do lay-mines\n  require count(idle-minelayers) > 0\n}"
+  },
+  {
+    "name": "produce-basic-aircraft",
+    "priority": 445,
+    "category": "produce-aircraft",
+    "exclusive": true,
+    "action": "produce-basic-aircraft",
+    "condition": "HasRole(\"airfield\") && !QueueBusy(\"Aircraft\") && CanBuildRole(\"basic_aircraft\") && RoleCount(\"basic_aircraft\") < 3 && CombatAircraftCount() < AircraftCapacity() && Cash() >= 1500 && (HasRole(\"radar\") || Cash() >= 2500) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 3500) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 3000) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 4000)",
+    "source": "rule produce-basic-aircraft {\n  priority 445\n  category produce-aircraft exclusive\n  do produce-basic-aircraft\n  require has-role(airfield)\n  require not queue-busy(Aircraft)\n  require can-build-role(basic-aircraft)\n  require role-count(basic-aircraft) < 3\n  require combat-aircraft-count < aircraft-capacity\n  require cash >= 1500 and (has-role(radar) or cash >= 2500) and (has-role(war-factory) or not has-role(radar) or cash >= 3500) and (has-role(tech-center) or not has-role(radar) or cash >= 3000) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 4000)\n}"
+  },
+  {
+    "name": "produce-attack-aircraft",
+    "priority": 455,
+    "category": "produce-aircraft",
+    "exclusive": true,
+    "action": "produce-advanced-aircraft",
+    "condition": "HasRole(\"airfield\") && !QueueBusy(\"Aircraft\") && CanBuildRole(\"advanced_aircraft\") && RoleCount(\"advanced_aircraft\") < 3 && CombatAircraftCount() < AircraftCapacity() && Cash() >= 1500 && (HasRole(\"radar\") || Cash() >= 2500) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 3500) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 3000) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 4000)",
+    "source": "rule produce-attack-aircraft {\n  priority 455\n  category produce-aircraft exclusive\n  do produce-advanced-aircraft\n  require has-role(airfield)\n  require not queue-busy(Aircraft)\n  require can-build-role(advanced-aircraft)\n  require role-count(advanced-aircraft) < 3\n  require combat-aircraft-count < aircraft-capacity\n  require cash >= 1500 and (has-role(radar) or cash >= 2500) and (has-role(war-factory) or not has-role(radar) or cash >= 3500) and (has-role(tech-center) or not has-role(radar) or cash >= 3000) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 4000)\n}"
+  },
+  {
+    "name": "produce-advanced-ship",
+    "priority": 430,
+    "category": "produce-ship",
+    "exclusive": true,
+    "action": "produce-advanced-ship",
+    "condition": "MapHasWater() && HasRole(\"naval_yard\") && !QueueBusy(\"Ship\") && (CanBuildRole(\"cruiser\") || CanBuildRole(\"destroyer\") || CanBuildRole(\"missile_sub\")) && RoleCount(\"cruiser\") + RoleCount(\"destroyer\") + RoleCount(\"missile_sub\") < 3 && Cash() >= 2000 && (HasRole(\"radar\") || Cash() >= 3000) && (HasRole(\"war_factory\") || !HasRole(\"radar\") || Cash() >= 4000) && (HasRole(\"tech_center\") || !HasRole(\"radar\") || Cash() >= 3500) && (HasRole(\"missile_silo\") || HasRole(\"iron_curtain\") || !HasRole(\"tech_center\") || Cash() >= 4500)",
+    "source": "rule produce-advanced-ship {\n  priority 430\n  category produce-ship exclusive\n  do produce-advanced-ship\n  require map-has-water\n  require has-role(naval-yard)\n  require not queue-busy(Ship)\n  require can-build-role(cruiser) or can-build-role(destroyer) or can-build-role(missile-sub)\n  require role-count(cruiser) + role-count(destroyer) + role-count(missile-sub) < 3\n  require cash >= 2000 and (has-role(radar) or cash >= 3000) and (has-role(war-factory) or not has-role(radar) or cash >= 4000) and (has-role(tech-center) or not has-role(radar) or cash >= 3500) and (has-role(missile-silo) or has-role(iron-curtain) or not has-role(tech-center) or cash >= 4500)\n}"
   }
 ]

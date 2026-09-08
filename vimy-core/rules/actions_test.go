@@ -1350,3 +1350,52 @@ func TestFleeHarvestersClearsItsMapWhenTheThreatLeaves(t *testing.T) {
 		t.Errorf("%d stale entries left behind", n)
 	}
 }
+
+// The relocation loop had no memory: mcvFallbackLocation was a pure function of
+// the building centroid, so every relocation sent the MCV to the same tile and
+// each was followed by three more deploys at a spot that had already failed
+// three times. Game 85 recorded deploy-mcv matching 336 times and ordering
+// something 39 times, across the last quarter of a game it could not rebuild in.
+func TestMCVFallbackTriesSomewhereNew(t *testing.T) {
+	all := make([]model.TerrainType, 64)
+	for i := range all {
+		all[i] = model.Land
+	}
+	env := RuleEnv{
+		State:   model.GameState{MapWidth: 800, MapHeight: 800},
+		Terrain: &model.TerrainGrid{Cols: 8, Rows: 8, CellW: 100, CellH: 100, Grid: all},
+	}
+	mcv := &model.Unit{ID: 1, Type: MCV, X: 400, Y: 400}
+
+	seen := map[[2]int]int{}
+	for round := 0; round < 6; round++ {
+		x, y := mcvFallbackLocation(env, mcv, round)
+		seen[[2]int{x, y}]++
+	}
+	if len(seen) < 4 {
+		t.Errorf("six relocations produced %d distinct tiles (%v); the loop is still retrying the same spot", len(seen), seen)
+	}
+}
+
+// Anchored on the MCV, not on what is left of the base. The centroid is derived
+// from remaining buildings, so while a base is overrun it converges on the
+// fighting — the least likely place a deploy succeeds, and the only situation
+// this code runs in.
+func TestMCVFallbackIgnoresTheShrinkingBase(t *testing.T) {
+	all := make([]model.TerrainType, 64)
+	for i := range all {
+		all[i] = model.Land
+	}
+	env := RuleEnv{
+		State: model.GameState{
+			MapWidth: 800, MapHeight: 800,
+			Buildings: []model.Building{{ID: 1, Type: "powr", X: 50, Y: 50}},
+		},
+		Terrain: &model.TerrainGrid{Cols: 8, Rows: 8, CellW: 100, CellH: 100, Grid: all},
+	}
+	far := &model.Unit{ID: 1, Type: MCV, X: 700, Y: 700}
+	x, y := mcvFallbackLocation(env, far, 0)
+	if x < 300 || y < 300 {
+		t.Errorf("fallback (%d,%d) drifted toward the building at (50,50); it should stay near the MCV at (700,700)", x, y)
+	}
+}

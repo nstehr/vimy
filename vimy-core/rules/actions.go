@@ -30,11 +30,21 @@ func ActionProduceMCV(env RuleEnv, conn *ipc.Connection) error {
 type mcvDeployState struct {
 	Attempts int
 	Tick     int
+	// How many times this MCV has been relocated. The old fallback was a pure
+	// function of the building centroid, so every relocation sent the MCV to
+	// the SAME tile and each was followed by three more deploys at a spot that
+	// had already failed three times. Game 85: deploy-mcv matched 336 times and
+	// ordered something 39 times, over the last quarter of a game it spent
+	// unable to rebuild. This counter is the memory that loop was missing.
+	Relocations int
 }
 
 const (
 	mcvDeployCooldownTicks = 50
 	mcvMaxDeployAttempts   = 3
+	guardResendTicks       = 100
+	mcvFallbackStep        = 250
+	mcvFallbackMaxRings    = 3
 )
 
 func ActionDeployMCV(env RuleEnv, conn *ipc.Connection) error {
@@ -64,8 +74,9 @@ func ActionDeployMCV(env RuleEnv, conn *ipc.Connection) error {
 	// nearby land tile and reset the counter. The next time it arrives idle,
 	// Deploy is retried at the new position.
 	if state.Attempts >= mcvMaxDeployAttempts {
-		fx, fy := mcvFallbackLocation(env)
+		fx, fy := mcvFallbackLocation(env, target, state.Relocations)
 		state.Attempts = 0
+		state.Relocations++
 		states[target.ID] = state
 		env.Memory["deployMCVTick"] = env.State.Tick
 		slog.Info("relocating stuck MCV", "id", target.ID, "to_x", fx, "to_y", fy)
@@ -85,22 +96,34 @@ func ActionDeployMCV(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
-// mcvFallbackLocation picks a land tile near our existing infrastructure
-// where a fresh MCV deploy is likely to succeed. Tries 8 compass offsets
-// around the building centroid until one lands on Land; falls back to the
-// raw centroid when terrain is unknown or all offsets are blocked.
-func mcvFallbackLocation(env RuleEnv) (int, int) {
-	cx, cy := env.BuildingCentroid()
+// mcvFallbackLocation picks a land tile where a fresh MCV deploy is likely to
+// succeed, given how many times this MCV has already been moved and failed.
+//
+// Anchored on the MCV rather than the building centroid. The centroid is
+// derived from what is still standing, so while a base is being overrun it
+// converges on the fighting — the least likely place a deploy succeeds, and
+// exactly the situation this runs in.
+//
+// `round` rotates the starting direction and widens the ring, so a direction
+// and a distance that already failed are not the first thing tried again. That
+// is the whole of the fix: the previous version was a pure function of the
+// centroid and returned the same tile every time, forever.
+func mcvFallbackLocation(env RuleEnv, mcv *model.Unit, round int) (int, int) {
+	cx, cy := mcv.X, mcv.Y
 	if env.Terrain == nil {
 		return cx, cy
 	}
-	offsets := [8][2]int{
-		{300, 0}, {-300, 0}, {0, 300}, {0, -300},
-		{200, 200}, {-200, 200}, {200, -200}, {-200, -200},
+	dirs := [8][2]int{
+		{1, 0}, {-1, 0}, {0, 1}, {0, -1},
+		{1, 1}, {-1, 1}, {1, -1}, {-1, -1},
 	}
-	for _, o := range offsets {
-		tx := clampInt(cx+o[0], 0, env.State.MapWidth-1)
-		ty := clampInt(cy+o[1], 0, env.State.MapHeight-1)
+	// Widen by a ring each round, capped so a long game cannot walk the MCV
+	// off to a corner of the map it can never path back from.
+	dist := mcvFallbackStep * (1 + min(round, mcvFallbackMaxRings))
+	for i := range dirs {
+		o := dirs[(i+round)%len(dirs)]
+		tx := clampInt(cx+o[0]*dist, 0, env.State.MapWidth-1)
+		ty := clampInt(cy+o[1]*dist, 0, env.State.MapHeight-1)
 		if env.Terrain.AtMapPos(tx, ty) == model.Land {
 			return tx, ty
 		}
@@ -2850,7 +2873,7 @@ func SquadGuardHarvesters(name string, dangerPct float64) ActionFunc {
 		if len(threatened) == 0 {
 			return nil
 		}
-		ids := squadIdleActorIDs(env, name)
+		ids := squadCommittableActorIDs(env, name)
 		if len(ids) == 0 {
 			return nil
 		}
@@ -2867,6 +2890,21 @@ func SquadGuardHarvesters(name string, dangerPct float64) ActionFunc {
 				}
 			}
 		}
+
+		// Re-ordering every tick cancels the in-flight path and the squad never
+		// arrives — the failure ActionScoutWithIdleUnits carries a comment about
+		// (772 attack_move commands in one game). Re-issue only when the target
+		// changes or the order has gone stale.
+		type guardOrder struct {
+			Target int
+			Tick   int
+		}
+		orders := memoryMap[string, guardOrder](env.Memory, "squadGuardOrder")
+		if prev, ok := orders[name]; ok &&
+			prev.Target == target.ID && env.State.Tick-prev.Tick < guardResendTicks {
+			return nil
+		}
+		orders[name] = guardOrder{Target: target.ID, Tick: env.State.Tick}
 
 		slog.Debug("squad guarding harvester",
 			"squad", name, "count", len(ids), "harvester", target.ID)
@@ -2902,6 +2940,27 @@ func squadCentroid(env RuleEnv, name string) (int, int, bool) {
 		return 0, 0, false
 	}
 	return sumX / count, sumY / count, true
+}
+
+// squadCommittableActorIDs is every squad member that is not retreating,
+// idle or not. A squad already moving toward one threatened harvester is not
+// idle, so a rule that waits for idleness cannot answer the next raid — and
+// harassment is continuous. Across games 84 and 85 guard-harvesters fired 5
+// times while flee-harvesters matched 1058.
+func squadCommittableActorIDs(env RuleEnv, name string) []uint32 {
+	squads := getSquads(env.Memory)
+	sq, ok := squads[name]
+	if !ok {
+		return nil
+	}
+	retreating := getRetreatingUnits(env.Memory)
+	var ids []uint32
+	for _, id := range sq.UnitIDs {
+		if _, isRetreating := retreating[id]; !isRetreating {
+			ids = append(ids, uint32(id))
+		}
+	}
+	return ids
 }
 
 func squadIdleActorIDs(env RuleEnv, name string) []uint32 {

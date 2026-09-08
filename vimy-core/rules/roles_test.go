@@ -90,3 +90,31 @@ func TestUnbuildableRolesIsTheOtherSidesLockedRoster(t *testing.T) {
 		t.Errorf("germany's forbidden list = %v, want v2_launcher and flak_truck in it", allied)
 	}
 }
+
+// Two of the three support powers are country-gated, not side-gated: a Soviet
+// player who is not Russia still cannot call the Russian spy plane.
+func TestSupportPowerReachableIsPerCountry(t *testing.T) {
+	cases := []struct {
+		power, faction string
+		want           bool
+	}{
+		{"SovietParatroopers", "russia", true},
+		{"SovietParatroopers", "ukraine", true},
+		{"SovietParatroopers", "germany", false},
+		{"SovietSpyPlane", "russia", true},
+		{"SovietSpyPlane", "ukraine", false},
+		{"SovietSpyPlane", "england", false},
+		{"UkraineParabombs", "ukraine", true},
+		{"UkraineParabombs", "russia", false},
+		// Unknown powers are reachable: no evidence is not evidence of absence,
+		// and a report that calls a merely-idle rule impossible is worse than
+		// one that says nothing.
+		{"NukePowerInfoOrder", "germany", true},
+		{"GrantExternalConditionPowerInfoOrder", "england", true},
+	}
+	for _, c := range cases {
+		if got := SupportPowerReachable(c.power, c.faction); got != c.want {
+			t.Errorf("SupportPowerReachable(%q, %q) = %v, want %v", c.power, c.faction, got, c.want)
+		}
+	}
+}

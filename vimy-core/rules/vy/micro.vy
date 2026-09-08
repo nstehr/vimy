@@ -114,10 +114,9 @@ rule form-harvester-guard {
 rule guard-harvesters {
   priority lerp(360, 430, economy-priority)
   category combat
-  because "every other defensive rule is anchored at the base, so a harvester raided at an ore patch summoned nobody"
+  because "every other defensive rule is anchored at the base, so a harvester raided at an ore patch summoned nobody — and it no longer waits for the squad to be idle, because a guard already riding to one raid is not idle and harassment does not wait its turn: across games 84 and 85 this fired five times while the harvesters fled a thousand"
   do squad-guard-harvesters(harvester-guard, lerpf(0.05, 0.15, economy-priority))
   require economy-priority > 0.3
   require squad-exists(harvester-guard)
-  require squad-idle-count(harvester-guard) > 0
   require count(harvesters-in-danger(round2(lerpf(0.05, 0.15, economy-priority)))) > 0
 }

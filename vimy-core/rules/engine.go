@@ -193,6 +193,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	defer e.memMu.Unlock()
 
 	env := RuleEnv{State: gs, Faction: faction, Memory: e.Memory, Terrain: e.Terrain, Preferences: e.prefs, TargetBias: e.bias}
+	sampleIncome(env)
 	updateIntel(env)
 	updateBuiltRoles(env)
 	updateSquads(env)
@@ -598,4 +599,29 @@ func compileRules(rules []*Rule) ([]*Rule, error) {
 		return rules[i].Priority > rules[j].Priority
 	})
 	return rules, nil
+}
+
+// incomeSampleTicks is the window IncomeRate is measured over. Long enough that
+// a single purchase does not read as a collapse in income, short enough that a
+// rule reacting to it is reacting to now.
+const incomeSampleTicks = 500
+
+// sampleIncome maintains the net cash delta the savings model reads. Kept in
+// engine memory because a rate needs two observations and a RuleEnv has one.
+func sampleIncome(env RuleEnv) {
+	cash := env.State.Player.Cash
+	tick := env.State.Tick
+	last, haveLast := env.Memory["incomeSampleTick"].(int)
+	prev, havePrev := env.Memory["incomeSampleCash"].(int)
+	if !haveLast || !havePrev {
+		env.Memory["incomeSampleTick"] = tick
+		env.Memory["incomeSampleCash"] = cash
+		return
+	}
+	if tick-last < incomeSampleTicks {
+		return
+	}
+	env.Memory["incomeRate"] = cash - prev
+	env.Memory["incomeSampleTick"] = tick
+	env.Memory["incomeSampleCash"] = cash
 }

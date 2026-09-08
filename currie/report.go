@@ -27,6 +27,10 @@ type site struct {
 	// and reading two raw counts side by side reports the length difference as
 	// a finding.
 	SoleRate float64
+	// What this line asks for that the faction can never have, empty when the
+	// clause is satisfiable in principle. Such a line is correct and inert, and
+	// ranking it as a top blocker is noise.
+	Impossible string
 	// How many of the rules this line blocks already fire and do something in
 	// the real game. A line whose rules all already work is not where a problem
 	// is, however often the sample saw it block — the sample simply missed the
@@ -93,6 +97,13 @@ type view struct {
 	Late []LateStart
 	// How far into the game the game's own duration was, for the axis.
 	DurationTicks int
+	// Who we played, so a clause can say which faction can never satisfy it.
+	Faction string
+	// Blame sites ranked below the cut because they are correct: their rules
+	// already work, or the faction can never satisfy them. Counted rather than
+	// silently dropped — a report that hides what it excluded is how a reader
+	// comes to trust a ranking more than it deserves.
+	InertSites int
 	Preempted     int
 	Sites         []site
 	Dead          []deadRule
@@ -119,8 +130,8 @@ type view struct {
 }
 
 // buildWith adds the analysis that needs the windows kept apart.
-func buildWith(title string, rep report, windows []windowStats, firings map[string]store.Firing, durationTicks int) view {
-	v := build(title, rep, firings, durationTicks)
+func buildWith(title string, rep report, windows []windowStats, firings map[string]store.Firing, durationTicks int, faction string) view {
+	v := build(title, rep, firings, durationTicks, faction)
 	byRule := make(map[string][]clauseReport, len(rep.Rules))
 	for _, r := range rep.Rules {
 		byRule[r.Rule] = r.Clauses
@@ -155,7 +166,7 @@ func reconcile(v *view, firings map[string]store.Firing) {
 // and late enough not to list every rule that needs a building first.
 const lateStartPct = 25.0
 
-func build(title string, rep report, firings map[string]store.Firing, durationTicks int) view {
+func build(title string, rep report, firings map[string]store.Firing, durationTicks int, faction string) view {
 	v := view{Title: title, States: rep.States, RuleCount: len(rep.Rules)}
 
 	// Aggregate by the line that wrote the requirement, across every rule it
@@ -211,12 +222,22 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 	// Ranked purely by blame these fill the whole first page, which is how a
 	// scouting bug that was really a war-factory bug survived two readings.
 	// They stay in the report, below the lines that actually stopped something.
+	for i := range v.Sites {
+		v.Sites[i].Impossible = impossibleFor(v.Sites[i].Source, faction)
+	}
 	sort.SliceStable(v.Sites, func(i, j int) bool {
-		if a, b := v.Sites[i].Live(), v.Sites[j].Live(); a != b {
-			return b
+		ai := v.Sites[i].Live() || v.Sites[i].Impossible != ""
+		aj := v.Sites[j].Live() || v.Sites[j].Impossible != ""
+		if ai != aj {
+			return aj
 		}
 		return v.Sites[i].Sole > v.Sites[j].Sole
 	})
+	for _, st := range v.Sites {
+		if st.Live() || st.Impossible != "" {
+			v.InertSites++
+		}
+	}
 	if len(v.Sites) > 12 {
 		v.Sites = v.Sites[:12]
 	}
@@ -269,6 +290,7 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 	// When each working rule first did something. Ranked latest-first, because
 	// the interesting ones are the rules whose onset is the finding.
 	v.DurationTicks = durationTicks
+	v.Faction = faction
 	if v.DurationTicks > 0 {
 		for name, f := range firings {
 			if f.Acted <= 0 || f.FirstTick <= 0 {

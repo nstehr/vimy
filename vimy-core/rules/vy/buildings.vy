@@ -35,6 +35,14 @@ def war-factory-cash() =
 def affordable(cost: int) =
   cash >= cost
   and (vehicle-weight <= 0.1 or has-role(radar) or cash >= cost + 1000)
+  and (income-rate > 0 or has-role(refinery)
+       or cash >= cost + 1400)
+  and (income-rate > 0 or has-role(war-factory) or vehicle-weight <= 0.1
+       or cash >= cost + war-factory-cash())
+  and (income-rate > 0 or has-role(service-depot) or vehicle-weight <= 0.3
+       or cash >= cost + service-depot-cash())
+  and (income-rate > 0 or has-role(radar) or tech-priority <= 0.2
+       or cash >= cost + 1000)
 
 rule build-radar {
   priority trunc(select(prefers-radar-gated-primary > 0, 710.0, 570.0))

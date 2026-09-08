@@ -427,3 +427,34 @@ func UnbuildableRoles(faction string) []string {
 	sort.Strings(out)
 	return out
 }
+
+// supportPowerCountries records which factions can ever hold a support power,
+// read from the mod's own prerequisites:
+//
+//	SovietParatroopers  aircraft.soviet
+//	SovietSpyPlane      structures.russia
+//	UkraineParabombs    aircraft.ukraine
+//
+// Two of the three are country-gated rather than side-gated, so "Soviet" is not
+// a fine enough answer: a Ukrainian player cannot call the Russian spy plane.
+//
+// A power absent from this table is unknown, not impossible. NukePowerInfoOrder
+// is deliberately absent — no prerequisite was found for it, and claiming a rule
+// is unsatisfiable when it is merely idle is the error this table exists to stop
+// a report from making.
+var supportPowerCountries = map[string]map[string]bool{
+	"SovietParatroopers": sovietFactions,
+	"SovietSpyPlane":     {"russia": true},
+	"UkraineParabombs":   {"ukraine": true},
+}
+
+// SupportPowerReachable reports whether this faction could ever hold the power.
+// True when the power is unknown to the table: silence means "no evidence", and
+// only evidence should let a caller call a rule impossible.
+func SupportPowerReachable(power, faction string) bool {
+	allowed, known := supportPowerCountries[power]
+	if !known {
+		return true
+	}
+	return allowed[strings.ToLower(strings.TrimSpace(faction))]
+}
