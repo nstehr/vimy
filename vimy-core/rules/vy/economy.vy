@@ -88,5 +88,5 @@ rule produce-extra-harvester {
   require not queue-busy(Vehicle)
   require can-build-role(harvester)
   require role-count(harvester) < role-count(refinery) + 1
-  require cash >= 1400
+  require cash >= 600
 }

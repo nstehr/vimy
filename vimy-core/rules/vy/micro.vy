@@ -94,19 +94,20 @@ rule scout-with-scouts {
 rule scout-with-idle-units {
   priority lerp(250, 400, scout-priority)
   category recon
+  because "two idle units, because the action sends at most two — it used to ask for a whole attack group, so the only path to early intel waited on six spare units the squads were consuming, and game 83 saw nothing at all until tick 13250 of 24020"
   do scout
   require not enemies-visible
-  require count(unassigned-idle-ground) >= ground-attack-group-size
+  require count(unassigned-idle-ground) >= 2
 }
 
 rule form-harvester-guard {
   priority lerp(360, 430, economy-priority) + 5
   category squad-form
-  because "a squad reserved for the economy, so the attack rules cannot poach it back"
+  because "a squad reserved for the economy, so the attack rules cannot poach it back — formed at its own size, since the surplus it used to demand on top never arrived"
   do form-squad(harvester-guard, Ground, lerp(2, 4, economy-priority), Defend)
   require economy-priority > 0.3
   require (not squad-exists(harvester-guard)
-           and count(unassigned-idle-ground) >= lerp(2, 4, economy-priority) + 2)
+           and count(unassigned-idle-ground) >= lerp(2, 4, economy-priority))
        or (squad-needs-reinforcement(harvester-guard) and count(unassigned-idle-ground) >= 1)
 }
 

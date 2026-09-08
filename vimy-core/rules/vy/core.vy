@@ -9,11 +9,13 @@ param commit-ratio: float
 
 def reserves(cost: int) =
   cash >= cost
-  and (vehicle-weight <= 0.1 or has-role(radar) or cash >= cost + 1000)
-  and (vehicle-weight <= 0.2 or has-role(war-factory) or not has-role(radar) or cash >= cost + 2000)
-  and (tech-priority <= 0.4 or has-role(tech-center) or not has-role(radar) or cash >= cost + 1500)
+  and (vehicle-weight <= 0.1 or has-role(radar) or cash >= cost + min(cost, 1000))
+  and (vehicle-weight <= 0.2 or has-role(war-factory) or not has-role(radar)
+       or cash >= cost + min(cost * 2, 2000))
+  and (tech-priority <= 0.4 or has-role(tech-center) or not has-role(radar)
+       or cash >= cost + min(cost * 2, 1500))
   and (superweapon-priority <= 0.4 or has-role(missile-silo) or has-role(iron-curtain)
-       or not has-role(tech-center) or cash >= cost + 2500)
+       or not has-role(tech-center) or cash >= cost + min(cost * 3, 2500))
 
 def activation() =
   select(commit-ratio > 0.0, commit-ratio, lerpf(0.6, 1.0, 1.0 - aggression))
@@ -191,9 +193,10 @@ rule rebuild-advanced-power {
 rule rebuild-harvester {
   priority 830
   category rebuild exclusive
+  because "a refinery with no harvester of its own is idle capital, so replace against the refineries rather than waiting for the last harvester to die"
   do produce-harvester
   require has-role(refinery)
-  require role-count(harvester) == 0
+  require role-count(harvester) < role-count(refinery)
   require not queue-busy(Vehicle)
   require can-build-role(harvester)
   require cash >= 600

@@ -108,7 +108,7 @@ func TestBuildRealDifferential(t *testing.T) {
 		t.Fatal("needs GAME=<game_id>")
 	}
 
-	raw, err := os.ReadFile(os.ExpandEnv(exportPath))
+	raw, err := ReadExport(os.ExpandEnv(exportPath))
 	if err != nil {
 		t.Fatal(err)
 	}

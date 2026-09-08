@@ -44,6 +44,7 @@ type Engine struct {
 	statsMu      sync.Mutex
 	traceFirings bool
 	fireCounts   map[string]int
+	actCounts    map[string]int
 	firstTick    map[string]int
 	lastTick     map[string]int
 }
@@ -52,6 +53,11 @@ type Engine struct {
 // and the tick range over which it fired.
 type RuleFiringStats struct {
 	FireCount int
+	// ActCount is how many of those firings actually did something: sent an
+	// order, or moved something in memory. FireCount counts matching
+	// conditions, which is a much weaker claim — a rule can match every tick
+	// and never act. Read the two together or not at all.
+	ActCount  int
 	FirstTick int
 	LastTick  int
 }
@@ -66,6 +72,7 @@ func NewEngine(rules []*Rule) (*Engine, error) {
 		rules:      compiled,
 		Memory:     make(map[string]any),
 		fireCounts: make(map[string]int),
+		actCounts:  make(map[string]int),
 		firstTick:  make(map[string]int),
 		lastTick:   make(map[string]int),
 	}, nil
@@ -105,7 +112,7 @@ func (e *Engine) TracingEnabled() bool {
 
 // recordFiring increments the per-rule firing counter and updates the tick
 // range. No-op when tracing is disabled — one early-return per firing.
-func (e *Engine) recordFiring(name string, tick int) {
+func (e *Engine) recordFiring(name string, tick int, acted bool) {
 	e.statsMu.Lock()
 	defer e.statsMu.Unlock()
 	if !e.traceFirings {
@@ -116,6 +123,9 @@ func (e *Engine) recordFiring(name string, tick int) {
 	}
 	e.lastTick[name] = tick
 	e.fireCounts[name]++
+	if acted {
+		e.actCounts[name]++
+	}
 }
 
 // FlushFiringStats atomically reads and clears the current window's counters.
@@ -129,11 +139,13 @@ func (e *Engine) FlushFiringStats() map[string]RuleFiringStats {
 	for name, count := range e.fireCounts {
 		out[name] = RuleFiringStats{
 			FireCount: count,
+			ActCount:  e.actCounts[name],
 			FirstTick: e.firstTick[name],
 			LastTick:  e.lastTick[name],
 		}
 	}
 	e.fireCounts = make(map[string]int)
+	e.actCounts = make(map[string]int)
 	e.firstTick = make(map[string]int)
 	e.lastTick = make(map[string]int)
 	return out
@@ -148,6 +160,7 @@ func (e *Engine) FiringStatsSnapshot() map[string]RuleFiringStats {
 	for name, count := range e.fireCounts {
 		out[name] = RuleFiringStats{
 			FireCount: count,
+			ActCount:  e.actCounts[name],
 			FirstTick: e.firstTick[name],
 			LastTick:  e.lastTick[name],
 		}
@@ -220,11 +233,32 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 
 		anyFired = true
 		slog.Debug("rule fired", "rule", r.Name, "priority", r.Priority, "category", r.Category)
-		e.recordFiring(r.Name, gs.Tick)
+
+		// A matching condition is not the same as an action that did
+		// something. Several actions return without ordering anything when
+		// their own preconditions fail — a check the rule may not mirror — and
+		// counting those as work made the busiest rules in the archive the ones
+		// doing the least. `form-ground-attack` fired 15,702 times across
+		// thirteen games and formed almost nothing.
+		//
+		// Orders on the wire are the general signal; `markEffect` covers the
+		// two actions whose work never leaves memory.
+		var sentBefore uint64
+		if conn != nil {
+			sentBefore = conn.Sent()
+		}
+		delete(env.Memory, effectKey)
 
 		if err := r.Action(env, conn); err != nil {
 			slog.Error("rule action error", "rule", r.Name, "error", err)
 		}
+
+		acted, _ := env.Memory[effectKey].(bool)
+		if conn != nil && conn.Sent() > sentBefore {
+			acted = true
+		}
+		delete(env.Memory, effectKey)
+		e.recordFiring(r.Name, gs.Tick, acted)
 		stateIdx = exporter.refresh(stateIdx, env, rules)
 
 		if r.Exclusive {
@@ -256,11 +290,58 @@ func (e *Engine) Swap(newRules []*Rule) error {
 	e.rules = compiled
 	e.mu.Unlock()
 
-	e.memMu.Lock()
-	delete(e.Memory, "squads")
-	e.memMu.Unlock()
-	slog.Info("rule set swapped", "count", len(compiled), "rules", names)
+	// Squads the incoming rule set still forms are kept; only the orphans go.
+	//
+	// This used to drop every squad on every swap, which with a strategist that
+	// swaps every twenty seconds meant no squad ever lived long enough to reach
+	// commit strength. It read as combat attrition in the logs and was not:
+	// across thirteen archived losses `squad-attack` fired 13 times, and the
+	// ground attack squad existed in under a tenth of sampled states, because
+	// each swap took it away and the old FormSquad could not rebuild it.
+	//
+	// A squad the new rules cannot form still has to go: nothing would reinforce
+	// it, nothing would command it, and its members would sit assigned forever,
+	// invisible to `unassigned-idle-ground`.
+	kept, dropped := e.retainSquads(squadNames(compiled))
+	slog.Info("rule set swapped", "count", len(compiled), "kept_squads", kept,
+		"dropped_squads", dropped, "rules", names)
 	return nil
+}
+
+// squadNames is every squad the rule set can form, read off the compiled
+// actions. `ActionSrc` is how vimyc spelled the call — a closure cannot be
+// asked what arguments it captured.
+func squadNames(rules []*Rule) map[string]bool {
+	out := make(map[string]bool)
+	for _, r := range rules {
+		if r.ActionSrc == "" {
+			continue
+		}
+		name, args, err := parseActionSrc(r.ActionSrc)
+		if err != nil || name != "form-squad" || len(args) == 0 {
+			continue
+		}
+		out[args[0]] = true
+	}
+	return out
+}
+
+// retainSquads drops every squad not in `keep`, and reports both counts.
+func (e *Engine) retainSquads(keep map[string]bool) (kept, dropped int) {
+	e.memMu.Lock()
+	defer e.memMu.Unlock()
+	squads := getSquads(e.Memory)
+	for name := range squads {
+		if keep[name] {
+			kept++
+			continue
+		}
+		delete(squads, name)
+		delete(e.Memory, "huntBase:"+name)
+		dropped++
+	}
+	e.Memory["squads"] = squads
+	return kept, dropped
 }
 
 // Reset clears all accumulated state so the engine is ready for a new game.

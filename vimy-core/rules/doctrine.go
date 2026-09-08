@@ -6,23 +6,23 @@ import "math"
 // 0–1 weights. vimyc compiles them into a rule set: `DoctrineParams` renders
 // this struct as the numbers a `.vy` file declares.
 type Doctrine struct {
-	Name                  string  `json:"name"`
-	Rationale             string  `json:"rationale"`
-	EconomyPriority       float64 `json:"economy_priority"`
-	Aggression            float64 `json:"aggression"`
-	GroundDefensePriority float64 `json:"ground_defense_priority"`
-	AirDefensePriority    float64 `json:"air_defense_priority"`
-	TechPriority          float64 `json:"tech_priority"`
-	InfantryWeight        float64 `json:"infantry_weight"`
-	VehicleWeight         float64 `json:"vehicle_weight"`
-	AirWeight             float64 `json:"air_weight"`
-	NavalWeight           float64 `json:"naval_weight"`
-	GroundAttackGroupSize int     `json:"ground_attack_group_size"`
-	AirAttackGroupSize    int     `json:"air_attack_group_size"`
-	NavalAttackGroupSize  int     `json:"naval_attack_group_size"`
-	ScoutPriority              float64 `json:"scout_priority"`
-	SpecializedInfantryWeight  float64 `json:"specialized_infantry_weight"`
-	SuperweaponPriority        float64 `json:"superweapon_priority"`
+	Name                       string   `json:"name"`
+	Rationale                  string   `json:"rationale"`
+	EconomyPriority            float64  `json:"economy_priority"`
+	Aggression                 float64  `json:"aggression"`
+	GroundDefensePriority      float64  `json:"ground_defense_priority"`
+	AirDefensePriority         float64  `json:"air_defense_priority"`
+	TechPriority               float64  `json:"tech_priority"`
+	InfantryWeight             float64  `json:"infantry_weight"`
+	VehicleWeight              float64  `json:"vehicle_weight"`
+	AirWeight                  float64  `json:"air_weight"`
+	NavalWeight                float64  `json:"naval_weight"`
+	GroundAttackGroupSize      int      `json:"ground_attack_group_size"`
+	AirAttackGroupSize         int      `json:"air_attack_group_size"`
+	NavalAttackGroupSize       int      `json:"naval_attack_group_size"`
+	ScoutPriority              float64  `json:"scout_priority"`
+	SpecializedInfantryWeight  float64  `json:"specialized_infantry_weight"`
+	SuperweaponPriority        float64  `json:"superweapon_priority"`
 	CapturePriority            float64  `json:"capture_priority"`
 	PreferredInfantry          []string `json:"preferred_infantry,omitempty"`
 	PreferredVehicle           []string `json:"preferred_vehicle,omitempty"`

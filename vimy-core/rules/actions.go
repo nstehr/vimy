@@ -2394,6 +2394,20 @@ func AirAttackKnownBaseGroup(maxUnits int) ActionFunc {
 	}
 }
 
+// effectKey marks that an action did work the order stream cannot show.
+//
+// Almost every action's effect is an order on the wire, which the engine sees
+// by counting envelopes. A couple only move things in memory, and without this
+// they would be indistinguishable from an action that returned early.
+const effectKey = "ruleDidWork"
+
+// markEffect records that the running action changed something.
+func markEffect(env RuleEnv) {
+	if env.Memory != nil {
+		env.Memory[effectKey] = true
+	}
+}
+
 // --- Squad action factories ---
 
 // FormSquad assigns unit IDs to a named squad in memory but does NOT issue
@@ -2426,16 +2440,27 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 				sq.UnitIDs = append(sq.UnitIDs, pool[i].ID)
 			}
 			env.Memory["squads"] = squads
+			markEffect(env)
 			slog.Info("squad reinforced", "name", name, "added", add, "size", len(sq.UnitIDs), "target", sq.TargetSize)
 			return nil
 		}
 
-		// Initial formation: require full size.
-		if len(pool) < size {
+		// Initial formation takes what the pool has, up to the target size.
+		//
+		// Whether there are enough units to be worth forming is the rule's
+		// question, not this function's: `form-ground-attack` asks for 60% of
+		// the group size and tops up from there. Requiring the full size here
+		// contradicted that and silently formed nothing, so across thirteen
+		// archived losses the rule fired 15,702 times and the ground attack
+		// squad existed in under a tenth of sampled states. The defend squads
+		// were unaffected only because their conditions happen to ask for
+		// exactly the size they pass.
+		if len(pool) == 0 {
 			return nil
 		}
-		ids := make([]int, size)
-		for i := range size {
+		take := min(size, len(pool))
+		ids := make([]int, take)
+		for i := range take {
 			ids[i] = pool[i].ID
 		}
 		squads[name] = &Squad{
@@ -2446,7 +2471,9 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 			TargetSize: size,
 		}
 		env.Memory["squads"] = squads
-		slog.Info("squad formed", "name", name, "domain", domain, "role", role, "size", size)
+		markEffect(env)
+		slog.Info("squad formed", "name", name, "domain", domain, "role", role,
+			"size", take, "target", size)
 		return nil
 	}
 }
@@ -2973,6 +3000,7 @@ func ClearHealedUnits(hpThreshold float64) ActionFunc {
 		if len(retreating) == 0 {
 			return nil
 		}
+		before := len(retreating)
 		aliveIDs := make(map[int]bool)
 		for _, u := range env.State.Units {
 			aliveIDs[u.ID] = true
@@ -2990,6 +3018,10 @@ func ClearHealedUnits(hpThreshold float64) ActionFunc {
 			}
 		}
 		env.Memory["retreatingUnits"] = retreating
+		// Only a release is work; walking the set and freeing nobody is not.
+		if len(retreating) < before {
+			markEffect(env)
+		}
 		return nil
 	}
 }

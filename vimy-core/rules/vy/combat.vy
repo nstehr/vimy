@@ -18,21 +18,19 @@ def ground-form-threshold() = trunc(max(3.0, ground-attack-group-size * 6 / 10))
 
 def defense-floor-holds() =
   base-defense-floor <= 0
+  or squad-exists(ground-defense)
   or role-count(pillbox) + role-count(camo-pillbox) + role-count(turret)
      + role-count(flame-tower) + role-count(tesla-coil) >= base-defense-floor
 
 rule form-defense-squad {
   priority defend-priority() + 5
   category squad-form
-  because "reserve defenders only when there is also enough surplus to form an attack squad"
+  because "formed at its own size — it used to demand enough surplus for an attack squad on top, which needed a pool of eight and so only ever formed once the base was already under attack"
   do form-squad(ground-defense, Ground, lerp(2, 5, ground-defense-priority), Defend)
   require ground-defense-priority > 0.3
   require (not squad-exists(ground-defense)
            and count(unassigned-idle-ground) >= lerp(2, 5, ground-defense-priority))
        or (squad-needs-reinforcement(ground-defense) and count(unassigned-idle-ground) >= 1)
-  require base-under-attack()
-       or count(unassigned-idle-ground)
-          >= lerp(2, 5, ground-defense-priority) + ground-form-threshold()
 }
 
 rule squad-defend-base {
@@ -93,11 +91,11 @@ rule squad-reengage {
 }
 
 rule squad-attack-known-base {
-  priority trunc(select(aggression >= 0.3,
+  priority trunc(select(aggression >= 0.6,
                         attack-priority() + 5,
                         attack-priority() - 10))
   category ground-attack-choice exclusive
-  because "aggressive doctrines press the base and let base defenses handle raiders"
+  because "aggressive doctrines press the base and let base defenses handle raiders — but the threshold sat at 0.3, below anything the strategist ever chose, so this always won and squad-attack never fired in eighty games"
   do squad-attack-known-base(ground-attack, aggression)
   require squad-exists(ground-attack)
   require squad-ready-ratio(ground-attack) >= round2(activation())

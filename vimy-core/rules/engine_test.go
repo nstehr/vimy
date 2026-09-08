@@ -3,6 +3,7 @@ package rules
 import (
 	"testing"
 
+	"github.com/nstehr/vimy/vimy-core/ipc"
 	"github.com/nstehr/vimy/vimy-core/model"
 )
 
@@ -31,10 +32,10 @@ func TestFlushFiringStats(t *testing.T) {
 	}
 	engine.SetTraceFirings(true)
 
-	engine.recordFiring("a", 10)
-	engine.recordFiring("a", 20)
-	engine.recordFiring("b", 15)
-	engine.recordFiring("a", 30)
+	engine.recordFiring("a", 10, true)
+	engine.recordFiring("a", 20, false)
+	engine.recordFiring("b", 15, false)
+	engine.recordFiring("a", 30, true)
 
 	stats := engine.FlushFiringStats()
 	if got := stats["a"].FireCount; got != 3 {
@@ -45,6 +46,14 @@ func TestFlushFiringStats(t *testing.T) {
 	}
 	if got := stats["a"].LastTick; got != 30 {
 		t.Errorf("a.LastTick = %d, want 30", got)
+	}
+	// A rule that matched three times and acted twice: the gap is the point of
+	// keeping both numbers.
+	if got := stats["a"].ActCount; got != 2 {
+		t.Errorf("a.ActCount = %d, want 2", got)
+	}
+	if got := stats["b"].ActCount; got != 0 {
+		t.Errorf("b.ActCount = %d, want 0 — it matched but never acted", got)
 	}
 	if got := stats["b"].FireCount; got != 1 {
 		t.Errorf("b.FireCount = %d, want 1", got)
@@ -74,8 +83,8 @@ func TestRecordFiringNoOpWhenTracingDisabled(t *testing.T) {
 		t.Fatalf("NewEngine: %v", err)
 	}
 	// traceFirings defaults to false — no SetTraceFirings call.
-	engine.recordFiring("a", 10)
-	engine.recordFiring("b", 20)
+	engine.recordFiring("a", 10, true)
+	engine.recordFiring("b", 20, true)
 	if stats := engine.FlushFiringStats(); len(stats) != 0 {
 		t.Errorf("expected empty stats with tracing off, got %+v", stats)
 	}
@@ -314,5 +323,153 @@ func TestBuildableType(t *testing.T) {
 	// Unknown role.
 	if got := envSoviet.BuildableType("nonexistent"); got != "" {
 		t.Errorf("BuildableType(nonexistent) = %q, want %q", got, "")
+	}
+}
+
+// A rule whose action returns without doing anything is counted as a match, not
+// as work.
+//
+// This is the distinction the counters exist for: `form-ground-attack` matched
+// 15,702 times across thirteen archived losses while forming almost nothing,
+// and with only FireCount to look at it read as the busiest rule in the game.
+func TestEvaluateSeparatesMatchingFromActing(t *testing.T) {
+	worked := &Rule{
+		Name:         "does-something",
+		Priority:     100,
+		Category:     "test",
+		ConditionSrc: "true",
+		Action: func(env RuleEnv, conn *ipc.Connection) error {
+			markEffect(env)
+			return nil
+		},
+	}
+	// The shape of every action that bails on a precondition its rule does not
+	// mirror.
+	idle := &Rule{
+		Name:         "does-nothing",
+		Priority:     90,
+		Category:     "test2",
+		ConditionSrc: "true",
+		Action:       func(env RuleEnv, conn *ipc.Connection) error { return nil },
+	}
+
+	engine, err := NewEngine([]*Rule{worked, idle})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	engine.SetTraceFirings(true)
+
+	// nil conn: no orders can be sent, so markEffect is the only signal, which
+	// is exactly the case the order counter cannot cover.
+	for range 3 {
+		if err := engine.Evaluate(model.GameState{Tick: 1}, "england", nil); err != nil {
+			t.Fatalf("Evaluate: %v", err)
+		}
+	}
+
+	stats := engine.FlushFiringStats()
+	if got := stats["does-something"].FireCount; got != 3 {
+		t.Errorf("does-something.FireCount = %d, want 3", got)
+	}
+	if got := stats["does-something"].ActCount; got != 3 {
+		t.Errorf("does-something.ActCount = %d, want 3", got)
+	}
+	if got := stats["does-nothing"].FireCount; got != 3 {
+		t.Errorf("does-nothing.FireCount = %d, want 3", got)
+	}
+	if got := stats["does-nothing"].ActCount; got != 0 {
+		t.Errorf("does-nothing.ActCount = %d, want 0 — it matched but never acted", got)
+	}
+}
+
+// squadRule builds a rule whose action is a form-squad call, the way an
+// artifact loaded from vimyc carries it.
+func squadRule(name, squad string) *Rule {
+	return &Rule{
+		Name:         name,
+		Priority:     100,
+		Category:     "squad-form",
+		ConditionSrc: "true",
+		ActionSrc:    "form-squad(" + squad + ", Ground, 4, Attack)",
+		Action:       FormSquad(squad, "ground", 4, "attack"),
+	}
+}
+
+func seedSquad(e *Engine, name string, ids ...int) {
+	squads := getSquads(e.Memory)
+	squads[name] = &Squad{Name: name, Domain: "ground", UnitIDs: ids, TargetSize: 4}
+	e.Memory["squads"] = squads
+}
+
+// A doctrine swap keeps the squads the new rules still form.
+//
+// The strategist swaps every twenty seconds or so; dropping every squad each
+// time meant none ever lived long enough to reach commit strength.
+func TestSwapKeepsSquadsTheNewRulesStillForm(t *testing.T) {
+	engine, err := NewEngine([]*Rule{squadRule("form-ground-attack", "ground-attack")})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	seedSquad(engine, "ground-attack", 1, 2, 3)
+
+	if err := engine.Swap([]*Rule{squadRule("form-ground-attack", "ground-attack")}); err != nil {
+		t.Fatalf("Swap: %v", err)
+	}
+
+	sq, ok := getSquads(engine.Memory)["ground-attack"]
+	if !ok {
+		t.Fatal("ground-attack was dropped by a swap that still forms it")
+	}
+	if len(sq.UnitIDs) != 3 {
+		t.Errorf("members = %d, want the original 3", len(sq.UnitIDs))
+	}
+}
+
+// A squad the new rules cannot form is dropped: nothing would reinforce or
+// command it, and its members would stay assigned and invisible to the free
+// pool forever.
+func TestSwapDropsSquadsTheNewRulesCannotForm(t *testing.T) {
+	engine, err := NewEngine([]*Rule{squadRule("form-harvester-guard", "harvester-guard")})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	seedSquad(engine, "harvester-guard", 1, 2)
+	seedSquad(engine, "ground-attack", 3, 4)
+	engine.Memory["huntBase:ground-attack"] = "somewhere"
+
+	if err := engine.Swap([]*Rule{squadRule("form-harvester-guard", "harvester-guard")}); err != nil {
+		t.Fatalf("Swap: %v", err)
+	}
+
+	squads := getSquads(engine.Memory)
+	if _, ok := squads["ground-attack"]; ok {
+		t.Error("ground-attack survived a swap to rules that cannot form it")
+	}
+	if _, ok := squads["harvester-guard"]; !ok {
+		t.Error("harvester-guard was dropped by a swap that still forms it")
+	}
+	if _, ok := engine.Memory["huntBase:ground-attack"]; ok {
+		t.Error("the dropped squad left its hunt state behind")
+	}
+}
+
+// A rule set that forms no squads at all — the seed set, or an artifact with no
+// ActionSrc — drops everything, which is the old behaviour and the safe one.
+func TestSwapToRulesWithoutSquadsDropsThemAll(t *testing.T) {
+	engine, err := NewEngine([]*Rule{squadRule("form-ground-attack", "ground-attack")})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	seedSquad(engine, "ground-attack", 1, 2)
+
+	plain := &Rule{
+		Name: "repair-buildings", Priority: 10, Category: "maintenance",
+		ConditionSrc: "true", Action: ActionRepairDamagedBuildings,
+	}
+	if err := engine.Swap([]*Rule{plain}); err != nil {
+		t.Fatalf("Swap: %v", err)
+	}
+	if len(getSquads(engine.Memory)) != 0 {
+		t.Error("squads survived a swap to a rule set that forms none")
 	}
 }

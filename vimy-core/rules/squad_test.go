@@ -205,7 +205,11 @@ func TestFormSquadAction(t *testing.T) {
 	}
 }
 
-func TestFormSquadNotEnoughUnits(t *testing.T) {
+// A short pool forms a short squad, which reinforcement then tops up.
+//
+// The rule's condition decides whether it is worth forming at all; this used to
+// refuse anything below the full size, which is why no attack squad ever formed.
+func TestFormSquadFormsBelowTargetSize(t *testing.T) {
 	memory := make(map[string]any)
 	env := RuleEnv{
 		State: model.GameState{
@@ -217,14 +221,57 @@ func TestFormSquadNotEnoughUnits(t *testing.T) {
 	}
 
 	action := FormSquad("test-squad", "ground", 3, "attack")
-	err := action(env, nil)
-	if err != nil {
+	if err := action(env, nil); err != nil {
 		t.Fatalf("FormSquad action returned error: %v", err)
 	}
 
-	squads := getSquads(memory)
-	if _, ok := squads["test-squad"]; ok {
-		t.Error("expected no squad to be formed when insufficient units")
+	sq, ok := getSquads(memory)["test-squad"]
+	if !ok {
+		t.Fatal("expected a squad to form from a single unit")
+	}
+	if len(sq.UnitIDs) != 1 {
+		t.Errorf("members = %d, want 1", len(sq.UnitIDs))
+	}
+	// The target is what was asked for, so SquadNeedsReinforcement stays true
+	// and the formation rule keeps topping it up.
+	if sq.TargetSize != 3 {
+		t.Errorf("TargetSize = %d, want 3", sq.TargetSize)
+	}
+	if !(RuleEnv{State: env.State, Memory: memory}).SquadNeedsReinforcement("test-squad") {
+		t.Error("a short squad should still want reinforcement")
+	}
+}
+
+func TestFormSquadNeedsAtLeastOneUnit(t *testing.T) {
+	memory := make(map[string]any)
+	env := RuleEnv{State: model.GameState{}, Memory: memory}
+
+	action := FormSquad("test-squad", "ground", 3, "attack")
+	if err := action(env, nil); err != nil {
+		t.Fatalf("FormSquad action returned error: %v", err)
+	}
+
+	if _, ok := getSquads(memory)["test-squad"]; ok {
+		t.Error("expected no squad to be formed from an empty pool")
+	}
+}
+
+// Formation never takes more than the target, however deep the pool.
+func TestFormSquadTakesNoMoreThanTargetSize(t *testing.T) {
+	memory := make(map[string]any)
+	units := make([]model.Unit, 0, 6)
+	for i := range 6 {
+		units = append(units, model.Unit{ID: 20 + i, Type: "1tnk", Idle: true})
+	}
+	env := RuleEnv{State: model.GameState{Units: units}, Memory: memory}
+
+	if err := FormSquad("test-squad", "ground", 3, "attack")(env, nil); err != nil {
+		t.Fatalf("FormSquad action returned error: %v", err)
+	}
+
+	sq := getSquads(memory)["test-squad"]
+	if len(sq.UnitIDs) != 3 {
+		t.Errorf("members = %d, want 3 — the surplus belongs to the other squads", len(sq.UnitIDs))
 	}
 }
 
@@ -470,7 +517,12 @@ func TestSquadIdleActorIDs_SkipsRetreating(t *testing.T) {
 	}
 }
 
-func TestSwapClearsSquads(t *testing.T) {
+// The seed rules form no squads, so a swap to them orphans anything standing.
+//
+// Asserts the roster is empty rather than that the "squads" key is absent: a
+// swap now keeps the squads the new rules still form, so the key survives and
+// only the orphans are removed.
+func TestSwapClearsSquadsTheSeedRulesCannotForm(t *testing.T) {
 	engine, err := NewEngine(DefaultRules())
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
@@ -486,7 +538,7 @@ func TestSwapClearsSquads(t *testing.T) {
 		t.Fatalf("Swap failed: %v", err)
 	}
 
-	if _, ok := engine.Memory["squads"]; ok {
-		t.Error("expected squads to be cleared after Swap")
+	if n := len(getSquads(engine.Memory)); n != 0 {
+		t.Errorf("expected no squads after a swap to rules that form none, got %d", n)
 	}
 }
