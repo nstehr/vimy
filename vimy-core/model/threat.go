@@ -1,9 +1,8 @@
 package model
 
-// ThreatField is a zone-parallel array to TerrainGrid.Grid. Each cell holds
-// a cumulative threat weight produced by enemy defenses; higher = more
-// dangerous to traverse. Values are unbounded but callers should treat them
-// as relative, not absolute.
+// ThreatField parallels TerrainGrid.Grid, each cell holding the cumulative
+// threat enemy defenses paint there. Unbounded, and relative rather than
+// absolute.
 type ThreatField struct {
 	Cols, Rows int
 	Cells      []float64
@@ -25,10 +24,8 @@ func (f *ThreatField) At(col, row int) float64 {
 	return f.Cells[row*f.Cols+col]
 }
 
-// AddSource paints a defense's threat onto the field centered on the zone
-// containing (mapX, mapY). The source cell gets the full weight; 4-neighbors
-// get weight/2; diagonals get weight/3. Cumulative across calls so overlapping
-// defenses create hotter zones.
+// AddSource paints a defense's threat around the zone holding (mapX, mapY),
+// falling off to neighbors. Cumulative, so overlapping defenses run hotter.
 func (f *ThreatField) AddSource(g *TerrainGrid, mapX, mapY int, weight float64) {
 	if f == nil || g == nil || g.CellW <= 0 || g.CellH <= 0 {
 		return
@@ -53,12 +50,9 @@ func (f *ThreatField) add(col, row int, w float64) {
 	f.Cells[row*f.Cols+col] += w
 }
 
-// ApproachPath returns the weighted-shortest passable zone path from `from`
-// to `to`, where each zone's traversal cost is `1 + threat * penalty`.
-// Returns nil if `to` is unreachable or inputs are invalid.
-//
-// A higher penalty biases the path to skirt threat zones; penalty=0 reduces
-// to plain BFS shortest path.
+// ApproachPath is the weighted-shortest passable path, each zone costing
+// 1 + threat*penalty. Higher penalty skirts threat harder; zero degenerates to
+// plain BFS. Nil when `to` is unreachable.
 func ApproachPath(g *TerrainGrid, threat *ThreatField, from, to [2]int, penalty float64) [][2]int {
 	if g == nil {
 		return nil
@@ -83,7 +77,7 @@ func ApproachPath(g *TerrainGrid, threat *ThreatField, from, to [2]int, penalty 
 	dstIdx := to[1]*g.Cols + to[0]
 	dist[srcIdx] = 0
 
-	// Dijkstra with a simple scan — 1024 cells, good enough without a heap.
+	// Linear scan rather than a heap: the grid is 1024 cells.
 	for {
 		cur := -1
 		bestD := -1.0

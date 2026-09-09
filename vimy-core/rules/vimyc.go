@@ -22,11 +22,10 @@ import (
 // cannot take the bot down with it.
 
 // The rule set source, carried in the binary so a game needs only the compiler
-// on PATH. Written by hand in `rules/vy/` — it is Vimy's strategy, the way the
-// `.go` files are Vimy's code; vimyc is the language it is written in.
+// on PATH. Hand-written in `rules/vy/`: it is Vimy's strategy the way the `.go`
+// files are Vimy's code, and vimyc is the language it is written in.
 //
-// A directory rather than one file: the rule set is split by topic, and vimyc
-// compiles the whole set as one unit. `seed.vy` is embedded along with the rest
+// Split by topic but compiled as one unit. `seed.vy` is embedded with the rest
 // and dropped below — it is a separate, standalone rule set.
 //
 //go:embed vy/*.vy
@@ -36,25 +35,21 @@ var doctrineSource embed.FS
 type VimycCompiler struct {
 	// Path to the binary; "vimyc" finds it on PATH.
 	Bin string
-	// Where the `.vy` sources come from. Empty uses the copy embedded in this
-	// binary, which is what a game wants: the rules it runs should be the ones
-	// it shipped with.
+	// Where the `.vy` sources come from. Empty uses the embedded copy, which is
+	// what a game wants — it should run the rules it shipped with.
 	//
-	// A replay wants the opposite. Currie blames against sources on disk, and
-	// if it fingerprints against an embedded copy from an older build the two
-	// halves of its analysis are reading different rule sets — which happened,
-	// and showed up only as a pairing failure that silently degraded to
-	// matching states by tick.
+	// A replay wants the opposite: Currie blames against sources on disk, and
+	// fingerprinting an older embedded copy leaves the two halves of its
+	// analysis reading different rule sets.
 	RulesDir string
-	// How long to wait. Compiling 118 rules takes single-digit milliseconds,
-	// so this only ever catches something being wrong.
+	// Compiling the full rule set takes single-digit milliseconds, so this only
+	// ever catches something being wrong.
 	Timeout time.Duration
 }
 
-// NewVimycCompiler returns a compiler reading the embedded rule set.
-//
-// Checked at startup rather than at the first doctrine: a missing binary
-// discovered twenty minutes into a game is a wasted game.
+// NewVimycCompiler returns a compiler reading the embedded rule set, probing it
+// at startup — a missing binary found twenty minutes into a game is a wasted
+// game.
 func NewVimycCompiler(bin string) (*VimycCompiler, error) {
 	if bin == "" {
 		bin = "vimyc"
@@ -63,9 +58,8 @@ func NewVimycCompiler(bin string) (*VimycCompiler, error) {
 	if _, err := exec.LookPath(bin); err != nil {
 		return nil, fmt.Errorf("vimyc not found: %w", err)
 	}
-	// Compiling a doctrine now proves the binary runs, the source parses and
-	// every rule it emits can be loaded — all the ways this can fail except
-	// the values themselves.
+	// Proves the binary runs, the source parses and the rules load — every way
+	// this fails except the doctrine values themselves.
 	if _, err := c.Compile(Doctrine{Name: "startup-probe"}); err != nil {
 		return nil, fmt.Errorf("vimyc cannot compile the rule set: %w", err)
 	}
@@ -79,8 +73,8 @@ func (c *VimycCompiler) Compile(d Doctrine) ([]*Rule, error) {
 		return nil, fmt.Errorf("marshal params: %w", err)
 	}
 
-	// The source goes to a temp directory because vimyc takes paths; the params
-	// go on stdin so nothing per-doctrine touches the disk.
+	// vimyc takes paths, so the source goes to a temp directory; params go on
+	// stdin so nothing per-doctrine touches the disk.
 	srcArgs, cleanup, err := c.sources()
 	if err != nil {
 		return nil, err
@@ -101,11 +95,8 @@ func (c *VimycCompiler) Compile(d Doctrine) ([]*Rule, error) {
 	}
 
 	// Warnings — priority collisions, shadowed rules — are findings about the
-	// rule set rather than failures, and are lost if nobody prints them.
-	//
-	// The temp directory is stripped so a warning names the file as it is
-	// checked out — `combat.vy:412:6` — rather than a path that stopped
-	// existing when this function returned.
+	// rule set rather than failures, and are lost if nobody prints them. The
+	// temp directory is stripped so they name the file as checked out.
 	for _, line := range strings.Split(strings.TrimSpace(errs.String()), "\n") {
 		if line != "" {
 			slog.Warn("vimyc", "doctrine", d.Name, "message", trimSourceDir(line, srcArgs))
@@ -115,13 +106,12 @@ func (c *VimycCompiler) Compile(d Doctrine) ([]*Rule, error) {
 	return LoadArtifact(out.Bytes())
 }
 
-// sources is the arguments naming the rule set, and a function to release them.
+// sources names the rule set, with a function to release it.
 //
-// Files rather than a directory when `RulesDir` is set: `seed.vy` lives beside
-// the doctrine sources and is its own standalone rule set, so handing vimyc the
-// whole directory compiles a set the game never runs — and the fingerprint of
-// that set matches no recording. The embedded path already drops it; this has
-// to drop it the same way or the two disagree.
+// Individual files rather than the directory: seed.vy sits beside the doctrine
+// sources and is a standalone rule set, so compiling the directory whole yields
+// a set the game never runs, fingerprinted against no recording. The embedded
+// path drops it too, and the two must agree.
 func (c *VimycCompiler) sources() ([]string, func(), error) {
 	if c.RulesDir != "" {
 		found, err := filepath.Glob(filepath.Join(c.RulesDir, "*.vy"))
@@ -147,12 +137,9 @@ func (c *VimycCompiler) sources() ([]string, func(), error) {
 	return []string{dir}, func() { os.RemoveAll(dir) }, nil
 }
 
-// writeRuleSet unpacks the embedded sources into a fresh temp directory and
-// returns it, for the caller to remove.
-//
-// A directory handed to vimyc whole, rather than a list of files: what belongs
-// to the rule set is then decided by what is embedded, in one place, and adding
-// a topic file needs no change here.
+// writeRuleSet unpacks the embedded sources into a temp directory for the
+// caller to remove. Handed to vimyc whole, so membership of the rule set is
+// decided by what is embedded and adding a topic file needs no change here.
 func writeRuleSet() (string, error) {
 	entries, err := doctrineSource.ReadDir("vy")
 	if err != nil {
@@ -164,8 +151,7 @@ func writeRuleSet() (string, error) {
 	}
 	written := 0
 	for _, e := range entries {
-		// The seed rules are their own rule set — compiled separately by
-		// `make rules` — so they would collide with the doctrine's.
+		// The seed rules are a separate rule set and would collide.
 		if e.IsDir() || e.Name() == "seed.vy" {
 			continue
 		}
@@ -180,8 +166,8 @@ func writeRuleSet() (string, error) {
 		}
 		written++
 	}
-	// An empty directory would reach vimyc as "no .vy files", which reads like
-	// a broken checkout rather than a broken embed.
+	// vimyc would report an empty directory as a broken checkout, not a broken
+	// embed.
 	if written == 0 {
 		os.RemoveAll(dir)
 		return "", fmt.Errorf("rule set is empty: nothing embedded under rules/vy")
@@ -189,8 +175,8 @@ func writeRuleSet() (string, error) {
 	return dir, nil
 }
 
-// trimSourceDir strips the directory from a diagnostic so it names the file as
-// it is checked out rather than a temp path that stopped existing.
+// trimSourceDir rewrites a diagnostic to name the file as checked out, not the
+// temp path that has since been removed.
 func trimSourceDir(line string, srcArgs []string) string {
 	for _, a := range srcArgs {
 		if dir := filepath.Dir(a); dir != "." {

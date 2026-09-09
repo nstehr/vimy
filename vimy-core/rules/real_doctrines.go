@@ -6,14 +6,13 @@ import (
 	"fmt"
 )
 
-// Doctrines the LLM actually produced, sampled from 4,876 archived across 64
-// games. Embedded so tests need no database.
+// Doctrines the LLM actually produced, sampled from the archive and embedded so
+// tests need no database.
 //
-// Randomly generated doctrines are a poor stand-in: real ones are strongly
-// clustered, and sampling uniformly both tests rule shapes that never occur and
-// under-tests the ones that dominate. Measured across the full 4,876 —
-// `naval_weight` averages 0.011, `economy_priority` 0.761, and nothing ever
-// reaches 1.0.
+// Random doctrines are a poor stand-in: real ones cluster hard — naval_weight
+// averages 0.011 against economy_priority's 0.761, and nothing reaches 1.0 — so
+// uniform sampling tests shapes that never occur and under-tests the dominant
+// ones.
 //
 // Regenerate with the query in vimyc/docs/corpus.md.
 //

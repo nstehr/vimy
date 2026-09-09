@@ -10,14 +10,12 @@ type typed interface {
 	TypeName() string
 }
 
-// matchesType handles OpenRA's faction variant naming (e.g. "afld.ukraine"
-// matches "afld"). Without this, faction-specific buildings would be invisible
-// to role-based queries.
+// matchesType resolves OpenRA's faction variants ("afld.ukraine" matches
+// "afld"), which role-based queries would otherwise miss entirely.
 func matchesType(name, t string) bool {
 	if strings.EqualFold(name, t) {
 		return true
 	}
-	// Check for faction variant: name starts with t followed by "."
 	if len(name) > len(t) && strings.EqualFold(name[:len(t)], t) && name[len(t)] == '.' {
 		return true
 	}
@@ -184,14 +182,12 @@ var displayNames = map[string]string{
 	FlameTower: "Flame Tower",
 }
 
-// DisplayName returns a human-readable name for an internal type code.
-// Faction variants like "afld.ukraine" are resolved to the base type.
-// Unknown codes are returned as-is.
+// DisplayName resolves faction variants to their base type and returns unknown
+// codes unchanged.
 func DisplayName(code string) string {
 	if name, ok := displayNames[code]; ok {
 		return name
 	}
-	// Handle faction variants (e.g. "afld.ukraine" → "afld")
 	if dot := strings.IndexByte(code, '.'); dot > 0 {
 		if name, ok := displayNames[code[:dot]]; ok {
 			return name
@@ -200,9 +196,8 @@ func DisplayName(code string) string {
 	return code
 }
 
-// role abstracts over faction-specific type names. The compiler and env
-// methods use roles so rules say "barracks" instead of checking for both
-// "barr" (Soviet) and "tent" (Allied).
+// role abstracts over faction-specific type names, so a rule says "barracks"
+// rather than testing for both "barr" and "tent".
 type role struct {
 	queue string   // which production queue builds this
 	types []string // all faction variants (e.g. barr + tent for barracks)
@@ -262,30 +257,22 @@ var roles = map[string]role{
 	"kennel":            {queue: QueueBuilding, types: []string{Kennel}},
 }
 
-// combatVehicleRoles determines production priority — first buildable role wins.
-// Order: heaviest armor first, then support vehicles.
-// APC is excluded — it's a transport with dedicated capture/assault production rules.
+// combatVehicleRoles is production priority order, heaviest armor first. APC and
+// minelayer are absent: both have dedicated production rules.
 var combatVehicleRoles = []string{
 	"heavy_tank", "medium_tank", "tesla_tank", "light_tank",
 	"v2_launcher", "artillery", "ranger",
 	"flak_truck", "demo_truck", "mad_tank",
 }
 
-// Note: minelayer is excluded from combatVehicleRoles — it has dedicated
-// production and mine-laying rules gated on GroundDefensePriority.
-
-// cappedVehicleRoles have a production rule of their own, with a cap derived
-// from the doctrine weight that governs them. The generic `produce-vehicle`
-// fallback must not build these: it caps on CombatVehicleCount instead, so
-// whatever the dedicated rule computed is laundered past.
-//
-// Observed in game 68 (vimy-77s): flak trucks peaked at 5 alive against a cap
-// of 2, and nine of the twelve vehicles built came from produce-vehicle rather
-// than produce-flak-truck. AirDefensePriority — a knob the LLM was retuning
-// every 700 ticks — had essentially no influence on how many were built.
+// cappedVehicleRoles each have a dedicated production rule whose cap comes from
+// a doctrine weight. produce-vehicle must not build them: it caps on
+// CombatVehicleCount instead, laundering past whatever the dedicated rule
+// computed — flak trucks reached 5 alive against a cap of 2 that way, and the
+// governing knob had no effect at all.
 //
 // demo_truck is deliberately absent: it has no rule of its own, so excluding it
-// would mean nothing builds it at all.
+// would mean nothing builds it.
 var cappedVehicleRoles = map[string]bool{
 	"flak_truck": true,
 	"mad_tank":   true,
@@ -319,17 +306,14 @@ var specialistInfantryRoles = []string{
 
 // Roles only one side can build.
 //
-// The strategist is told which these are and told to list only its own — and
-// still lists the other side's, because a prompt is not a constraint. An
-// unbuildable preference is harmless where a unit is chosen, since
-// `bestBuildableFrom` skips anything the faction cannot make. It is not
-// harmless in `DoctrineParams`, which reads the raw list: `prefers-v2-launcher`,
-// `siege-vehicle-first` and `prefers-radar-gated-primary` all move rule
-// priorities on the strength of a name, whether or not the unit exists for this
-// side. So the list is filtered before anything reads it.
+// The strategist is told which these are and lists the other side's anyway — a
+// prompt is not a constraint. Harmless where a unit is chosen, since
+// bestBuildableFrom skips what the faction can't make; not harmless in
+// DoctrineParams, which reads the raw list and moves rule priorities on the
+// strength of a name. Hence the filter upstream of both.
 //
-// Only genuinely locked roles are listed. `medium_tank` covers both sides' mid
-// tanks and stays, as does anything either faction can field.
+// Only genuinely locked roles belong here: medium_tank covers both sides' mid
+// tanks and stays.
 var factionLockedRoles = map[string]string{
 	"v2_launcher":   "soviet",
 	"apc":           "soviet",
@@ -348,9 +332,8 @@ var factionLockedRoles = map[string]string{
 	"destroyer":     "allied",
 }
 
-// sovietFactions are the sides that build from the Soviet tree. Anything else
-// is treated as Allied, which is the safe default: an unknown faction keeps its
-// Allied-legal preferences and loses only the Soviet-locked ones.
+// sovietFactions build from the Soviet tree; anything else is treated as
+// Allied, so an unknown faction loses only the Soviet-locked roles.
 var sovietFactions = map[string]bool{
 	"soviet": true, "russia": true, "ukraine": true, "iraq": true, "russians": true,
 }
@@ -369,11 +352,9 @@ func BuildableByFaction(role, faction string) bool {
 	return !ok || locked == SideOf(faction)
 }
 
-// FilterPreferences drops roles the faction cannot build, and reports what went.
-//
-// Returned rather than logged here so the caller can say which doctrine it
-// came from: how often the strategist names the other side's units is worth
-// knowing, and a silent filter would hide it.
+// FilterPreferences drops roles the faction cannot build and returns them, so
+// the caller can attribute them to a doctrine. How often the strategist names
+// the other side's units is worth knowing; a silent filter would hide it.
 func FilterPreferences(d Doctrine, faction string) (Doctrine, []string) {
 	var dropped []string
 	keep := func(list []string) []string {
@@ -397,25 +378,21 @@ func FilterPreferences(d Doctrine, faction string) (Doctrine, []string) {
 	return d, dropped
 }
 
-// IsRole reports whether a name is something the rule set knows how to build.
+// IsRole reports whether a name is something the rule set builds.
 //
-// Exported for analysis: a clause like `count(unassigned-idle-ground) > 0` reads
-// as a test for a thing called "ground", and concluding that no rule produces
-// one is nonsense. A noun that is not a role is not a missing unit, it is a
-// quantity of something the rules never make directly.
+// Exported for analysis, which otherwise reads count(unassigned-idle-ground) as
+// a test for a unit called "ground" and reports that nothing produces one.
 func IsRole(name string) bool {
 	_, ok := roles[strings.ToLower(strings.TrimSpace(name))]
 	return ok
 }
 
-// UnbuildableRoles lists the faction-locked roles this faction cannot build,
-// sorted so the prompt it feeds is stable between windows.
+// UnbuildableRoles lists what this faction cannot build, sorted so the prompt it
+// feeds is stable between windows.
 //
-// The strategist is given both sides' rosters keyed by "Soviet:" and "Allied:",
-// and told its faction by name — which asks it to know that germany is Allied.
-// It does not: four consecutive windows of one game named `v2_launcher` and
-// `flak_truck` for germany, and each was silently dropped downstream. Naming the
-// side and the forbidden units directly is cheaper than filtering the result.
+// Rosters keyed by "Soviet:" and "Allied:" ask the strategist to know that
+// germany is Allied, and it doesn't — it asked for v2_launcher four windows
+// running. Naming the forbidden units outright is cheaper than filtering after.
 func UnbuildableRoles(faction string) []string {
 	side := SideOf(faction)
 	var out []string
@@ -429,28 +406,26 @@ func UnbuildableRoles(faction string) []string {
 }
 
 // supportPowerCountries records which factions can ever hold a support power,
-// read from the mod's own prerequisites:
+// read from the mod's prerequisites:
 //
 //	SovietParatroopers  aircraft.soviet
 //	SovietSpyPlane      structures.russia
 //	UkraineParabombs    aircraft.ukraine
 //
-// Two of the three are country-gated rather than side-gated, so "Soviet" is not
-// a fine enough answer: a Ukrainian player cannot call the Russian spy plane.
+// Country-gated, not side-gated: a Ukrainian player cannot call the Russian spy
+// plane, so "Soviet" is too coarse an answer.
 //
-// A power absent from this table is unknown, not impossible. NukePowerInfoOrder
-// is deliberately absent — no prerequisite was found for it, and claiming a rule
-// is unsatisfiable when it is merely idle is the error this table exists to stop
-// a report from making.
+// Absence means unknown, not impossible — NukePowerInfoOrder has no prerequisite
+// we could find, and calling an idle rule unsatisfiable is exactly the error
+// this table exists to prevent.
 var supportPowerCountries = map[string]map[string]bool{
 	"SovietParatroopers": sovietFactions,
 	"SovietSpyPlane":     {"russia": true},
 	"UkraineParabombs":   {"ukraine": true},
 }
 
-// SupportPowerReachable reports whether this faction could ever hold the power.
-// True when the power is unknown to the table: silence means "no evidence", and
-// only evidence should let a caller call a rule impossible.
+// SupportPowerReachable is true for powers unknown to the table: silence is no
+// evidence, and only evidence should let a caller call a rule impossible.
 func SupportPowerReachable(power, faction string) bool {
 	allowed, known := supportPowerCountries[power]
 	if !known {

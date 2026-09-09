@@ -21,21 +21,14 @@ func ActionProduceMCV(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
-// mcvDeployState tracks Deploy attempts per MCV so the rule can detect a
-// stuck MCV (Deploy silently rejected by the engine — usually no clear 3x3
-// footprint at the MCV's current position) and relocate it to a fresh spot
-// instead of spamming the same failing order forever. Game 32 (337k-tick
-// loss) saw 25898 deploy-mcv firings after CY was destroyed at tick 75930;
-// the recovered MCVs sat exposed and got picked off, repeat (vimy-rw8).
+// mcvDeployState detects an MCV whose Deploy the engine keeps silently
+// rejecting (usually no clear 3x3 footprint) so we relocate instead of
+// resending the same failing order forever.
 type mcvDeployState struct {
 	Attempts int
 	Tick     int
-	// How many times this MCV has been relocated. The old fallback was a pure
-	// function of the building centroid, so every relocation sent the MCV to
-	// the SAME tile and each was followed by three more deploys at a spot that
-	// had already failed three times. Game 85: deploy-mcv matched 336 times and
-	// ordered something 39 times, over the last quarter of a game it spent
-	// unable to rebuild. This counter is the memory that loop was missing.
+	// Relocation count, so successive fallbacks pick a different tile rather
+	// than re-deriving the same one.
 	Relocations int
 }
 
@@ -70,9 +63,8 @@ func ActionDeployMCV(env RuleEnv, conn *ipc.Connection) error {
 	state := states[target.ID]
 	state.Tick = env.State.Tick
 
-	// After K failed deploys at this MCV's current spot, send it to a fresh
-	// nearby land tile and reset the counter. The next time it arrives idle,
-	// Deploy is retried at the new position.
+	// Repeated failures mean the spot is unusable, not the order — move first,
+	// retry Deploy when it next arrives idle.
 	if state.Attempts >= mcvMaxDeployAttempts {
 		fx, fy := mcvFallbackLocation(env, target, state.Relocations)
 		state.Attempts = 0
@@ -96,18 +88,14 @@ func ActionDeployMCV(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
-// mcvFallbackLocation picks a land tile where a fresh MCV deploy is likely to
-// succeed, given how many times this MCV has already been moved and failed.
+// mcvFallbackLocation picks a land tile for a retry deploy.
 //
-// Anchored on the MCV rather than the building centroid. The centroid is
-// derived from what is still standing, so while a base is being overrun it
-// converges on the fighting — the least likely place a deploy succeeds, and
-// exactly the situation this runs in.
+// Anchored on the MCV, not the building centroid: the centroid follows what is
+// still standing, so during an overrun it converges on the fighting — the worst
+// place to deploy, and the only situation this runs in.
 //
-// `round` rotates the starting direction and widens the ring, so a direction
-// and a distance that already failed are not the first thing tried again. That
-// is the whole of the fix: the previous version was a pure function of the
-// centroid and returned the same tile every time, forever.
+// round rotates the direction and widens the ring so a failed spot isn't the
+// first thing tried again.
 func mcvFallbackLocation(env RuleEnv, mcv *model.Unit, round int) (int, int) {
 	cx, cy := mcv.X, mcv.Y
 	if env.Terrain == nil {
@@ -117,8 +105,7 @@ func mcvFallbackLocation(env RuleEnv, mcv *model.Unit, round int) (int, int) {
 		{1, 0}, {-1, 0}, {0, 1}, {0, -1},
 		{1, 1}, {-1, 1}, {1, -1}, {-1, -1},
 	}
-	// Widen by a ring each round, capped so a long game cannot walk the MCV
-	// off to a corner of the map it can never path back from.
+	// Capped so a long game can't walk the MCV into an unreachable corner.
 	dist := mcvFallbackStep * (1 + min(round, mcvFallbackMaxRings))
 	for i := range dirs {
 		o := dirs[(i+round)%len(dirs)]
@@ -235,8 +222,8 @@ func ActionProduceNavalYard(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
-// ActionCancelStuckAircraft works around an OpenRA quirk: aircraft production
-// completes but sometimes can't spawn (no free pad). Cancelling frees the queue.
+// ActionCancelStuckAircraft works around aircraft production that completes but
+// can't spawn for want of a free pad, blocking the queue.
 func ActionCancelStuckAircraft(env RuleEnv, conn *ipc.Connection) error {
 	for _, pq := range env.State.ProductionQueues {
 		if strings.EqualFold(pq.Type, QueueAircraft) && pq.CurrentItem != "" && pq.CurrentProgress >= 100 {
@@ -344,24 +331,21 @@ func ActionPlaceDefense(env RuleEnv, conn *ipc.Connection) error {
 	return nil
 }
 
-// chokePos is an internal helper: a ranked chokepoint's map-space center plus
-// its score, pre-computed so candidate scoring doesn't re-walk the grid.
+// chokePos pre-computes a ranked chokepoint's map-space center so candidate
+// scoring doesn't re-walk the grid.
 type chokePos struct {
 	x, y  int
 	score float64
 }
 
-// defenseHint generates a scored placement hint for defense buildings.
-// It evaluates 16 candidate positions around the base perimeter annulus
-// (100%-150% of radius), scores each by four weighted factors, then picks
-// randomly from the top 3 to balance strategic placement with unpredictability.
+// defenseHint scores candidates around the base perimeter and picks randomly
+// from the top 3 — deterministic placement is trivially exploitable.
 func defenseHint(env RuleEnv) (int, int) {
 	buildings := env.State.Buildings
 	if len(buildings) == 0 {
 		return 0, 0
 	}
 
-	// Compute base centroid.
 	sumX, sumY := 0, 0
 	for _, b := range buildings {
 		sumX += b.X
@@ -370,7 +354,6 @@ func defenseHint(env RuleEnv) (int, int) {
 	cx := sumX / len(buildings)
 	cy := sumY / len(buildings)
 
-	// Compute base radius from the furthest building.
 	var maxDistSq float64
 	for _, b := range buildings {
 		dx := float64(b.X - cx)
@@ -384,7 +367,6 @@ func defenseHint(env RuleEnv) (int, int) {
 		radius = 3
 	}
 
-	// Threat direction: unit vector toward nearest known enemy base.
 	var threatX, threatY float64
 	hasThreat := false
 	if base := env.NearestEnemyBase(); base != nil {
@@ -398,7 +380,6 @@ func defenseHint(env RuleEnv) (int, int) {
 		}
 	}
 
-	// High-value building positions.
 	highValueTypes := []string{
 		ConstructionYard, Refinery, WarFactory,
 		AlliedTechCenter, SovietTechCenter,
@@ -414,7 +395,6 @@ func defenseHint(env RuleEnv) (int, int) {
 		}
 	}
 
-	// Existing defense positions for spread calculation.
 	defenseTypes := []string{Pillbox, CamoPillbox, Turret, FlameTower, TeslaCoil, AAGun, SAMSite}
 	var defenses []model.Building
 	for _, b := range buildings {
@@ -426,19 +406,11 @@ func defenseHint(env RuleEnv) (int, int) {
 		}
 	}
 
-	// Nearby ranked chokepoints — bridges and land pinches within ~2× base
-	// radius. Used both as seed candidates (so a choke adjacent to base can
-	// actually win placement) and as a proximity bonus for annulus candidates.
+	// Chokepoints seed candidates directly, so one adjacent to base can win
+	// placement outright rather than only nudging annulus scores.
 	//
-	// Seed positions are offset from the zone center back toward our base by
-	// about half a zone so the defense ends up flanking the choke, not
-	// sitting *on* the crossing — placing a pillbox on the only bridge tile
-	// would strand our own harvesters and reinforcements.
-	// vimy harvester-defense (next-up after vimy-b14): when harvesters are
-	// currently fleeing, the threat is on the economy rather than the front.
-	// Seed extra candidates in a tight annulus around each refinery and boost
-	// the protection-near-refinery score component so defenses get placed at
-	// the threatened refinery rather than on the threat-toward-enemy axis.
+	// Fleeing harvesters mean the threat is on the economy, not the front, so
+	// refineries seed their own candidates and outweigh the enemy-facing axis.
 	harvesterEmergency := CountFleeingHarvesters(env.Memory) >= 2
 	var refineries []model.Building
 	for _, b := range buildings {
@@ -459,8 +431,8 @@ func defenseHint(env RuleEnv) (int, int) {
 			if d > maxChokeDist {
 				continue
 			}
-			// Offset seed position back toward base centroid by half a zone
-			// width, so the defense covers the choke without blocking it.
+			// Flank the choke rather than sit on it — a pillbox on the only
+			// bridge tile strands our own harvesters and reinforcements.
 			sx, sy := zx, zy
 			if d > 0 {
 				offset := 0.5 * float64(env.Terrain.CellW)
@@ -470,8 +442,7 @@ func defenseHint(env RuleEnv) (int, int) {
 				sx = zx - int(dx/d*offset)
 				sy = zy - int(dy/d*offset)
 			}
-			// Reject if the offset still lands on a non-land tile (bridge,
-			// water, cliff). Better to skip the seed than block a crossing.
+			// Better to skip the seed than block a crossing.
 			if t := env.Terrain.AtMapPos(sx, sy); t != model.Land {
 				continue
 			}
@@ -479,8 +450,6 @@ func defenseHint(env RuleEnv) (int, int) {
 		}
 	}
 
-	// Generate 16 candidates in the perimeter annulus (100%-150% of radius)
-	// plus seed candidates at each nearby chokepoint.
 	type candidate struct {
 		x, y  int
 		score float64
@@ -501,9 +470,7 @@ func defenseHint(env RuleEnv) (int, int) {
 		sampleYs = append(sampleYs, c.y)
 		sampleSeed = append(sampleSeed, true)
 	}
-	// Refinery perimeter seeding when harvesters are under attack. 4 candidates
-	// per refinery at ~3-cell radius, offset on cardinal directions so they
-	// form a small ring covering the most common raid approach angles.
+	// A cardinal ring per refinery covers the common raid approach angles.
 	if harvesterEmergency && len(refineries) > 0 {
 		const refineryRingRadius = 3.0
 		offset := 96.0 // ~3 cells at typical 32-px cell width
@@ -524,9 +491,8 @@ func defenseHint(env RuleEnv) (int, int) {
 		y := sampleYs[i]
 		seed := sampleSeed[i]
 
-		// Terrain filter. Exclude Bridge as well as water/cliff — placing a
-		// defense on a bridge tile would physically block our own units
-		// crossing it.
+		// Bridge is excluded along with water/cliff: buildable, but it would
+		// block our own units crossing.
 		if env.Terrain != nil {
 			if env.Terrain.AtMapPos(x, y) != model.Land {
 				continue
@@ -565,10 +531,8 @@ func defenseHint(env RuleEnv) (int, int) {
 			}
 		}
 
-		// Score: refinery proximity, only counts during harvester emergency.
-		// Distance is measured to the nearest refinery, not generic high-value
-		// buildings, so the boost specifically pulls defenses to the threatened
-		// economy buildings rather than the tech center / war factory cluster.
+		// Measured to the nearest refinery specifically, so the boost pulls
+		// defenses to the raided economy and not the tech/war-factory cluster.
 		var refineryScore float64
 		if harvesterEmergency && len(refineries) > 0 {
 			minDist := math.MaxFloat64
@@ -613,9 +577,8 @@ func defenseHint(env RuleEnv) (int, int) {
 			perimeterScore = 1
 		}
 
-		// Score: chokepoint proximity (weight 0.20). Rewards candidates near a
-		// ranked chokepoint weighted by the choke's own score — a bridge on
-		// the enemy path beats an off-route land pinch.
+		// Score: chokepoint proximity (weight 0.20), weighted by the choke's own
+		// score — a bridge on the enemy path beats an off-route land pinch.
 		var chokeScore float64
 		if len(nearbyChokes) > 0 {
 			best := 0.0
@@ -635,11 +598,8 @@ func defenseHint(env RuleEnv) (int, int) {
 			chokeScore = best
 		}
 
-		// Harvester emergency: shift weight away from "push perimeter toward
-		// enemy" (threatScore + perimeterScore + chokeScore drop) and onto
-		// "cover the refinery being raided" (refineryScore takes 0.50).
-		// Spread is preserved at a modest weight so we don't pile all defenses
-		// on one refinery wall.
+		// Under a raid, covering the refinery outweighs pushing the perimeter
+		// toward the enemy. Spread survives so we don't wall one refinery.
 		var score float64
 		if harvesterEmergency {
 			score = 0.50*refineryScore + 0.15*spreadScore + 0.15*threatScore + 0.10*chokeScore + 0.10*perimeterScore
@@ -649,12 +609,10 @@ func defenseHint(env RuleEnv) (int, int) {
 		candidates = append(candidates, candidate{x, y, score, seed})
 	}
 
-	// Fallback: all candidates filtered out (water/cliff everywhere).
 	if len(candidates) == 0 {
 		return cx, cy
 	}
 
-	// Sort by score descending, pick randomly from top 3.
 	slices.SortFunc(candidates, func(a, b candidate) int {
 		if a.score > b.score {
 			return -1
@@ -673,13 +631,12 @@ func defenseHint(env RuleEnv) (int, int) {
 	return pick.x, pick.y
 }
 
-// defenseRoles lists all ground defense types eligible for the diversified
-// defense producer. Order doesn't matter — selection is by lowest count.
+// defenseRoles is unordered — selection is by lowest count.
 var defenseRoles = []string{"pillbox", "camo_pillbox", "turret", "flame_tower", "tesla_coil"}
 
 func ActionProduceDefense(env RuleEnv, conn *ipc.Connection) error {
-	// Pick the buildable defense type we have the fewest of. This diversifies
-	// the defense mix instead of always building the first available type.
+	// Fewest-of-type, so the mix diversifies instead of stacking whichever
+	// type happens to be listed first.
 	bestRole := ""
 	bestItem := ""
 	bestCount := math.MaxInt
@@ -902,13 +859,9 @@ func ActionDefendBase(env RuleEnv, conn *ipc.Connection) error {
 	if enemy == nil {
 		return nil
 	}
-	// Only pull genuinely unassigned idle units. Ground-attack squad members
-	// stay with their squad — they're being held for the push, not for base
-	// defense. Otherwise a lone raider near base poaches the attack squad
-	// every tick and the squad never deploys (game 46: form-ground-attack
-	// fired 341x but squad-attack fired 1x). Base defense is the ground-
-	// defense squad's job; if that squad hasn't formed yet, it will when
-	// enough unassigned units accumulate.
+	// Unassigned only. Squad members are reserved for the push; poaching them
+	// for every lone raider means the attack squad never deploys. Base defense
+	// belongs to the ground-defense squad.
 	idle := env.UnassignedIdleGround()
 	if len(idle) == 0 {
 		return nil
@@ -925,21 +878,15 @@ func ActionDefendBase(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
-// ActionDefendCriticalBuilding pulls ALL nearby ground units — regardless
-// of squad membership or idle status — to attack the nearest enemy that's
-// engaging one of our critical buildings. This overrides the poach-
-// prevention in scramble/emergency-base-defense (vimy-d9q) because when
-// the CY / WF / refinery is actively taking damage, keeping the attack
-// squad "reserved" for a future push is worse than losing the critical
-// infrastructure. Game 59: 2 rocket launchers destroyed the CY while an
-// idle mammoth tank sat in the ground-attack squad, never engaged
-// because scramble excludes squad members and emergency needs zero idle.
+// ActionDefendCriticalBuilding pulls every nearby ground unit, squad members
+// included. This deliberately overrides the poach-prevention elsewhere: with
+// the CY or war factory actively burning, reserving a squad for a future push
+// costs more than it buys.
 func ActionDefendCriticalBuilding(env RuleEnv, conn *ipc.Connection) error {
 	enemy := env.nearestEnemyAttackingCritical()
 	if enemy == nil {
 		return nil
 	}
-	// Pull all near-base ground units regardless of squad membership.
 	nearby := env.NearBaseGroundUnits()
 	if len(nearby) == 0 {
 		return nil
@@ -952,9 +899,8 @@ func ActionDefendCriticalBuilding(env RuleEnv, conn *ipc.Connection) error {
 	return sendAttackMove(env, conn, ids, enemy.X, enemy.Y)
 }
 
-// ActionEmergencyDefendBase redirects nearby ground units (regardless of idle
-// status) to defend the base. Used when no idle units are available but units
-// near the base have stale orders and aren't responding to the attack.
+// ActionEmergencyDefendBase covers the case where nothing is idle but nearby
+// units are sitting on stale orders while the base is attacked.
 func ActionEmergencyDefendBase(env RuleEnv, conn *ipc.Connection) error {
 	enemy := env.NearestEnemy()
 	if enemy == nil {
@@ -1010,27 +956,19 @@ func ActionAirDefendBase(env RuleEnv, conn *ipc.Connection) error {
 	return nil
 }
 
-// repairToggleEntry tracks the last RepairBuilding toggle issued per building
-// so we don't re-toggle (cancel) an in-flight repair every eval. The repair
-// command in OpenRA is a toggle: send once to start, send again to STOP.
-// Without per-building idempotency, repair-buildings firing thousands of
-// times in a long match was constantly toggling repairs on and off, wasting
-// cash and never actually completing.
+// repairToggleEntry gives per-building idempotency. OpenRA's repair order is a
+// toggle — resending it cancels the in-flight repair — so a rule that fires
+// every eval would flip repairs on and off and never complete one.
 type repairToggleEntry struct {
 	Tick int
 }
 
-// repairResendTicks is how long we trust an in-flight repair toggle. If the
-// building is still damaged this long after we issued, either the toggle was
-// lost or repair stopped — re-issue.
+// repairResendTicks is how long we trust an in-flight toggle before assuming
+// it was lost or stopped and re-issuing.
 const repairResendTicks = 1500
 
-// criticalRepairTypes are buildings worth repair-spending even when we're
-// under pressure (rush or sustained harassment). Production infrastructure
-// and economy nodes only — non-critical buildings (radar, helipad, tech
-// center, etc.) lose repair budget so cash flows to combat units instead.
-// vimy-rw8 follow-up after game 41 (4900 repair firings vs 122 produce-
-// infantry — repair budget was crushing production cash).
+// isCriticalRepairType gates repair spend under pressure to production and
+// economy buildings. Repairing everything starves unit production of cash.
 func isCriticalRepairType(t string) bool {
 	switch baseTypeName(t) {
 	case ConstructionYard, WarFactory, AlliedBarracks, SovietBarracks, Refinery, PowerPlant, AdvancedPower:
@@ -1039,34 +977,20 @@ func isCriticalRepairType(t string) bool {
 	return false
 }
 
-// RepairBudgetRatio is exposed as an env memory value ("repairBudgetRatio",
-// float64) so ActionRepairDamagedBuildings can honor the doctrine-level
-// repair_budget_ratio knob. When set to a positive value <= 1.0, we only
-// initiate a NEW repair toggle if remaining cash after repair (approximated
-// as current cash) is above (1 - ratio) * currentCash — i.e. the doctrine
-// wants to keep (1 - ratio) fraction of cash reserved for production.
-// repairCashFloor: no new repairs or re-toggles if cash is below this
-// threshold. Diagnostic on game 62 showed cash pinned at 0 for the entire
-// mid-game because in-flight repairs were consuming income the instant it
-// converted from ore. Above-floor repairs still get through; at-floor
-// repairs stop entirely so cash can accumulate for production.
+// repairCashFloor stops all repair spend below this cash level. Without it,
+// in-flight repairs consume income the instant ore converts and cash sits
+// pinned at zero for the whole mid-game.
 const repairCashFloor = 500
 
-// repairMaxConcurrent caps how many buildings we simultaneously repair.
-// OpenRA drains cash per-tick per active repair. Uncapped means all N
-// damaged buildings drain simultaneously and the sum crushes income.
-// Cap of 2 keeps drain bounded so income can still support production.
+// repairMaxConcurrent bounds cash drain: OpenRA charges per tick per active
+// repair, so N damaged buildings drain N times income.
 const repairMaxConcurrent = 2
 
-// RepairBudgetRatio is exposed as an env memory value ("repairBudgetRatio",
-// float64) so ActionRepairDamagedBuildings can honor the doctrine-level
-// repair_budget_ratio knob. When set to a positive value <= 1.0, we only
-// initiate a NEW repair toggle if remaining cash after repair (approximated
-// as current cash) is above (1 - ratio) * currentCash — i.e. the doctrine
-// wants to keep (1 - ratio) fraction of cash reserved for production.
+// ActionRepairDamagedBuildings honors the doctrine's repair_budget_ratio knob,
+// read from env memory as "repairBudgetRatio": the fraction of cash repair is
+// allowed to touch, the rest reserved for production.
 func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
-	// Hard cash floor. If we can't afford the floor, don't spend a dollar
-	// more on repairs — production and rebuild need what remains.
+	// Below the floor, production and rebuild need what's left.
 	if env.State.Player.Cash < repairCashFloor {
 		return nil
 	}
@@ -1074,16 +998,11 @@ func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
 	state := memoryMap[int, repairToggleEntry](env.Memory, "repairToggleSent")
 	underPressure := env.IsRushed() || env.IsHarvesterHarassed()
 	budgetRatio, _ := env.Memory["repairBudgetRatio"].(float64)
-	// Budget = fraction of cash the doctrine allows repair to touch. Zero
-	// disables (unlimited repair, current behavior). Values above 0 gate
-	// new repair starts on cash >= reserveThreshold.
+	// Zero disables the budget entirely (unlimited repair).
 	reserveOK := true
 	if budgetRatio > 0 && budgetRatio < 1.0 {
-		// Reserve (1 - budgetRatio) of cash for production. A rush setting
-		// 0.2 keeps 80% of cash for units. Cheap approximation: allow
-		// starting new repairs only when current cash comfortably exceeds
-		// the reserve floor. Cash floor scales with number of damaged
-		// buildings (rough proxy for repair cost).
+		// Approximation: gate new starts on current cash clearing a reserve
+		// that scales with damaged-building count as a proxy for total cost.
 		damagedCount := len(env.DamagedBuildings())
 		perBuildingRepairAllowance := 100 // rough estimate per damaged building
 		neededHeadroom := int(float64(damagedCount*perBuildingRepairAllowance) / budgetRatio)
@@ -1092,8 +1011,7 @@ func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
 		}
 	}
 
-	// Count currently-tracked active repairs so we can enforce a concurrency
-	// cap. Anything older than repairResendTicks is considered stale/complete.
+	// Entries older than repairResendTicks count as stale, not active.
 	activeRepairs := 0
 	for _, entry := range state {
 		if env.State.Tick-entry.Tick < repairResendTicks {
@@ -1102,15 +1020,12 @@ func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
 	}
 
 	for _, b := range env.DamagedBuildings() {
-		// When under pressure, only spend cash on infrastructure that keeps
-		// us in the game. Radar/tech/helipad damage is acceptable; lost
+		// Under pressure, radar/tech/helipad damage is acceptable; lost
 		// production is not.
 		if underPressure && !isCriticalRepairType(b.Type) {
 			continue
 		}
-		// Doctrine-level repair budget: skip new repairs when reserve isn't
-		// met. Already-issued repair toggles (idempotency check below) still
-		// let in-flight repairs complete.
+		// Budget gates new repairs only; in-flight ones still complete.
 		prev, sent := state[b.ID]
 		if !reserveOK && !sent {
 			continue
@@ -1118,9 +1033,7 @@ func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
 		if sent && env.State.Tick-prev.Tick < repairResendTicks {
 			continue
 		}
-		// Concurrency cap: only initiate a new repair if we're below the
-		// cap. Existing tracked repairs (already counted above) will finish
-		// on their own; we're only rate-limiting new starts.
+		// Rate-limits new starts only; tracked repairs finish on their own.
 		if !sent && activeRepairs >= repairMaxConcurrent {
 			continue
 		}
@@ -1139,12 +1052,9 @@ func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
 }
 
 // ActionScoutWithIdleUnits farms up to 2 idle ground units for perimeter recon
-// when no enemy is currently visible. Uses AttackMove so scouts engage anything
-// they spot en route, not just walk past. Each scout gets its own persistent
-// round-robin patrol assignment (same machinery as ActionScoutPatrol) so
-// repeat calls don't spam fresh orders that cancel the in-flight path — the
-// earlier stateless implementation produced 772 attack_move commands in one
-// game and kept the cleanup force bouncing between corners without arriving.
+// when no enemy is visible. AttackMove so scouts engage what they spot en
+// route. Patrol assignments persist per scout: reissuing cancels the in-flight
+// path, and a stateless version left scouts bouncing between corners.
 func ActionScoutWithIdleUnits(env RuleEnv, conn *ipc.Connection) error {
 	waypoints := generateWaypoints(env.State.MapWidth, env.State.MapHeight, env.Terrain)
 	if len(waypoints) == 0 {
@@ -1188,10 +1098,9 @@ func ActionScoutWithIdleUnits(env RuleEnv, conn *ipc.Connection) error {
 	return nil
 }
 
-// generateWaypoints creates a 9-point search pattern (center, corners, edges)
-// with a small margin to avoid map-edge pathing issues. When a terrain grid is
-// available, waypoints in Water or Cliff zones are filtered out so ground
-// scouts only visit reachable positions.
+// generateWaypoints lays a 9-point search pattern, inset from the edges to
+// avoid map-boundary pathing trouble and filtered against terrain so ground
+// scouts only get reachable targets.
 func generateWaypoints(mapW, mapH int, terrain *model.TerrainGrid) [][2]int {
 	if mapW == 0 || mapH == 0 {
 		return nil
@@ -1232,13 +1141,9 @@ func generateWaypoints(mapW, mapH int, terrain *model.TerrainGrid) [][2]int {
 	return filtered
 }
 
-// ActionScoutPatrol patrols the map perimeter with each idle scout — Allied
-// Rangers, or the designated light tank / attack dog for other factions.
-// Each scout sticks to its assigned waypoint until it arrives (within
-// scoutArriveRadius), then rotates to the next one. Move commands are
-// throttled so we don't re-issue the same destination every tick — without
-// this, each tick cancelled the in-flight patrol path and scouts never
-// traversed the map.
+// ActionScoutPatrol rotates each idle scout through perimeter waypoints, one
+// at a time until it arrives. Moves are throttled: re-issuing a destination
+// cancels the in-flight path, and scouts then never traverse the map.
 func ActionScoutPatrol(env RuleEnv, conn *ipc.Connection) error {
 	waypoints := generateWaypoints(env.State.MapWidth, env.State.MapHeight, env.Terrain)
 	if len(waypoints) == 0 {
@@ -1248,21 +1153,15 @@ func ActionScoutPatrol(env RuleEnv, conn *ipc.Connection) error {
 	scouts := env.IdleScouts()
 	state := getScoutMoveState(env.Memory)
 
-	// scout_reach_priority doctrine knob: when > 0.5 AND we already have
-	// enemy base intel, override the round-robin patrol and send scouts
-	// directly to the enemy base (or on a direct probe toward its position).
-	// A rush needs the enemy base found FAST — perimeter patrol wastes ticks
-	// visiting corners we don't care about once we know where the enemy is.
+	// A rush needs the enemy base found fast; once we know where it is, the
+	// perimeter rotation is spent on corners that no longer matter.
 	scoutReach, _ := env.Memory["scoutReachPriority"].(float64)
 	targetKnownBase := scoutReach > 0.5 && env.NearestEnemyBase() != nil
 
 	for _, s := range scouts {
 		prev, assigned := state[s.ID]
-		// Stall check: if we've been telling this scout to go to the same
-		// waypoint and it hasn't moved, the path is unreachable (chokepoint,
-		// terrain lock). Advance to the next waypoint rather than retrying
-		// the same bad target forever — exactly what trapped a dog at (64,64)
-		// trying to reach (5,5) for the whole game before this check existed.
+		// A scout that hasn't moved is blocked (chokepoint, terrain lock), not
+		// slow — advance rather than retry the same target for the whole game.
 		forceAdvance := false
 		if assigned && scoutStalled(env.Memory, s, env.State.Tick) {
 			forceAdvance = true
@@ -1273,16 +1172,14 @@ func ActionScoutPatrol(env RuleEnv, conn *ipc.Connection) error {
 			idx = takePatrolPoolIdx(env.Memory, "scoutPatrolIdx", len(waypoints))
 		}
 		wp := waypoints[idx%len(waypoints)]
-		// scout_reach override: point at the enemy base instead of the
-		// next patrol waypoint. Keeps the throttle/stall machinery working
-		// because destination is checked against prev.X/prev.Y as normal.
+		// Throttle and stall machinery still apply — the destination is compared
+		// against prev.X/prev.Y either way.
 		if targetKnownBase {
 			base := env.NearestEnemyBase()
 			wp = [2]int{base.X, base.Y}
 		}
 
-		// Throttle: if we issued the same destination recently, don't resend —
-		// the path is still valid and a fresh Move would cancel it.
+		// The path is still valid; a fresh Move would cancel it.
 		if assigned && prev.X == wp[0] && prev.Y == wp[1] && env.State.Tick-prev.Tick < scoutMoveResend {
 			continue
 		}
@@ -1299,15 +1196,12 @@ func ActionScoutPatrol(env RuleEnv, conn *ipc.Connection) error {
 	return nil
 }
 
-// nextPatrolIdx returns the next patrol waypoint index for an actor rotating
-// round-robin through a waypoint list. Advances when the actor has arrived
-// within arriveRadius of its previous assignment, or when the caller forces
-// advance (stall detected, TTL expired). For the first assignment
-// (`assigned == false`) the caller should instead take an index from the
-// shared pool via takePatrolPoolIdx — this function returns prevIdx in that
-// case which is meaningless, but the caller will overwrite it. Shared between
-// dedicated scouts and APCs-in-scout-mode so both behave identically: systematic
-// rotation visits every waypoint, no blind spots on mid-edges.
+// nextPatrolIdx advances an actor's round-robin waypoint index on arrival, or
+// when the caller forces it (stall, TTL). Shared by scouts and APCs in scout
+// mode so both rotate systematically and leave no blind spots.
+//
+// The return is meaningless when assigned is false — first assignments come
+// from takePatrolPoolIdx instead.
 func nextPatrolIdx(actorX, actorY, prevX, prevY, prevIdx, numWaypoints int, arriveRadius float64, assigned, forceAdvance bool) int {
 	if !assigned {
 		return prevIdx
@@ -1323,9 +1217,8 @@ func nextPatrolIdx(actorX, actorY, prevX, prevY, prevIdx, numWaypoints int, arri
 	return prevIdx
 }
 
-// takePatrolPoolIdx returns the next index from a shared fan-out pool and
-// increments it, so multiple actors assigned at the same tick start at
-// different waypoints instead of stacking on waypoint 0.
+// takePatrolPoolIdx fans out actors assigned on the same tick so they don't
+// all start on waypoint 0.
 func takePatrolPoolIdx(memory map[string]any, key string, numWaypoints int) int {
 	pool, _ := memory[key].(int)
 	memory[key] = (pool + 1) % numWaypoints
@@ -1339,10 +1232,9 @@ type scoutMoveEntry struct {
 	Idx  int
 }
 
-// scoutMoveResend — scouts need to keep moving, so the window is shorter than
-// APC deliveries. A scout stuck mid-patrol gets a fresh Move faster; one that
-// arrives and goes idle will rotate to the next waypoint (different
-// destination → throttle inactive, sends immediately).
+// scoutMoveResend is shorter than the APC window — scouts must keep moving, and
+// a scout that arrives rotates to a different destination anyway, which bypasses
+// the throttle.
 const scoutMoveResend = 40
 const scoutArriveRadius = 6.0
 
@@ -1363,11 +1255,9 @@ func ActionProduceEngineer(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
-// captureOrderEntry records the last Capture order we issued for an engineer.
-// Same reason as sendAPCMove: re-sending an identical Capture order every tick
-// cancels the current walk-and-capture activity in OpenRA and resets it, so
-// the engineer never arrives at the target. Observed live: 111 captures of
-// the same (engineer, target) pair in a single game — zero completed.
+// captureOrderEntry throttles repeat Capture orders. Same reason as
+// sendAPCMove: a fresh Capture cancels the in-flight walk-and-capture, so an
+// engineer re-ordered every tick never arrives.
 type captureOrderEntry struct {
 	Tick     int
 	TargetID int
@@ -1388,8 +1278,8 @@ func ActionCaptureBuilding(env RuleEnv, conn *ipc.Connection) error {
 	if len(engineers) == 0 {
 		return nil
 	}
-	// Pick the engineer closest to the target so recently-unloaded engineers
-	// capture instead of being re-loaded into a different APC.
+	// Closest first, so a just-unloaded engineer captures rather than being
+	// re-loaded into another APC.
 	eng, _ := nearestTo(engineers, target.X, target.Y)
 
 	state := getCaptureOrderState(env.Memory)
@@ -1414,11 +1304,9 @@ func ActionProduceHarvester(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
-// harvestResend throttles repeated harvest orders to the same harvester.
-// Without this, a harvester that goes idle for one tick (between unload and
-// the next round trip, while waiting to dock, etc.) gets a fresh harvest
-// order every evaluation — which cancels in-flight pathing and can stall
-// the harvester next to the refinery indefinitely (vimy-oli).
+// harvestResend throttles repeat harvest orders. A harvester idle for a single
+// tick (waiting to dock, between trips) would otherwise get a fresh order that
+// cancels its pathing and strands it beside the refinery.
 const harvestResend = 120
 
 type harvestEntry struct {
@@ -1428,29 +1316,22 @@ type harvestEntry struct {
 }
 
 func ActionSendIdleHarvesters(env RuleEnv, conn *ipc.Connection) error {
-	// Collect refineries; harvesters are dispatched round-robin across them
-	// so multiple idle harvesters spread out instead of all converging on
-	// the first refinery's coordinates.
+	// Round-robin across refineries so idle harvesters spread out instead of
+	// converging on the first one's coordinates.
 	var refineries []model.Building
 	for i := range env.State.Buildings {
 		if matchesType(env.State.Buildings[i].Type, Refinery) {
 			refineries = append(refineries, env.State.Buildings[i])
 		}
 	}
-	// Harvesters the flee action is currently moving are left alone. Both rules
-	// fire on the same tick — flee-harvesters in `micro` at 150-300, this one
-	// in `harvester` at 100, different categories so exclusivity cannot
-	// arbitrate — and both send the harvester to the nearest refinery. The
-	// result was a shuttle: flee to the refinery, arrive idle, get sent out to
-	// harvest, come back into danger, flee again. 696 flee firings against 486
-	// returns across 17,000 ticks of game 71 (vimy-mfq).
+	// Skip harvesters the flee action is moving. Both rules fire on the same
+	// tick in different categories, so exclusivity can't arbitrate, and each
+	// sends the harvester to the nearest refinery — the result is a shuttle
+	// between fleeing and returning to danger.
 	//
-	// Bounded by age rather than by the map being pruned. FleeHarvesters
-	// refreshes an entry every harvesterFleeResend ticks while it is still
-	// moving a harvester, so a fresher entry than that means the flee is live.
-	// An older one means the threat is gone — and the map cannot be relied on
-	// to say so, because the rule that prunes it only runs while something is
-	// in danger. Trusting it froze every harvester that had ever fled.
+	// Liveness is judged by entry age, not by the map being pruned: the pruning
+	// rule only runs while something is in danger, so trusting the map's
+	// contents froze every harvester that had ever fled.
 	fleeing := getHarvesterFleeState(env.Memory)
 
 	state := memoryMap[int, harvestEntry](env.Memory, "harvestSent")
@@ -1563,8 +1444,7 @@ func ActionAirAttackKnownBase(env RuleEnv, conn *ipc.Connection) error {
 }
 
 // --- Superweapon building production ---
-// These use the Defense queue despite being buildings — matches OpenRA's
-// categorization of superweapons as "defense" items.
+// Defense queue despite being buildings — OpenRA categorizes them that way.
 
 func ActionProduceMissileSilo(env RuleEnv, conn *ipc.Connection) error {
 	item := env.BuildableType("missile_silo")
@@ -1795,12 +1675,9 @@ func ActionProduceKennel(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
-// minelayerTarget records where a minelayer was last tasked to lay mines.
-// Used by updateMinelayers to detect "mission complete" (minelayer is idle
-// and near its target) and clear the assignment so the rule can re-task it
-// to a different chokepoint. Without this, a minelayer that successfully
-// laid its minefield stayed flagged `assigned` forever and never got
-// another task.
+// minelayerTarget lets updateMinelayers recognize a completed minefield (idle
+// near its target) and free the unit. Without it a successful minelayer stays
+// flagged assigned for the rest of the game.
 type minelayerTarget struct {
 	X, Y       int
 	AssignedAt int
@@ -1810,21 +1687,14 @@ func getMinelayerTargets(memory map[string]any) map[int]minelayerTarget {
 	return memoryMap[int, minelayerTarget](memory, "minelayerTargets")
 }
 
-// minelayerDoneRadius: distance in cells within which we consider a minelayer
-// to have reached (and placed) its assigned minefield. Small — the unit lays
-// mines in a 3x3 pattern centered on the target, so idle within 3 cells of
-// target == mission complete.
+// minelayerDoneRadius is small because the minefield is 3x3 around the target:
+// idle inside it means the mines are laid.
 const minelayerDoneRadius = 4
 
-// ActionLayMines sends idle minelayers to lay mines. Priority order:
-//  1. Chokepoints (bridges / narrow land strips) ranked toward the nearest
-//     known enemy base — block the structural traffic funnel.
-//  2. Fraction-of-the-way toward the enemy when we have intel but no chokes.
-//  3. Compass perimeter around the base when we have neither.
-//
-// Each minelayer is tracked in memory so we don't re-issue orders every tick.
-// The minelayer auto-rearms at the service depot when out of ammo (handled
-// by OpenRA's LayMines activity).
+// ActionLayMines sends idle minelayers out, preferring targets in descending
+// order of how much traffic they funnel: ranked chokepoints, then a point
+// partway toward known enemy intel, then a blind compass perimeter.
+// Rearming is OpenRA's LayMines activity, not ours.
 func ActionLayMines(env RuleEnv, conn *ipc.Connection) error {
 	miners := env.IdleMinelayers()
 	if len(miners) == 0 {
@@ -1838,9 +1708,7 @@ func ActionLayMines(env RuleEnv, conn *ipc.Connection) error {
 	base := env.NearestEnemyBase()
 	chokes := env.ChokepointsTowardEnemy()
 
-	// Rotating choke cursor so successive re-tasks cycle through chokepoints
-	// instead of re-laying on top of the previously mined one. Advances once
-	// per minelayer dispatched.
+	// Rotating cursor so re-tasks cycle chokes instead of re-mining the last.
 	chokeIdx, _ := env.Memory["mineChokeIdx"].(int)
 
 	for i, m := range miners {
@@ -1848,13 +1716,9 @@ func ActionLayMines(env RuleEnv, conn *ipc.Connection) error {
 
 		switch {
 		case len(chokes) > 0 && env.Terrain != nil:
-			// Spread minelayers across the top-ranked chokes, rotating the
-			// cursor across retasks so a re-deployed minelayer visits a
-			// different choke than the one it already mined.
 			c := chokes[(chokeIdx+i)%len(chokes)]
 			tx, ty = env.Terrain.ZoneCenter(c.Col, c.Row)
 		case base != nil:
-			// Mine toward the enemy — block the most likely attack path.
 			fraction := 0.25 + 0.05*float64(i)
 			if fraction > 0.40 {
 				fraction = 0.40
@@ -1862,9 +1726,8 @@ func ActionLayMines(env RuleEnv, conn *ipc.Connection) error {
 			tx = centX + int(float64(base.X-centX)*fraction)
 			ty = centY + int(float64(base.Y-centY)*fraction)
 		default:
-			// No intel — lay a defensive perimeter around the base.
-			// Place mines at ~15% of map diagonal from base centroid,
-			// cycling through compass directions for each minelayer.
+			// No intel — perimeter at ~15% of map diagonal, one compass
+			// direction per minelayer.
 			mw := float64(env.State.MapWidth)
 			mh := float64(env.State.MapHeight)
 			perimeterDist := math.Sqrt(mw*mw+mh*mh) * 0.15
@@ -1873,11 +1736,9 @@ func ActionLayMines(env RuleEnv, conn *ipc.Connection) error {
 			ty = centY + int(perimeterDist*math.Sin(angle))
 		}
 
-		// Clamp to map bounds.
 		tx = max(1, min(tx, env.State.MapWidth-2))
 		ty = max(1, min(ty, env.State.MapHeight-2))
 
-		// Lay a small 3x3 rectangular minefield centered on target.
 		const radius = 1
 		startX := max(0, tx-radius)
 		startY := max(0, ty-radius)
@@ -1904,12 +1765,8 @@ func ActionLayMines(env RuleEnv, conn *ipc.Connection) error {
 	return nil
 }
 
-// updateMinelayers clears assignments for dead minelayers and for minelayers
-// that have reached their minefield target (mission complete — they've
-// placed the mines and are now idle). Without the "mission complete" clear,
-// a minelayer that successfully laid its minefield stayed flagged `assigned`
-// forever and could never be retasked, leaving it parked on its own minefield
-// for the rest of the game. Called each tick from the engine.
+// updateMinelayers frees assignments for dead minelayers and for ones that
+// have finished laying. Called each tick from the engine.
 func updateMinelayers(env RuleEnv) {
 	assigned := getMinelayerAssignments(env.Memory)
 	if len(assigned) == 0 {
@@ -1931,14 +1788,11 @@ func updateMinelayers(env RuleEnv) {
 		}
 		t, hasTarget := targets[id]
 		if !hasTarget {
-			// No target recorded (e.g. reloaded state without coords) — leave
-			// the assignment alone; ActionLayMines will record on the next
-			// retask after the unit becomes idle via some other path.
+			// No coords (reloaded state) — leave it; the next retask records one.
 			continue
 		}
-		// Mission complete: minelayer is idle within a small radius of the
-		// target it was sent to. Clear both maps so IdleMinelayers returns
-		// it and ActionLayMines can retask it to the next rotated choke.
+		// Idle near its target means the mines are down; clear both maps so the
+		// unit becomes retaskable.
 		dx := float64(u.X - t.X)
 		dy := float64(u.Y - t.Y)
 		if u.Idle && math.Sqrt(dx*dx+dy*dy) <= minelayerDoneRadius {
@@ -1966,10 +1820,8 @@ func ActionLoadEngineerIntoAPC(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
-// memoryMap fetches (creating if absent) a typed map stored under key in the
-// rule engine's memory. Used for per-actor throttle/tracking tables — the
-// "allocate on first touch" pattern that previously lived as a separate
-// getXxxState function per order type.
+// memoryMap fetches, allocating on first touch, a typed table in engine memory.
+// Backs the per-actor throttle/tracking maps.
 func memoryMap[K comparable, V any](memory map[string]any, key string) map[K]V {
 	m, _ := memory[key].(map[K]V)
 	if m == nil {
@@ -1995,8 +1847,8 @@ func nearestTo(units []model.Unit, x, y int) (model.Unit, float64) {
 	return best, math.Sqrt(bestDist)
 }
 
-// Unload tuning. 10 cells is roomy enough to tolerate APC pathing stalling
-// a few cells short of a building; the engineer walks the rest on foot.
+// Roomy enough to tolerate an APC stalling short of the building; the engineer
+// walks the rest.
 const unloadNearTargetCells = 10
 
 // apcProgressEntry tracks an APC's position between ticks so we can detect
@@ -2007,12 +1859,9 @@ type apcProgressEntry struct {
 	LastY    int
 }
 
-// apcExploreEntry remembers which waypoint an APC is heading for when no
-// capturable is visible. Without this, every tick we'd pick a fresh waypoint
-// and the APC would never arrive anywhere. Idx is the round-robin position in
-// the patrol cycle; with systematic rotation every waypoint eventually gets
-// visited regardless of where the APC starts. The old farthest-first heuristic
-// oscillated between opposite corners and left mid-edges permanently blind.
+// apcExploreEntry pins an APC's exploration waypoint so it arrives somewhere
+// rather than re-picking every tick. Idx rotates round-robin: a farthest-first
+// heuristic oscillates between opposite corners and never sees mid-edges.
 type apcExploreEntry struct {
 	X          int
 	Y          int
@@ -2020,45 +1869,32 @@ type apcExploreEntry struct {
 	Idx        int
 }
 
-// apcStallTicks: how long the APC must sit at the exact same tile, after we
-// first observed it there, before we give up and unload in place. 50 was too
-// aggressive — OpenRA can take several seconds to start pathing under load
-// (pending Enter orders, blocked adjacent cells, queue processing), and a
-// premature unload dumps the engineer at base where it has to walk across
-// the map on foot and usually dies before reaching a capturable. 400 ticks
-// ≈ 16 seconds at 25 Hz — long enough that a healthy APC will have moved,
-// short enough that a genuinely stuck APC eventually recovers.
+// apcStallTicks is how long an APC must hold one tile before we unload in
+// place. ~16s at 25 Hz: OpenRA can take seconds to start pathing under load,
+// and a premature unload strands the engineer at base on foot.
 const apcStallTicks = 400
 const apcExploreTTL = 600         // re-pick exploration target after this many ticks
 const apcExploreArriveRadius = 12 // how close "arrived" counts for exploration
 
-// apcScoutStallTicks: how long the APC must sit at the same tile while assigned
-// to an exploration waypoint before we assume the target is unreachable and
-// re-pick. Shorter than apcStallTicks because unloading-in-place makes sense
-// when capturing (at least the engineer gets out) but is useless when scouting
-// (the loaded engineer would walk alone into fog).
+// apcScoutStallTicks is shorter than apcStallTicks: re-picking a waypoint is
+// cheap, while unloading a scout dumps a lone engineer into fog.
 const apcScoutStallTicks = 200
 
-// getAPCProgress returns the map (allocating if needed) tracking APC positions.
 func getAPCProgress(memory map[string]any) map[int]apcProgressEntry {
 	return memoryMap[int, apcProgressEntry](memory, "apcDeliveryProgress")
 }
 
-// getAPCExploreTargets returns the map of APC → exploration waypoint.
 func getAPCExploreTargets(memory map[string]any) map[int]apcExploreEntry {
 	return memoryMap[int, apcExploreEntry](memory, "apcExploreTarget")
 }
 
-// apcIsStalled reports whether an APC has been sitting at the same tile for
-// at least apcStallTicks. Also updates the tracked position as a side effect.
+// apcIsStalled also updates the tracked position as a side effect.
 func apcIsStalled(memory map[string]any, u model.Unit, tick int) bool {
 	return apcStalledFor(memory, u, tick, apcStallTicks)
 }
 
-// apcScoutStalled reports whether a scouting APC has been sitting at the same
-// tile long enough that we should assume the current exploration waypoint is
-// unreachable and re-pick. Shares tracking with apcIsStalled — we only want
-// one source of truth for "is this APC making progress."
+// apcScoutStalled shares tracking with apcIsStalled — one source of truth for
+// whether an APC is making progress.
 func apcScoutStalled(memory map[string]any, u model.Unit, tick int) bool {
 	return apcStalledFor(memory, u, tick, apcScoutStallTicks)
 }
@@ -2067,11 +1903,9 @@ func apcStalledFor(memory map[string]any, u model.Unit, tick, threshold int) boo
 	return actorStalledAt(memory, "apcDeliveryProgress", u, tick, threshold)
 }
 
-// actorStalledAt reports whether an actor has held the same tile for at least
-// `threshold` ticks, tracked under memKey. Shared by APC delivery/scout and
-// ground-scout patrols — any action that issues a Move and needs to know
-// whether the target is unreachable (chokepoint, terrain lock) so it can
-// advance to a different waypoint instead of retrying forever.
+// actorStalledAt tells a Move-issuing action that its destination is
+// unreachable (chokepoint, terrain lock) so it advances instead of retrying
+// forever. memKey keeps callers from sharing tracking unintentionally.
 func actorStalledAt(memory map[string]any, memKey string, u model.Unit, tick, threshold int) bool {
 	m := memoryMap[int, apcProgressEntry](memory, memKey)
 	entry, ok := m[u.ID]
@@ -2082,21 +1916,18 @@ func actorStalledAt(memory map[string]any, memKey string, u model.Unit, tick, th
 	return tick-entry.LastTick >= threshold
 }
 
-// scoutStallTicks mirrors apcScoutStallTicks — same tradeoff: long enough to
-// tolerate normal path congestion, short enough to recover from a genuinely
-// unreachable waypoint within ~8 seconds.
+// scoutStallTicks mirrors apcScoutStallTicks: tolerate path congestion, give
+// up on an unreachable waypoint within ~8 seconds.
 const scoutStallTicks = 200
 
-// scoutStalled reports whether a ground scout has been sitting at the same
-// tile long enough to assume its current patrol waypoint is unreachable.
-// Uses a separate memory slot from APC tracking so the two don't collide.
+// scoutStalled uses a separate memory slot from APC tracking so the two don't
+// collide.
 func scoutStalled(memory map[string]any, u model.Unit, tick int) bool {
 	return actorStalledAt(memory, "scoutProgress", u, tick, scoutStallTicks)
 }
 
-// clearAPCTracking wipes per-APC state after unload so a new cycle starts
-// from scratch. Also clears the cargo intent tag — once the APC is empty,
-// the next load action is free to re-tag it for a different mission.
+// clearAPCTracking resets per-APC state after unload, including the cargo
+// intent tag so the next load can re-tag the APC for a different mission.
 func clearAPCTracking(memory map[string]any, id int) {
 	delete(getAPCProgress(memory), id)
 	delete(getAPCExploreTargets(memory), id)
@@ -2104,29 +1935,23 @@ func clearAPCTracking(memory map[string]any, id int) {
 	ClearAPCCargoIntent(memory, id)
 }
 
-// apcMoveEntry records the last Move order we issued for an APC so we
-// don't re-send it every tick. OpenRA treats each fresh Move as a new
-// order that cancels the current activity — so repeated sends with the
-// same destination reset pathfinding every tick and pin the APC in place.
+// apcMoveEntry throttles Move orders. OpenRA cancels the current activity on
+// every fresh Move, so resending the same destination pins the APC in place.
 type apcMoveEntry struct {
 	Tick int
 	X    int
 	Y    int
 }
 
-// apcMoveResend — if the APC is still being asked to go to the same spot
-// this long after our last send, assume the prior order was overridden
-// (stuck, blocked, attacked) and resend.
+// apcMoveResend — past this, assume the prior order was overridden (blocked,
+// attacked) and resend.
 const apcMoveResend = 60
 
 func getAPCMoveState(memory map[string]any) map[int]apcMoveEntry {
 	return memoryMap[int, apcMoveEntry](memory, "apcMoveSent")
 }
 
-// sendAPCMove issues a Move command for an APC, throttled so we don't
-// re-send the same destination every tick (which cancels the in-flight
-// path in OpenRA). Returns nil without sending if a recent identical
-// order is still in flight.
+// sendAPCMove is a no-op while a recent identical order is still in flight.
 func sendAPCMove(env RuleEnv, conn *ipc.Connection, actorID, x, y int) error {
 	state := getAPCMoveState(env.Memory)
 	if prev, ok := state[actorID]; ok && prev.X == x && prev.Y == y && env.State.Tick-prev.Tick < apcMoveResend {
@@ -2158,8 +1983,7 @@ func ActionUnloadAPCNearTarget(env RuleEnv, conn *ipc.Connection) error {
 		return sendAPCMove(env, conn, best.ID, target.X, target.Y)
 	}
 
-	// No visible capturable — use the loaded APC as a scout, rotating
-	// through map waypoints until a capturable comes into sight.
+	// No visible capturable — scout with the loaded APC until one appears.
 	waypoints := generateWaypoints(env.State.MapWidth, env.State.MapHeight, env.Terrain)
 	if len(waypoints) == 0 {
 		return nil
@@ -2176,11 +2000,9 @@ func ActionUnloadAPCNearTarget(env RuleEnv, conn *ipc.Connection) error {
 	return sendAPCMove(env, conn, best.ID, entry.X, entry.Y)
 }
 
-// advanceAPCPatrol picks the APC's next patrol waypoint, mirroring
-// ActionScoutPatrol's round-robin behavior: systematic rotation through the
-// waypoint list, advancing on arrival or on stall/TTL expiry. Prior
-// farthest-first logic oscillated between opposite corners and never visited
-// mid-edges, so enemy bases along map edges never got sighted.
+// advanceAPCPatrol mirrors ActionScoutPatrol's round-robin rotation, advancing
+// on arrival, stall, or TTL expiry. Farthest-first oscillates between opposite
+// corners and leaves map-edge bases permanently unsighted.
 func advanceAPCPatrol(env RuleEnv, apc model.Unit, prev apcExploreEntry, assigned bool, waypoints [][2]int) apcExploreEntry {
 	forceAdvance := false
 	if assigned {
@@ -2189,7 +2011,6 @@ func advanceAPCPatrol(env RuleEnv, apc model.Unit, prev apcExploreEntry, assigne
 		}
 		if apcScoutStalled(env.Memory, apc, env.State.Tick) {
 			forceAdvance = true
-			// Reset stall tracking so the next waypoint gets a fair window.
 			delete(getAPCProgress(env.Memory), apc.ID)
 		}
 	}
@@ -2197,9 +2018,8 @@ func advanceAPCPatrol(env RuleEnv, apc model.Unit, prev apcExploreEntry, assigne
 	if !assigned {
 		idx = takePatrolPoolIdx(env.Memory, "apcPatrolIdx", len(waypoints))
 	}
-	// Preserve AssignedAt when the index didn't change so the TTL check
-	// measures dwell time on the current waypoint, not time since the action
-	// last ran.
+	// Preserve AssignedAt on an unchanged index so the TTL measures dwell time
+	// on the waypoint, not time since this last ran.
 	assignedAt := env.State.Tick
 	if assigned && idx == prev.Idx {
 		assignedAt = prev.AssignedAt
@@ -2212,8 +2032,8 @@ func advanceAPCPatrol(env RuleEnv, apc model.Unit, prev apcExploreEntry, assigne
 	}
 }
 
-// ActionLoadCombatInfantry loads one idle combat infantry into an idle empty
-// APC each tick. Skips squad-assigned infantry so we don't steal from attack squads.
+// ActionLoadCombatInfantry loads one idle combat infantry per tick, skipping
+// squad-assigned units so attack squads aren't drained.
 func ActionLoadCombatInfantry(env RuleEnv, conn *ipc.Connection) error {
 	apcs := env.IdleEmptyAPCs()
 	if len(apcs) == 0 {
@@ -2224,11 +2044,9 @@ func ActionLoadCombatInfantry(env RuleEnv, conn *ipc.Connection) error {
 		if assigned[u.ID] {
 			continue
 		}
-		// Engineer tag is sticky: both load actions target the first idle empty
-		// APC on the same tick, and load-engineer-into-apc (845) fires before
-		// load-assault-infantry (838). If an engineer already claimed this APC
-		// this tick, don't overwrite — the APC is a capture mission, even if
-		// combat infantry also piles in.
+		// The engineer tag is sticky. Both load actions pick the same first idle
+		// APC on a tick, engineer first by priority; an APC an engineer claimed
+		// stays a capture mission even if combat infantry also piles in.
 		intent := GetAPCCargoIntent(env.Memory)
 		if intent[apcs[0].ID] != apcIntentEngineer {
 			intent[apcs[0].ID] = apcIntentCombat
@@ -2242,21 +2060,16 @@ func ActionLoadCombatInfantry(env RuleEnv, conn *ipc.Connection) error {
 	return nil
 }
 
-// ActionDeliverAssaultAPC moves loaded APCs toward the nearest known enemy
-// base. Unloads when within 7 cells, otherwise moves closer. Skips water-based
-// intel (e.g. naval yard) since APCs are ground units.
-//
-// When no land target is known (intel-less game, scouts only found enemy
-// units not buildings), the APC falls back to exploration — same scout-with-
-// loaded-APC pattern as the engineer path. This keeps combat-loaded APCs from
-// sitting at base forever waiting for a building sighting that never comes.
+// ActionDeliverAssaultAPC drives loaded APCs at the nearest known enemy base,
+// ignoring water-based intel since APCs are ground units. With no land target
+// it explores instead, rather than idling at base for a building sighting that
+// may never come.
 func ActionDeliverAssaultAPC(env RuleEnv, conn *ipc.Connection) error {
 	apcs := env.IdleCombatLoadedAPCs()
 	if len(apcs) == 0 {
 		return nil
 	}
 
-	// Find a valid land target — skip water-based intel (e.g. naval yard).
 	tx, ty := 0, 0
 	hasTarget := false
 	if base := env.NearestEnemyBase(); base != nil && env.IsLandAt(base.X, base.Y) {
@@ -2278,8 +2091,7 @@ func ActionDeliverAssaultAPC(env RuleEnv, conn *ipc.Connection) error {
 		return sendAPCMove(env, conn, best.ID, tx, ty)
 	}
 
-	// No land target — scout with the loaded APC. Once it discovers an enemy
-	// building or unit, the branch above takes over on the next tick.
+	// Scout until a sighting lets the branch above take over.
 	waypoints := generateWaypoints(env.State.MapWidth, env.State.MapHeight, env.Terrain)
 	if len(waypoints) == 0 {
 		return nil
@@ -2316,9 +2128,8 @@ func ActionNavalAttackEnemy(env RuleEnv, conn *ipc.Connection) error {
 }
 
 // --- Capped attack group factories ---
-// These cap the number of units sent per order, keeping some as reserves.
-// Superseded by squad-based actions in compiled doctrines but still used
-// by the seed rule set.
+// Hold back reserves by capping units per order. Superseded by squad actions in
+// compiled doctrines; the seed rule set still uses them.
 
 func GroundAttackGroup(maxUnits int) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
@@ -2417,11 +2228,9 @@ func AirAttackKnownBaseGroup(maxUnits int) ActionFunc {
 	}
 }
 
-// effectKey marks that an action did work the order stream cannot show.
-//
-// Almost every action's effect is an order on the wire, which the engine sees
-// by counting envelopes. A couple only move things in memory, and without this
-// they would be indistinguishable from an action that returned early.
+// effectKey marks work the order stream cannot show. The engine infers effect
+// by counting envelopes on the wire, so the few actions that only mutate memory
+// would otherwise look like they returned early.
 const effectKey = "ruleDidWork"
 
 // markEffect records that the running action changed something.
@@ -2433,10 +2242,9 @@ func markEffect(env RuleEnv) {
 
 // --- Squad action factories ---
 
-// FormSquad assigns unit IDs to a named squad in memory but does NOT issue
-// orders. Formation and action are separate rules so the compiler can set
-// different priorities and conditions for each (e.g. form at priority+5,
-// act at priority).
+// FormSquad only assigns unit IDs; it issues no orders. Formation and action
+// are separate rules so the compiler can give each its own priority and
+// condition.
 func FormSquad(name, domain string, size int, role string) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
 		var pool []model.Unit
@@ -2468,16 +2276,10 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 			return nil
 		}
 
-		// Initial formation takes what the pool has, up to the target size.
-		//
-		// Whether there are enough units to be worth forming is the rule's
-		// question, not this function's: `form-ground-attack` asks for 60% of
-		// the group size and tops up from there. Requiring the full size here
-		// contradicted that and silently formed nothing, so across thirteen
-		// archived losses the rule fired 15,702 times and the ground attack
-		// squad existed in under a tenth of sampled states. The defend squads
-		// were unaffected only because their conditions happen to ask for
-		// exactly the size they pass.
+		// Take what the pool has. Whether that is enough to be worth forming is
+		// the rule's question, not this function's — form-ground-attack asks for
+		// 60% of the group size and tops up — so insisting on the full target
+		// here silently forms nothing.
 		if len(pool) == 0 {
 			return nil
 		}
@@ -2508,17 +2310,9 @@ type huntBaseState struct {
 	Step         int
 }
 
-// huntOffset converts a hunt step into an (dx, dy) offset from the base centroid.
-// Step 0 returns (0,0) — the centroid itself. Steps 1-16 produce two concentric
-// rings of 8 positions each, spaced 45° apart:
-//
-//	Steps 1-8:   inner ring at radius R   (ring = 1)
-//	Steps 9-16:  outer ring at radius 2R  (ring = 2)
-//
-// idx selects one of 8 compass points (0-7) via modular arithmetic.
-// ring selects which concentric circle via integer division.
-// The squad sweeps close to the centroid first (catching buildings just
-// inside fog of war), then widens to find outlying structures.
+// huntOffset maps a hunt step to an offset from the base centroid: step 0 is
+// the centroid, then two rings of 8 compass points at radius R and 2R. Sweeping
+// inward-first catches buildings just inside fog before widening to outliers.
 func huntOffset(step, radius int) (int, int) {
 	if step <= 0 {
 		return 0, 0
@@ -2530,10 +2324,9 @@ func huntOffset(step, radius int) (int, int) {
 	return int(r * math.Cos(angle)), int(r * math.Sin(angle))
 }
 
-// squadAttackState remembers whether a squad has already committed to a
-// specific target, so the rally-then-attack behavior only requires clumping
-// on the initial deploy, not on every eval mid-attack. Without this the
-// squad would oscillate: attack -> spread -> regroup -> attack -> spread.
+// squadAttackState records target commitment so rally-then-attack demands
+// clumping only on the initial deploy. Re-checking mid-fight oscillates:
+// attack, spread, regroup, attack.
 type squadAttackState struct {
 	TargetX, TargetY int
 	Attacking        bool // false = still regrouping to centroid
@@ -2541,13 +2334,10 @@ type squadAttackState struct {
 }
 
 const (
-	// squadAttackCommitTTL: how long a target commitment stays "sticky"
-	// before we re-evaluate clumping. Long enough to complete a typical
-	// engagement, short enough to re-regroup if the squad's next target
-	// is different and requires a fresh assembly.
+	// Long enough to finish a typical engagement, short enough that a new
+	// target still gets a fresh assembly.
 	squadAttackCommitTTL = 2000
-	// squadRallyRadius: 80% of squad members must be within this many map
-	// cells of the centroid before the squad is considered "clumped."
+	// Clumped means 80% of members within this many cells of the centroid.
 	squadRallyRadius = 8
 )
 
@@ -2565,13 +2355,9 @@ func SquadAttackMove(name string) ActionFunc {
 			return nil
 		}
 
-		// Rally-then-attack. On a fresh commit (target changed or stale
-		// state), if the squad is not clumped, issue AttackMove to the squad
-		// centroid so trailing units catch up and leading units halt/fall
-		// back. Only when 80% of members are within squadRallyRadius do we
-		// commit to the actual attack. Once committed, we don't re-regroup
-		// for squadAttackCommitTTL ticks — the squad fights as long as the
-		// target holds and we don't want mid-fight oscillation.
+		// Rally before committing: AttackMove to our own centroid pulls
+		// stragglers up and halts the leaders, so the squad arrives together
+		// rather than being fed in piecemeal.
 		state := memoryMap[string, squadAttackState](env.Memory, "squadAttackState")
 		prev, hasPrev := state[name]
 		targetChanged := !hasPrev || prev.TargetX != enemy.X || prev.TargetY != enemy.Y
@@ -2594,11 +2380,9 @@ func SquadAttackMove(name string) ActionFunc {
 			state[name] = prev
 		}
 
-		// vimy-zyv: when there's a hot defense corridor between the squad and
-		// the target, route via the threat-aware waypoint instead of attack-
-		// moving straight through the cluster. ApproachWaypoint already gates
-		// itself on cumulative threat in the bounding box, so when the path
-		// is clear it returns false and we fall through to direct routing.
+		// Route around a hot defense corridor rather than attack-moving through
+		// it. The waypoint helper gates on threat itself, so a clear path
+		// declines and we fall through to direct routing.
 		tx, ty := enemy.X, enemy.Y
 		if wx, wy, ok := groundApproachWaypointFor(env, name, enemy.X, enemy.Y); ok {
 			tx, ty = wx, wy
@@ -2635,11 +2419,9 @@ func groundApproachWaypointFor(env RuleEnv, name string, destX, destY int) (int,
 	return wx, wy, true
 }
 
-// attackOrderEntry tracks the last TypeAttack order issued for an actor so we
-// don't re-send identical attack orders every tick. OpenRA treats each new
-// attack order as cancel-and-restart, so constant re-issuance pins units in
-// place unable to close and fire. Same failure mode we fixed for Move and
-// Capture; adding it here for squad combat actions.
+// attackOrderEntry throttles repeat Attack orders. OpenRA treats each as
+// cancel-and-restart, so re-issuing pins units in place unable to close and
+// fire — the same failure mode as Move and Capture.
 type attackOrderEntry struct {
 	Tick     int
 	TargetID int
@@ -2647,9 +2429,7 @@ type attackOrderEntry struct {
 
 const attackOrderResend = 60
 
-// sendAttack issues a TypeAttack order for actorID targeting targetID,
-// throttled so identical re-issuances within attackOrderResend ticks are
-// suppressed.
+// sendAttack suppresses identical re-issues within attackOrderResend ticks.
 func sendAttack(env RuleEnv, conn *ipc.Connection, actorID, targetID uint32) error {
 	state := memoryMap[int, attackOrderEntry](env.Memory, "attackOrderSent")
 	if prev, ok := state[int(actorID)]; ok && prev.TargetID == int(targetID) && env.State.Tick-prev.Tick < attackOrderResend {
@@ -2670,11 +2450,9 @@ type attackMoveEntry struct {
 
 const attackMoveResend = 60
 
-// sendAttackMove batches a TypeAttackMove to (x,y) across actorIDs, skipping
-// any actor that already has an identical in-flight order within
-// attackMoveResend ticks. Without this, a squad action re-issues the same
-// AttackMove every tick and each command cancels the in-flight path — units
-// stall mid-map and never reach their target.
+// sendAttackMove batches an AttackMove across actorIDs, skipping any actor
+// with an identical in-flight order. Each fresh command cancels the current
+// path, so an unthrottled squad action stalls its units mid-map.
 func sendAttackMove(env RuleEnv, conn *ipc.Connection, actorIDs []uint32, x, y int) error {
 	state := memoryMap[int, attackMoveEntry](env.Memory, "attackMoveSent")
 	var toSend []uint32
@@ -2705,10 +2483,8 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 			return nil
 		}
 
-		// Rally-then-attack (long-walk case). Base-attack is the biggest
-		// dispersal risk: squads walk far from home, fast units (tanks,
-		// dogs) arrive first and get picked off before rifles catch up.
-		// Same rally state as SquadAttackMove, keyed by the base position.
+		// Base attacks are the worst dispersal case — the walk is long enough
+		// that tanks and dogs arrive and die before the rifles catch up.
 		aState := memoryMap[string, squadAttackState](env.Memory, "squadAttackState")
 		prev, hasPrev := aState[name]
 		targetChanged := !hasPrev || prev.TargetX != base.X || prev.TargetY != base.Y
@@ -2730,14 +2506,12 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 			aState[name] = prev
 		}
 
-		// Retrieve or initialize hunt state for this squad.
 		memKey := "huntBase:" + name
 		state, _ := env.Memory[memKey].(*huntBaseState)
 		if state == nil {
 			state = &huntBaseState{}
 		}
 
-		// Reset to step 0 (approach centroid) when base intel changes.
 		if state.BaseX != base.X || state.BaseY != base.Y {
 			state.BaseX = base.X
 			state.BaseY = base.Y
@@ -2746,11 +2520,8 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 
 		tx, ty := base.X, base.Y
 
-		// On the initial approach (step 0), check for a threat-aware waypoint
-		// — a safer entry zone skirting remembered enemy defenses. If the
-		// squad isn't already near the waypoint, route through it instead of
-		// straight at the base. Once they arrive, subsequent ticks hit the
-		// base centroid as normal.
+		// Enter via a zone that skirts remembered defenses; once the squad is
+		// there, later steps run at the base centroid as normal.
 		if state.Step == 0 {
 			if wx, wy, ok := env.BestApproachAxis(base.X, base.Y); ok {
 				sqCX, sqCY, have := squadCentroid(env, name)
@@ -2767,7 +2538,6 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 		}
 
 		if state.Step > 0 {
-			// Compute aggression-scaled radius.
 			mapDim := max(env.State.MapWidth, env.State.MapHeight)
 			baseRadius := mapDim / 16
 			scale := 0.25 + aggression*1.25
@@ -2780,11 +2550,9 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 			tx = base.X + dx
 			ty = base.Y + dy
 
-			// Clamp to map bounds.
 			tx = max(0, min(tx, env.State.MapWidth-1))
 			ty = max(0, min(ty, env.State.MapHeight-1))
 
-			// Terrain check for ground/naval squads — skip water/cliff.
 			squads := getSquads(env.Memory)
 			sq := squads[name]
 			if sq != nil && sq.Domain != "air" && env.Terrain != nil {
@@ -2795,10 +2563,8 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 			}
 		}
 
-		// Throttle: if the squad already has an identical in-flight order to
-		// (tx,ty) within attackMoveResend ticks, suppress the send AND the
-		// step advance — otherwise the 16-step hunt rotates once per tick and
-		// units never reach any step's destination.
+		// Suppress the step advance along with the send: otherwise the 16-step
+		// hunt rotates once per tick and no step is ever reached.
 		if !attackMoveHasFreshTarget(env, ids, tx, ty) {
 			env.Memory[memKey] = state
 			return nil
@@ -2807,7 +2573,7 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 		slog.Debug("squad attacking known base", "squad", name, "count", len(ids),
 			"owner", base.Owner, "step", state.Step, "x", tx, "y", ty)
 
-		// Advance step: 0→1, 1→2, ..., 16→1 (wrap, skip 0 on subsequent cycles).
+		// Wraps to 1, not 0 — the centroid is only worth the initial approach.
 		if state.Step >= 16 {
 			state.Step = 1
 		} else {
@@ -2819,10 +2585,8 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 	}
 }
 
-// attackMoveHasFreshTarget reports whether any actor in ids would actually
-// receive a new AttackMove if sent to (x,y) — i.e. at least one actor's
-// throttle window has expired. Used by squad actions that also need to
-// advance internal state only when a send will land, not on every tick.
+// attackMoveHasFreshTarget reports whether a send to (x,y) would reach any
+// actor, so callers advance internal state only when the order will land.
 func attackMoveHasFreshTarget(env RuleEnv, ids []uint32, x, y int) bool {
 	state := memoryMap[int, attackMoveEntry](env.Memory, "attackMoveSent")
 	for _, id := range ids {
@@ -2856,17 +2620,13 @@ func SquadDefend(name string) ActionFunc {
 	}
 }
 
-// SquadGuardHarvesters sends a squad to whichever harvester is under threat.
+// SquadGuardHarvesters sends a squad to a threatened harvester.
 //
-// The gap this closes: every other defensive action is anchored at the base —
-// they gate on BaseUnderAttack() or CriticalBuildingUnderAttack() — so a
-// harvester shot at an ore patch summoned nobody, and the only response was to
-// run it home and abandon the ore. Across games 71, 73, 74 and 76 that lost the
-// economy every time, and 35% of the archived lessons ask for escorts that could
-// not exist (vimy-tiw).
+// Every other defensive action gates on the base being attacked, so a harvester
+// shot at a distant ore patch summoned nobody and the only response was to run
+// it home and abandon the ore.
 //
-// Attack-move rather than move: the point is to engage what is shooting the
-// harvester, not to stand next to it.
+// Attack-move, not move: the point is to engage what is shooting it.
 func SquadGuardHarvesters(name string, dangerPct float64) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
 		threatened := env.HarvestersInDanger(dangerPct)
@@ -2878,8 +2638,8 @@ func SquadGuardHarvesters(name string, dangerPct float64) ActionFunc {
 			return nil
 		}
 
-		// The one nearest the squad, so a guard does not cross the map past a
-		// closer harvester in the same trouble.
+		// Nearest first, so a guard doesn't cross the map past a closer
+		// harvester in the same trouble.
 		target := threatened[0]
 		if cx, cy, ok := squadCentroid(env, name); ok {
 			best := math.MaxFloat64
@@ -2891,10 +2651,8 @@ func SquadGuardHarvesters(name string, dangerPct float64) ActionFunc {
 			}
 		}
 
-		// Re-ordering every tick cancels the in-flight path and the squad never
-		// arrives — the failure ActionScoutWithIdleUnits carries a comment about
-		// (772 attack_move commands in one game). Re-issue only when the target
-		// changes or the order has gone stale.
+		// Re-issue only on a target change or a stale order; anything else
+		// cancels the in-flight path and the squad never arrives.
 		type guardOrder struct {
 			Target int
 			Tick   int
@@ -2916,8 +2674,7 @@ func SquadGuardHarvesters(name string, dangerPct float64) ActionFunc {
 	}
 }
 
-// squadCentroid returns the average position of all living squad members,
-// and false if the squad is empty or unknown.
+// squadCentroid returns false for an empty or unknown squad.
 func squadCentroid(env RuleEnv, name string) (int, int, bool) {
 	squads := getSquads(env.Memory)
 	sq, ok := squads[name]
@@ -2942,11 +2699,9 @@ func squadCentroid(env RuleEnv, name string) (int, int, bool) {
 	return sumX / count, sumY / count, true
 }
 
-// squadCommittableActorIDs is every squad member that is not retreating,
-// idle or not. A squad already moving toward one threatened harvester is not
-// idle, so a rule that waits for idleness cannot answer the next raid — and
-// harassment is continuous. Across games 84 and 85 guard-harvesters fired 5
-// times while flee-harvesters matched 1058.
+// squadCommittableActorIDs includes non-idle members. A squad already moving
+// toward one threatened harvester isn't idle, so waiting for idleness means
+// never answering the next raid — and harassment is continuous.
 func squadCommittableActorIDs(env RuleEnv, name string) []uint32 {
 	squads := getSquads(env.Memory)
 	sq, ok := squads[name]
@@ -2988,10 +2743,10 @@ func squadIdleActorIDs(env RuleEnv, name string) []uint32 {
 
 // --- Micro action factories ---
 
-// RetreatDamagedUnits sends Move (not AttackMove) for each damaged combat unit.
-// Routes vehicles to the service depot (auto-repair); infantry and others to
-// the base centroid (safety behind defenses). Marks retreating units in memory
-// so focus-fire and squad-attack rules skip them.
+// RetreatDamagedUnits uses Move, not AttackMove — a retreating unit that stops
+// to fight defeats the point. Vehicles go to the service depot to auto-repair,
+// everything else behind base defenses. Retreating units are marked in memory
+// so focus-fire and squad-attack skip them.
 func RetreatDamagedUnits(hpThreshold float64) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
 		units := env.DamagedCombatUnits(hpThreshold)
@@ -3012,7 +2767,6 @@ func RetreatDamagedUnits(hpThreshold float64) ActionFunc {
 				continue // infantry can't heal — no benefit to retreating
 			}
 			if isAircraft(u) && airfield != nil {
-				// Send aircraft to airfield/helipad for repair.
 				slog.Debug("retreating damaged aircraft to airfield", "id", u.ID, "type", u.Type,
 					"hp_ratio", float64(u.HP)/float64(u.MaxHP), "airfield", airfield.ID)
 				if err := conn.Send(ipc.TypeRepairUnit, ipc.RepairUnitCommand{
@@ -3022,7 +2776,6 @@ func RetreatDamagedUnits(hpThreshold float64) ActionFunc {
 					return err
 				}
 			} else if depot != nil && !isAircraft(u) && !isNaval(u) {
-				// Send repair order — unit will enter the depot pad and heal.
 				slog.Debug("retreating damaged unit to depot", "id", u.ID, "type", u.Type,
 					"hp_ratio", float64(u.HP)/float64(u.MaxHP), "depot", depot.ID)
 				if err := conn.Send(ipc.TypeRepairUnit, ipc.RepairUnitCommand{
@@ -3032,7 +2785,6 @@ func RetreatDamagedUnits(hpThreshold float64) ActionFunc {
 					return err
 				}
 			} else {
-				// Fallback: move to centroid (naval or no repair building).
 				slog.Debug("retreating damaged unit to centroid", "id", u.ID, "type", u.Type,
 					"hp_ratio", float64(u.HP)/float64(u.MaxHP), "dest_x", centX, "dest_y", centY)
 				if err := conn.Send(ipc.TypeMove, ipc.MoveCommand{
@@ -3048,9 +2800,9 @@ func RetreatDamagedUnits(hpThreshold float64) ActionFunc {
 	}
 }
 
-// ClearHealedUnits removes healed, dead, or timed-out units from the
-// retreating set, returning them to the combat pool. The timeout prevents
-// permanent unit leaks when repair fails (e.g. depot destroyed mid-repair).
+// ClearHealedUnits returns healed, dead, or timed-out units to the combat pool.
+// The timeout stops units leaking permanently when repair never completes —
+// depot destroyed mid-repair, say.
 func ClearHealedUnits(hpThreshold float64) ActionFunc {
 	const retreatTimeout = 200 // ticks before forcing release
 
@@ -3077,7 +2829,6 @@ func ClearHealedUnits(hpThreshold float64) ActionFunc {
 			}
 		}
 		env.Memory["retreatingUnits"] = retreating
-		// Only a release is work; walking the set and freeing nobody is not.
 		if len(retreating) < before {
 			markEffect(env)
 		}
@@ -3127,9 +2878,8 @@ func SquadDisengage(name string) ActionFunc {
 	}
 }
 
-// SquadFocusFire sends individual Attack commands for each idle squad member
-// targeting the best ground target. Concentrates damage on the highest-value
-// enemy for faster kills.
+// SquadFocusFire concentrates the whole squad on one high-value target rather
+// than letting each member pick its own.
 func SquadFocusFire(name string) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
 		target := env.BestGroundTarget()
@@ -3150,14 +2900,10 @@ func SquadFocusFire(name string) ActionFunc {
 	}
 }
 
-// SquadAirStrike sends individual Attack commands for each idle air squad member
-// targeting the best air target (defense structures, production, etc.).
-// Concentrates all aircraft on the highest-value enemy for maximum impact.
+// SquadAirStrike concentrates the air squad on one high-value target.
 //
-// vimy-zyv: when there's a heavy AA corridor between the squad and target,
-// route the squad to a low-AA staging point first via attack-move, only
-// committing to direct Attack once the squad has reached the safer flank.
-// Without this, aircraft fly straight through SAM clusters every time.
+// A heavy AA corridor is staged around first: without it aircraft fly straight
+// through SAM clusters every time.
 func SquadAirStrike(name string) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
 		target := env.BestAirTarget()
@@ -3184,10 +2930,8 @@ func SquadAirStrike(name string) ActionFunc {
 	}
 }
 
-// airApproachWaypointFor returns an AA-aware staging point if the squad is
-// far from `dest` AND a low-AA waypoint exists. Once the squad's centroid
-// reaches the waypoint zone, returns false so callers fall through to
-// direct attack on the target.
+// airApproachWaypointFor returns a low-AA staging point, or false once the
+// squad has reached it so callers fall through to attacking the target.
 func airApproachWaypointFor(env RuleEnv, name string, destX, destY int) (int, int, bool) {
 	sqCX, sqCY, ok := squadCentroid(env, name)
 	if !ok {
@@ -3210,35 +2954,26 @@ func airApproachWaypointFor(env RuleEnv, name string, destX, destY int) (int, in
 	return wx, wy, true
 }
 
-// FleeHarvesters sends Move toward the nearest refinery for each harvester
-// in danger. Checks all harvesters (idle or not) — better to lose ore than
-// the harvester.
-// harvesterFleeEntry records the last flee order we issued for a harvester.
-// Prevents re-issuing the same Move command every tick — each re-issue
-// invalidates the server's pathfinder and effectively pins the harvester
-// in place. Fresh orders only go out when the destination changes or the
-// prior order is stale enough that we suspect it was overridden.
+// harvesterFleeEntry throttles flee orders. Each re-issue invalidates the
+// server's pathfinder and pins the harvester where it stands, so fresh orders
+// go out only on a changed destination or a stale prior order.
 type harvesterFleeEntry struct {
 	Tick int
 	X    int
 	Y    int
 }
 
-// harvesterFleeResend controls how long we trust an in-flight flee order.
-// If a harvester is still in danger this long after our last flee, either
-// the prior order was cancelled or the harvester is stuck — resend.
+// harvesterFleeResend — still in danger this long after a flee means the order
+// was cancelled or the harvester is stuck.
 const harvesterFleeResend = 100
 
 func getHarvesterFleeState(memory map[string]any) map[int]harvesterFleeEntry {
 	return memoryMap[int, harvesterFleeEntry](memory, "harvesterFleeing")
 }
 
-// CountFleeingHarvesters returns how many harvesters are currently in an
-// active flee cycle. Exposed so the event detector (agent package) can signal
-// sustained harvester harassment without having to know the internal struct
-// layout of the flee tracking map. Uses reflection so tests can populate the
-// map with any int-keyed value type without taking a dependency on the
-// unexported entry struct.
+// CountFleeingHarvesters lets the agent package detect sustained harassment
+// without depending on the unexported entry struct. Reflection, rather than a
+// type assertion, so tests can populate the map with their own value type.
 func CountFleeingHarvesters(memory map[string]any) int {
 	v, ok := memory["harvesterFleeing"]
 	if !ok {
@@ -3255,10 +2990,8 @@ func FleeHarvesters(dangerPct float64) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
 		harvesters := env.HarvestersInDanger(dangerPct)
 
-		// Pruned before the early return: with nothing in danger the map should
-		// be empty, and returning first left stale entries behind forever —
-		// this action is only called while a harvester is in danger, so it is
-		// the one moment the map can be cleared.
+		// Prune before the early return. This action only runs while something is
+		// in danger, so it is the only chance to clear the map at all.
 		state := getHarvesterFleeState(env.Memory)
 		inDanger := make(map[int]bool, len(harvesters))
 		for _, u := range harvesters {
@@ -3273,14 +3006,12 @@ func FleeHarvesters(dangerPct float64) ActionFunc {
 		if len(harvesters) == 0 {
 			return nil
 		}
-		// Collect refinery positions for nearest-refinery lookup.
 		var refineries []model.Building
 		for _, b := range env.State.Buildings {
 			if matchesType(b.Type, Refinery) {
 				refineries = append(refineries, b)
 			}
 		}
-		// Fallback to building centroid if no refineries.
 		fallbackX, fallbackY := 0, 0
 		if len(env.State.Buildings) > 0 {
 			sumX, sumY := 0, 0
@@ -3306,9 +3037,6 @@ func FleeHarvesters(dangerPct float64) ActionFunc {
 					}
 				}
 			}
-			// Skip if we already told this harvester to flee to the same
-			// spot recently. Re-sending would cancel the in-flight pathing
-			// and pin the harvester in place.
 			if prev, ok := state[u.ID]; ok && prev.X == tx && prev.Y == ty && env.State.Tick-prev.Tick < harvesterFleeResend {
 				continue
 			}
@@ -3350,23 +3078,18 @@ func NavalAttackGroup(maxUnits int) ActionFunc {
 	}
 }
 
-// unblockEgressResend throttles repeated nudges of the same war-factory
-// blocker. Long enough for the move to complete on a normal OpenRA path but
-// short enough that we retry promptly if the blocker is pinned (fighting,
-// repairing) and can't leave.
+// unblockEgressResend — long enough for a normal move to complete, short
+// enough to retry promptly when the blocker is pinned and can't leave.
 const unblockEgressResend = 120
 
 type egressEntry struct{ Tick int }
 
-// ActionUnblockWarFactoryEgress scatters a friendly unit camped on the
-// war-factory exit so a ready vehicle can emerge. Observed live (vimy-zh8):
-// a completed tank stayed stuck behind a parked unit and every downstream
-// produce-* rule hung on QueueBusy("Vehicle") for the rest of the game.
-// Fires only when the Vehicle queue has an item at 100% and a war factory
-// exists. The nudge target is the nearest non-harvester, non-MCV ground
-// unit within 3 cells of the war factory; it's pushed ~6 cells along the
-// factory-to-centroid axis so it moves toward the base interior rather
-// than back through the blocked tile.
+// ActionUnblockWarFactoryEgress scatters a friendly unit camped on the war
+// factory exit. A vehicle stuck behind one hangs the Vehicle queue at 100% and
+// every produce rule downstream of it stalls for the rest of the game.
+//
+// The blocker is pushed along the factory-to-centroid axis so it moves into the
+// base interior rather than back across the tile it was blocking.
 func ActionUnblockWarFactoryEgress(env RuleEnv, conn *ipc.Connection) error {
 	wf := env.WarFactory()
 	if wf == nil {

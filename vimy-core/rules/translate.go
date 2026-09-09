@@ -9,10 +9,9 @@ import (
 
 // Translating compiled rules into vimyc source.
 //
-// Mechanical rather than by hand: a doctrine emits around 80 rules and there are
-// 117 distinct names, so hand translation would be error-prone and would have to
-// be redone whenever the compiler changes. The differential test is what checks
-// the translation is faithful.
+// Mechanical rather than by hand: a doctrine emits around 80 rules from 117
+// distinct names, and a hand translation would have to be redone whenever the
+// compiler changes. The differential test checks it stays faithful.
 
 // ToVimyc renders a compiled rule set as a .vy file.
 func ToVimyc(rules []*Rule) (string, error) {
@@ -57,9 +56,8 @@ func ruleToVimyc(r *Rule) (string, error) {
 	return b.String(), nil
 }
 
-// splitConjuncts breaks a condition on `&&` at paren depth zero. Each becomes
-// its own `require`, which is what the language makes conjunction structural
-// for.
+// splitConjuncts breaks a condition on `&&` at paren depth zero, one `require`
+// each — conjunction is structural in the language.
 func splitConjuncts(cond string) []string {
 	var out []string
 	depth, start := 0, 0
@@ -88,8 +86,7 @@ func splitConjuncts(cond string) []string {
 	return kept
 }
 
-// unwrap drops parentheses that wrap a whole conjunct: each `require` is already
-// its own unit, so they say nothing.
+// unwrap drops parens around a whole conjunct; each `require` is already a unit.
 func unwrap(s string) string {
 	for len(s) > 1 && s[0] == '(' && s[len(s)-1] == ')' {
 		depth := 0
@@ -116,11 +113,10 @@ var (
 	reBareArg = regexp.MustCompile(`"([^"]*)"`)
 )
 
-// translateExpr rewrites one expr conjunct into vimyc syntax.
-//
-// The corpus contains no ternaries, indexing or field access, so this handles
-// calls, literals, boolean operators, comparisons and arithmetic and nothing
-// else. Anything unexpected is an error rather than a silent passthrough.
+// translateExpr rewrites one expr conjunct into vimyc syntax: calls, literals,
+// boolean operators, comparisons and arithmetic. The corpus has no ternaries,
+// indexing or field access, and anything unexpected errors rather than passing
+// through silently.
 func translateExpr(s string) (string, error) {
 	// `len(X(...))` counts a collection.
 	for reLen.MatchString(s) {
@@ -160,8 +156,7 @@ func translateExpr(s string) (string, error) {
 		return kebab(v)
 	})
 
-	// `count(building-count(powr))` and friends: a count of a type, not of a
-	// collection.
+	// A count of a type, not of a collection.
 	s = strings.ReplaceAll(s, "building-count(", "count(")
 	s = strings.ReplaceAll(s, "unit-count(", "count(")
 
@@ -176,9 +171,8 @@ func translateExpr(s string) (string, error) {
 	return s, nil
 }
 
-// actionName renders a rule's action, with arguments when it is built by a
-// factory. Registry lookups are by function pointer because a Rule holds the
-// function, not its id.
+// actionName renders a rule's action, with arguments for factory-built ones.
+// Registry lookups go by function pointer — a Rule holds the function, not the id.
 func actionName(r *Rule) (string, error) {
 	ptr := reflect.ValueOf(r.Action).Pointer()
 	for id, fn := range ActionRegistry {

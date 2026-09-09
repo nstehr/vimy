@@ -9,14 +9,13 @@ import (
 // Handler processes a received envelope. Return nil to send no reply.
 type Handler func(env Envelope) (*Envelope, error)
 
-// Connection represents a single OpenRA mod instance talking to the sidecar.
-// Each game player gets its own connection, identified after the hello handshake.
+// Connection is one OpenRA mod instance talking to the sidecar — one per player,
+// identified after the hello handshake.
 type Connection struct {
 	conn     net.Conn
 	handlers map[string]Handler
-	// Envelopes written, ever. The rule engine samples it around an action to
-	// tell an action that did something from one that returned without
-	// ordering anything — see `Engine.Evaluate`.
+	// Envelopes written, ever. Engine.Evaluate samples it around an action to
+	// tell one that ordered something from one that returned early.
 	sent atomic.Uint64
 }
 
@@ -46,14 +45,12 @@ func (c *Connection) Send(msgType string, data any) error {
 	return nil
 }
 
-// Sent is the number of envelopes written so far. Monotonic; only differences
-// between two readings mean anything.
+// Sent is monotonic; only the difference between two readings means anything.
 func (c *Connection) Sent() uint64 {
 	return c.sent.Load()
 }
 
-// ReadLoop blocks until the connection closes or errors. It owns the conn lifetime
-// so callers don't need to track cleanup.
+// ReadLoop owns the connection's lifetime and blocks until it closes or errors.
 func (c *Connection) ReadLoop() {
 	defer c.conn.Close()
 

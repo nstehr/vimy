@@ -19,41 +19,33 @@ import (
 
 // Recording real evaluations for vimyc.
 //
-// The offline corpus is built from hand-generated game states, which cannot
-// realistically produce accumulated intel, formed squads or threat fields — so
-// the predicates that read them are barely exercised. Real games can.
+// The offline corpus is hand-generated, and hand-generated states don't grow
+// accumulated intel, formed squads or threat fields — so the predicates reading
+// them go barely exercised. Real games do.
 //
-// Off unless a path is set. Projecting costs about 1ms against 17us to evaluate
-// the seed rules, so this samples rather than recording every evaluation.
+// Off unless a path is set, and sampled when on: projecting a state costs ~1ms
+// against ~17us to evaluate the seed rules.
 
-// ExportedCase is one rule's evaluation, with the state as it stood at that
-// moment. Per rule rather than per tick because actions mutate Memory as the
-// loop runs and later rules read it — see vimyc/docs/design.md.
+// ExportedCase is one rule's evaluation against the state as it stood. Per rule
+// rather than per tick: actions mutate Memory mid-loop and later rules read it.
 type ExportedCase struct {
 	Tick int    `json:"tick"`
 	Rule string `json:"rule"`
-	// Identifies the rule set in force, so a recording can be paired with the
-	// conditions that produced it.
-	//
-	// Inferring it afterwards does not quite work: a doctrine is archived when
-	// generated and takes effect once the LLM call lands, and matching on rule
-	// names or on the questions a state asks cannot separate two doctrines whose
-	// only difference is a threshold inside a comparison. That left one
-	// disagreement in 12,442 that was pairing noise rather than a real one.
+	// The rule set in force, recorded rather than inferred later: archival and
+	// activation times differ, and neither rule names nor the questions a state
+	// asks can separate two doctrines differing only in a threshold.
 	RuleSet string `json:"rule_set"`
 	State   int    `json:"state"`
 	Fired   bool   `json:"fired"`
-	// Blocked by an exclusive rule in the same category, so it was never
-	// evaluated. Recorded anyway: "would this have fired had the category been
-	// free?" is exactly the counterfactual worth asking, and it cannot be
-	// recovered afterwards.
+	// Blocked by an exclusive rule in its category, so never evaluated. Recorded
+	// anyway — whether it would have fired is the counterfactual worth having,
+	// and it can't be recovered later.
 	Skipped bool `json:"skipped"`
 }
 
-// StateExporter accumulates evaluations and writes them at game end.
-//
-// States are stored once and referenced by index. Inlining each into every one
-// of its rules made the offline corpus 21MB instead of under two.
+// StateExporter accumulates evaluations and writes them at game end. States are
+// stored once and referenced by index; inlining them per rule cost 21MB against
+// under two.
 type StateExporter struct {
 	mu       sync.Mutex
 	dir      string
@@ -65,13 +57,10 @@ type StateExporter struct {
 }
 
 // NewStateExporter records one evaluation in every `every`, up to `maxCases`.
+// An empty dir means ~/.vimy/exports.
 //
-// An empty dir means ~/.vimy/exports, alongside the database. Each game writes
-// its own timestamped file: a fixed path would mean every game silently
-// overwrote the last, and the whole point is to accumulate real ones.
-//
-// Sampling because the projection is the expensive part, not because the data
-// is redundant: a few hundred real states beat any number of generated ones.
+// Sampled because projection is expensive, not because the data is redundant —
+// a few hundred real states beat any number of generated ones.
 func NewStateExporter(dir string, every, maxCases int) (*StateExporter, error) {
 	if every < 1 {
 		every = 1
@@ -91,8 +80,7 @@ func NewStateExporter(dir string, every, maxCases int) (*StateExporter, error) {
 	return &StateExporter{dir: dir, every: every, maxCases: maxCases}, nil
 }
 
-// expandHome resolves a leading `~`, which a shell does not when the path
-// arrives inside quotes.
+// expandHome resolves a leading `~`, which the shell won't inside quotes.
 func expandHome(path string) string {
 	if path != "~" && !strings.HasPrefix(path, "~/") {
 		return path
@@ -104,13 +92,11 @@ func expandHome(path string) string {
 	return filepath.Join(home, strings.TrimPrefix(path, "~"))
 }
 
-// begin decides whether this evaluation is sampled. A negative result means
-// skip; otherwise `snapshot` gives the state to record against.
+// begin decides whether this evaluation is sampled; negative means skip.
 //
-// Projects against the rules actually loaded, not against everything a doctrine
-// could emit. The union asks about 38 different `overextended-squad-members`
-// thresholds where a live rule set uses two, which was 15x the work and 11KB a
-// state instead of two.
+// Projects against the loaded rules, not everything a doctrine could emit: the
+// union asks 38 overextended-squad-members thresholds where a live rule set
+// uses two.
 func (e *StateExporter) begin(env RuleEnv, rules []*Rule) int {
 	if e == nil {
 		return -1
@@ -127,20 +113,17 @@ func (e *StateExporter) begin(env RuleEnv, rules []*Rule) int {
 
 // snapshot records the env as it stands and returns the state's index.
 //
-// Called again after a rule fires. An action mutates Memory — FormSquad assigns
-// units, so UnassignedIdleGround drops — and every later rule in the tick sees
-// the change. Recording one state per evaluation made vimyc disagree with expr
-// on 36 of 19,925 real evaluations, every one a rule that ran after a firing.
-//
-// Only a firing can change anything, so this costs one projection per firing
-// rather than one per rule: two or three a tick, not eighty.
+// Called again after each firing, because an action mutates Memory and every
+// later rule in the tick sees the change — one state per tick made vimyc
+// disagree with expr on exactly the rules that ran after a firing. Only firings
+// change anything, so this is two or three projections a tick, not eighty.
 func (e *StateExporter) snapshot(env RuleEnv, rules []*Rule) int {
 	e.states = append(e.states, projectFor(env, rules))
 	return len(e.states) - 1
 }
 
-// refresh re-projects after a rule has fired, if this evaluation is being
-// recorded. Callers pass the previous index and use whatever comes back.
+// refresh re-projects after a firing when the evaluation is being recorded.
+// Callers pass their previous index and use whatever comes back.
 func (e *StateExporter) refresh(prev int, env RuleEnv, rules []*Rule) int {
 	if e == nil || prev < 0 {
 		return prev
@@ -170,8 +153,7 @@ func (e *StateExporter) Dir() string {
 	return e.dir
 }
 
-// Writable reports whether the directory can be written, so a bad location
-// fails at startup rather than after a game has already been played.
+// Writable fails a bad output location at startup, not after a played game.
 func (e *StateExporter) Writable() error {
 	if e == nil {
 		return nil
@@ -187,16 +169,13 @@ func (e *StateExporter) Writable() error {
 	return os.Remove(probe)
 }
 
-// RuleSetID fingerprints a rule set by everything that decides how it behaves.
+// RuleSetID fingerprints a rule set by everything that decides its behavior:
+// conditions, priority and exclusivity. Names alone won't do — two doctrines
+// routinely emit the same rules with different thresholds.
 //
-// Names alone are not enough: two doctrines routinely emit the same rules with
-// different thresholds. Conditions are, and priority and exclusivity go in too
-// since they decide what runs and what gets blocked.
-//
-// Order-independent, because it has to be. `compileRules` sorts by priority
-// with `sort.Slice`, so the engine holds a different ordering from what
-// the compiler returned — and the sort is not stable, so two sorts of the
-// same rules need not even agree with each other.
+// Order-independent of necessity: the engine holds rules in priority-sorted
+// order, and the sort isn't stable, so two sorts of the same rules need not
+// agree with each other.
 func RuleSetID(rules []*Rule) string {
 	lines := make([]string, 0, len(rules))
 	for _, r := range rules {
@@ -212,12 +191,9 @@ func RuleSetID(rules []*Rule) string {
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
-// Flush writes what was recorded and returns the file it wrote.
-//
-// The path is returned rather than only logged because the archive records it:
-// replaying a game means pairing its export to its doctrines, and that pairing
-// should be a fact the archive knows rather than something reconstructed from
-// timestamps. Empty means nothing was recorded.
+// Flush writes what was recorded and returns the file, empty if nothing was.
+// The archive stores that path: replay pairs an export to its doctrines, and
+// that pairing should be recorded rather than reconstructed from timestamps.
 func (e *StateExporter) Flush() (string, error) {
 	if e == nil {
 		return "", nil
@@ -237,14 +213,12 @@ func (e *StateExporter) Flush() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("marshal export: %w", err)
 	}
-	// One file per game, named when it is written rather than at startup, so a
-	// sidecar left running across several games produces several files.
+	// Named at write time, not startup, so a sidecar left running across several
+	// games produces several files.
 	//
-	// Compressed, because almost all of it is the same key strings again: a
-	// state names every predicate it answers, and a game holds hundreds of
-	// states asking the same questions. Measured at forty times smaller, which
-	// is a better result than interning those names would give and costs no
-	// schema anyone has to agree on.
+	// Compressed because nearly all of it is the same predicate names again, once
+	// per state — forty times smaller, better than interning would manage and
+	// with no schema to agree on.
 	path := filepath.Join(e.dir, fmt.Sprintf("export-%s.json.gz", time.Now().UTC().Format("20060102-150405")))
 	if err := writeGzip(path, append(b, '\n')); err != nil {
 		return "", err
@@ -252,14 +226,13 @@ func (e *StateExporter) Flush() (string, error) {
 	slog.Info("exported rule evaluations",
 		"path", path, "states", len(e.states), "cases", len(e.cases))
 
-	// Cleared so a second game in the same process starts fresh rather than
-	// re-writing everything the first one saw.
+	// Cleared so a second game in the same process doesn't re-write the first.
 	e.states, e.cases, e.seen = nil, nil, 0
 	return path, nil
 }
 
-// writeGzip writes b compressed, via a temp file so a crash mid-write cannot
-// leave a truncated export that reads as a short game.
+// writeGzip goes via a temp file: a crash mid-write would otherwise leave a
+// truncated export that reads as a short game.
 func writeGzip(path string, b []byte) error {
 	tmp := path + ".tmp"
 	f, err := os.Create(tmp)
@@ -290,10 +263,8 @@ func writeGzip(path string, b []byte) error {
 	return os.Rename(tmp, path)
 }
 
-// ReadExport reads an export, compressed or not.
-//
-// Both, because the plain files predate compression and there is no reason to
-// make a recording unreadable to save a branch.
+// ReadExport reads an export, compressed or not — the plain files predate
+// compression and are worth a branch to keep readable.
 func ReadExport(path string) ([]byte, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {

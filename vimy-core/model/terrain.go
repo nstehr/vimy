@@ -11,8 +11,8 @@ const (
 	Bridge TerrainType = 3 // land corridor over water (chokepoint)
 )
 
-// TerrainGrid is a fixed 32x32 coarse grid regardless of map size.
-// Each zone covers CellW x CellH map cells and stores a single TerrainType.
+// TerrainGrid is a fixed 32x32 grid whatever the map size, so each zone covers
+// CellW x CellH map cells.
 type TerrainGrid struct {
 	Cols  int           // grid columns (typically 32)
 	Rows  int           // grid rows (typically 32)
@@ -21,8 +21,7 @@ type TerrainGrid struct {
 	Grid  []TerrainType // row-major: Grid[row*Cols + col]
 }
 
-// At returns the terrain type at grid coordinates (col, row).
-// Returns Land for out-of-bounds coordinates.
+// At returns Land for out-of-bounds coordinates.
 func (g *TerrainGrid) At(col, row int) TerrainType {
 	if col < 0 || col >= g.Cols || row < 0 || row >= g.Rows {
 		return Land
@@ -30,8 +29,7 @@ func (g *TerrainGrid) At(col, row int) TerrainType {
 	return g.Grid[row*g.Cols+col]
 }
 
-// AtMapPos converts map coordinates to coarse grid coordinates and returns
-// the terrain type. Returns Land for out-of-bounds or zero-sized cells.
+// AtMapPos resolves map coordinates against the grid, Land when out of bounds.
 func (g *TerrainGrid) AtMapPos(mapX, mapY int) TerrainType {
 	if g.CellW <= 0 || g.CellH <= 0 {
 		return Land
@@ -41,8 +39,7 @@ func (g *TerrainGrid) AtMapPos(mapX, mapY int) TerrainType {
 	return g.At(col, row)
 }
 
-// ZoneCenter returns the map coordinates of the center of the grid zone
-// at (col, row).
+// ZoneCenter is the map position at the middle of zone (col, row).
 func (g *TerrainGrid) ZoneCenter(col, row int) (int, int) {
 	x := col*g.CellW + g.CellW/2
 	y := row*g.CellH + g.CellH/2

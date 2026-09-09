@@ -2,9 +2,9 @@ package rules
 
 import "github.com/nstehr/vimy/vimy-core/model"
 
-// Squad gives units persistent identity across ticks. Without squads, the AI
-// would re-select units every tick and couldn't maintain coherent attack groups
-// or reserve a defense force.
+// Squad gives units identity across ticks. Without it the AI re-selects from
+// scratch each tick and can neither hold an attack group together nor keep a
+// defense force in reserve.
 type Squad struct {
 	Name       string // "attack-1", "defense", "scout"
 	Domain     string // "ground", "air", "naval"
@@ -20,13 +20,13 @@ func getSquads(memory map[string]any) map[string]*Squad {
 	return make(map[string]*Squad)
 }
 
-// GetSquads is the public accessor (used by strategist to summarize for LLM).
+// GetSquads is the accessor for callers outside the package.
 func GetSquads(memory map[string]any) map[string]*Squad {
 	return getSquads(memory)
 }
 
-// updateSquads removes dead units each tick. Squads with no survivors
-// are dissolved so formation rules can create fresh ones.
+// updateSquads reaps dead units and dissolves emptied squads, so formation
+// rules can build fresh ones.
 func updateSquads(env RuleEnv) {
 	squads := getSquads(env.Memory)
 	aliveIDs := makeUnitIDSet(env.State.Units)
@@ -56,7 +56,7 @@ func makeUnitIDSet(units []model.Unit) map[int]bool {
 	return s
 }
 
-// squadUnitIDSet is used by UnassignedIdle* to exclude squad members from the free pool.
+// squadUnitIDSet is what keeps squad members out of the free pool.
 func squadUnitIDSet(memory map[string]any) map[int]bool {
 	squads := getSquads(memory)
 	s := make(map[int]bool)

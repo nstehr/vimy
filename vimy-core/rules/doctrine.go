@@ -2,9 +2,8 @@ package rules
 
 import "math"
 
-// Doctrine is the LLM's output — a strategic posture expressed as continuous
-// 0–1 weights. vimyc compiles them into a rule set: `DoctrineParams` renders
-// this struct as the numbers a `.vy` file declares.
+// Doctrine is the LLM's output: a strategic posture as continuous 0–1 weights,
+// rendered by DoctrineParams into the numbers a `.vy` rule set declares.
 type Doctrine struct {
 	Name                       string   `json:"name"`
 	Rationale                  string   `json:"rationale"`
@@ -32,8 +31,7 @@ type Doctrine struct {
 	GroundTargetAAPriority     float64  `json:"ground_target_aa_priority"`
 	AirTargetGroundDefPriority float64  `json:"air_target_ground_def_priority"`
 
-	// Tempo / commit knobs (added in the 4-knob expansion). Zero-value
-	// defaults preserve prior behavior when unset.
+	// Tempo / commit knobs. Zero values fall back to the lerp defaults.
 	CommitRatio        float64 `json:"commit_ratio"`         // 0.0-1.0, 0=disabled → use lerp default. Ready-ratio threshold for squad deployment.
 	BaseDefenseFloor   int     `json:"base_defense_floor"`   // 0-15, minimum base defenses before offensive squad rules fire.
 	RepairBudgetRatio  float64 `json:"repair_budget_ratio"`  // 0.0-1.0, 0=disabled → unlimited (current behavior). Cap on repair spending as a fraction of cash on hand.
@@ -61,7 +59,7 @@ func DefaultDoctrine() Doctrine {
 	}
 }
 
-// Validate sanitizes LLM output — the model may produce out-of-range values.
+// Validate clamps LLM output, which is not range-checked at the source.
 func (d *Doctrine) Validate() {
 	d.EconomyPriority = clamp(d.EconomyPriority, 0, 1)
 	d.Aggression = clamp(d.Aggression, 0, 1)
@@ -107,9 +105,8 @@ func lerpf(min, max, t float64) float64 {
 	return min + (max-min)*t
 }
 
-// TargetBias holds doctrine-derived multipliers for target scoring.
-// Zero values are treated as 1.0 (no adjustment), so the zero-value
-// TargetBias preserves existing behavior for all callers and tests.
+// TargetBias holds doctrine-derived target-scoring multipliers. Zero reads as
+// 1.0, so the zero value is a no-op.
 type TargetBias struct {
 	GroundAA     float64 // boost AA targets in BestGroundTarget
 	AirGroundDef float64 // boost ground defense targets in BestAirTarget

@@ -8,9 +8,8 @@ const (
 	ChokeLandNarrow ChokepointKind = 1 // Land zone squeezed between impassable neighbors
 )
 
-// Chokepoint is a grid zone that constricts movement. Higher Score means a
-// stronger choke; callers should treat Score as a relative ranking, not an
-// absolute probability.
+// Chokepoint is a grid zone that constricts movement. Score is a relative
+// ranking, not a probability.
 type Chokepoint struct {
 	Col, Row int
 	Kind     ChokepointKind
@@ -26,15 +25,13 @@ const (
 	pathNearBoost = 0.05 // smaller bonus when within 1 zone of the path
 )
 
-// passable reports whether a terrain type is walkable by ground units.
-// Bridges are passable — that's the whole point of them being chokes.
+// passable includes Bridge — which is the whole point of bridges being chokes.
 func passable(t TerrainType) bool {
 	return t == Land || t == Bridge
 }
 
-// FindChokepoints scans the grid and returns every zone that acts as a
-// chokepoint. The result is ordered: bridges first (in row-major order),
-// then narrow land strips.
+// FindChokepoints returns bridges first, in row-major order, then narrow land
+// strips.
 func FindChokepoints(g *TerrainGrid) []Chokepoint {
 	if g == nil || g.Cols <= 0 || g.Rows <= 0 {
 		return nil
@@ -76,9 +73,8 @@ func FindChokepoints(g *TerrainGrid) []Chokepoint {
 	return out
 }
 
-// narrowScore returns a narrowness score for a Land zone if it is sandwiched
-// between impassable zones on one axis and passable zones on the other.
-// The returned bool is false when the zone is not a corridor.
+// narrowScore scores a Land zone walled on one axis and open on the other,
+// returning false when the zone is not a corridor at all.
 func narrowScore(g *TerrainGrid, col, row int) (float64, bool) {
 	n := !passable(g.At(col, row-1))
 	s := !passable(g.At(col, row+1))
@@ -92,8 +88,7 @@ func narrowScore(g *TerrainGrid, col, row int) (float64, bool) {
 		return 0, false
 	}
 
-	// Deep walls (two cells thick on both sides) score higher than shallow
-	// single-cell walls — deeper walls mean the corridor is harder to skirt.
+	// Deeper walls score higher: the corridor is harder to skirt.
 	if horizontal {
 		if !passable(g.At(col, row-2)) && !passable(g.At(col, row+2)) {
 			return narrowDeepScore, true
@@ -106,14 +101,10 @@ func narrowScore(g *TerrainGrid, col, row int) (float64, bool) {
 	return narrowShallowScore, true
 }
 
-// RankChokepointsOnPath rescales chokepoint scores by whether each choke lies
-// on (or near) the BFS shortest path between from and to on the passable
-// subgraph. Chokes unreachable from `from` are dropped. The returned slice is
-// sorted by descending Score.
-//
-// from and to are grid coordinates [col,row]. If either is out of bounds or
-// blocked, the function returns the input unchanged (no path information
-// available, so ranking is a no-op).
+// RankChokepointsOnPath rescales scores by proximity to the shortest path from
+// `from` to `to`, dropping unreachable chokes and sorting by descending score.
+// Coordinates are grid [col,row]; an out-of-bounds or blocked endpoint yields no
+// path information, so the input is returned unchanged.
 func RankChokepointsOnPath(cps []Chokepoint, g *TerrainGrid, from, to [2]int) []Chokepoint {
 	if g == nil || len(cps) == 0 {
 		return cps
@@ -128,8 +119,8 @@ func RankChokepointsOnPath(cps []Chokepoint, g *TerrainGrid, from, to [2]int) []
 	dist, parent := bfs(g, from)
 	toIdx := to[1]*g.Cols + to[0]
 	if dist[toIdx] < 0 {
-		// to is unreachable from from — drop every choke that is itself
-		// unreachable, leave the rest at base score.
+		// Destination unreachable — drop unreachable chokes, leave the rest at
+		// base score.
 		out := make([]Chokepoint, 0, len(cps))
 		for _, c := range cps {
 			if dist[c.Row*g.Cols+c.Col] >= 0 {
@@ -169,9 +160,8 @@ func inBounds(g *TerrainGrid, col, row int) bool {
 	return col >= 0 && col < g.Cols && row >= 0 && row < g.Rows
 }
 
-// bfs returns shortest-path distances (in zones) from src over the passable
-// subgraph, and a parent array for path reconstruction. Unreachable cells
-// have dist=-1 and parent=-1.
+// bfs returns zone distances from src over the passable subgraph plus a parent
+// array; unreachable cells are -1 in both.
 func bfs(g *TerrainGrid, src [2]int) (dist []int, parent []int) {
 	n := g.Cols * g.Rows
 	dist = make([]int, n)

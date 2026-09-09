@@ -86,16 +86,14 @@ func (a *Agent) HandleGameEnd(env ipc.Envelope) (*ipc.Envelope, error) {
 	won := msg.Winner == a.Player
 	slog.Info("game ended", "player", a.Player, "winner", msg.Winner, "won", won)
 
-	// Flushed before the review rather than after it: the archive records where
-	// the export was written, and the row is inserted by the retrospective, so
-	// the file has to exist and be named by the time that starts. A failure here
-	// must not stop the game ending, so it is logged rather than returned.
+	// Before the review, not after: the retrospective inserts the archive row,
+	// which names the export file, so the file must already exist. Logged rather
+	// than returned — a failure here must not stop the game ending.
 	exportPath, err := a.Engine.Exporter().Flush()
 	if err != nil {
 		slog.Error("failed to export rule evaluations", "error", err)
 	}
 
-	// Only the vimy bot records the game.
 	if a.Strategist != nil && strings.Contains(strings.ToLower(a.Player), "vimy") {
 		a.Strategist.RecordGame(GameResult{
 			Player:  a.Player,
@@ -103,17 +101,15 @@ func (a *Agent) HandleGameEnd(env ipc.Envelope) (*ipc.Envelope, error) {
 			Won:     won,
 		})
 
-		// Snapshot history under the strategist lock BEFORE Reset wipes it.
-		// The retrospective LLM call + archival run asynchronously and the
-		// game record is inserted only when the review completes (or fails).
+		// Under the lock and before Reset wipes it: the review runs async and
+		// inserts the game record only once it finishes.
 		snap := a.Strategist.snapshotForReview(won, exportPath)
 		a.Strategist.runRetrospective(a.ctx, snap)
 
 		a.Strategist.Reset()
 
-		// Fallback: if no retrospective will run (no strategist store wired
-		// or no doctrine history), still persist a minimal win/loss row so
-		// the dashboard counters stay correct.
+		// With no retrospective to run, still persist a win/loss row so the
+		// dashboard counters stay correct.
 		if snap == nil && a.Store != nil {
 			_ = a.Store.RecordGame(store.GameRecord{Faction: a.Faction, Won: won})
 		}

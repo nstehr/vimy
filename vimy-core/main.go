@@ -39,14 +39,10 @@ var (
 	exportMax    int
 )
 
-// Recording is on by default.
-//
-// Both of these used to be opt-in, from when nothing read them. Currie reads
-// both, and a game played without them cannot be replayed afterwards — there is
-// no way to go back and record a game that has already been lost, which is
-// exactly the game worth looking at. The cost is a sampled state file per game
-// and a pair of counters per rule, against a post mortem that is otherwise
-// impossible.
+// Rule tracing and state export default on. They were opt-in while nothing read
+// them; Currie reads both, and a game played without them can never be replayed
+// — there is no going back to record a game already lost, which is exactly the
+// game worth looking at.
 func main() {
 	flag.StringVar(&directive, "doctrine", "", "initial doctrine directive (e.g. \"Blitzkrieg\", \"guerrilla warfare\")")
 	flag.StringVar(&addr, "addr", ":8080", "HTTP dashboard listen address")
@@ -68,13 +64,9 @@ func main() {
 
 	slog.Info("starting vimy", "doctrine", directive)
 
-	// Create engine and strategist at top level so the dashboard can access them
-	// before a game connection arrives.
 	// The seed rules, compiled by vimyc rather than built in Go. Identical to
-	// `DefaultRules` — `TestSeedArtifactMatchesDefaultRules` compares them down
-	// to the action function pointers — but they carry their `.vy` source, so
-	// the dashboard shows the language from the first tick rather than expr for
-	// the first minute.
+	// DefaultRules down to the action function pointers, but they carry their
+	// `.vy` source, so the dashboard shows the language from the first tick.
 	startingRules, err := rules.SeedRules()
 	if err != nil {
 		slog.Error("cannot load the seed rule set", "error", err)
@@ -109,16 +101,16 @@ func main() {
 		engine.SetTraceFirings(true)
 	}
 
-	// Off by default: projecting a state costs roughly 60x what evaluating the
-	// rules does, so this samples and is opt-in. See rules/export.go.
+	// Sampled, not exhaustive: projecting a state costs roughly 60x evaluating
+	// the rules. See rules/export.go.
 	if exportStates {
 		exporter, err := rules.NewStateExporter(exportDir, exportEvery, exportMax)
 		if err != nil {
 			slog.Error("cannot set up the state exporter", "error", err)
 			os.Exit(1)
 		}
-		// Checked now rather than at game end: a bad location discovered after
-		// the game loses the recording it was meant to save.
+		// A bad location found at game end loses the recording it was meant to
+		// save.
 		if err := exporter.Writable(); err != nil {
 			slog.Error("cannot write to the export directory", "error", err)
 			os.Exit(1)
@@ -133,8 +125,8 @@ func main() {
 		strategist = agent.NewStrategist(engine, directive, 500)
 	}
 
-	// vimyc is the only compiler there is, so a run with a doctrine needs it.
-	// Probed now rather than at the first doctrine, twenty minutes in.
+	// The only compiler there is, probed now rather than at the first doctrine
+	// twenty minutes in.
 	if strategist != nil {
 		compiler, err := rules.NewVimycCompiler(vimycBin)
 		if err != nil {
@@ -156,7 +148,6 @@ func main() {
 		strategist.SetStore(dataStore)
 	}
 
-	// Start the HTTP dashboard.
 	srv := server.New(strategist, dataStore)
 	go func() {
 		slog.Info("starting dashboard", "addr", addr)
@@ -167,7 +158,7 @@ func main() {
 
 	const socketPath = "/tmp/vimy.sock"
 
-	// Unix sockets leave behind a file on unclean shutdown; remove it so we can rebind.
+	// An unclean shutdown leaves the socket file behind; clear it to rebind.
 	if err := os.RemoveAll(socketPath); err != nil {
 		slog.Error("failed to clean up socket", "path", socketPath, "error", err)
 		os.Exit(1)

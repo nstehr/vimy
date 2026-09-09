@@ -19,9 +19,8 @@ const (
 	memoryTopMLessons      = 5
 )
 
-// LibrarianSnapshot is a dashboard-friendly capture of the librarian's
-// last decision for the current game — alignment note + the reasoning
-// behind each kept item. Cleared on Reset.
+// LibrarianSnapshot is the librarian's last decision this game, for the
+// dashboard: the alignment note plus why each item was kept.
 type LibrarianSnapshot struct {
 	AlignmentNote   string
 	Directive       string
@@ -31,7 +30,7 @@ type LibrarianSnapshot struct {
 	Exemplars       []LibrarianExemplar
 	Cautionaries    []LibrarianCautionary
 	Lessons         []LibrarianLesson
-	// Candidate counts show what was available BEFORE filtering.
+	// What was available before filtering.
 	CandidateExemplars    int
 	CandidateCautionaries int
 	CandidateLessons      int
@@ -56,8 +55,7 @@ type LibrarianLesson struct {
 	Guidance string
 }
 
-// GetLibrarianSnapshot returns the last librarian decision, or nil if the
-// librarian hasn't run yet this game (or was skipped / failed).
+// GetLibrarianSnapshot is nil until the librarian has run and succeeded.
 func (s *Strategist) GetLibrarianSnapshot() *LibrarianSnapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -68,18 +66,15 @@ func (s *Strategist) GetLibrarianSnapshot() *LibrarianSnapshot {
 	return &copy
 }
 
-// ensureMemory returns a MemoryContext suitable for injection into the BAML
-// doctrine prompt. Cached for the lifetime of the game — cleared on Reset.
-// Returns nil if no store is wired or if retrieval/filtering fails.
+// ensureMemory returns the MemoryContext injected into the doctrine prompt,
+// cached for the game and nil when no store is wired or retrieval fails.
 //
-// Flow: QueryMemory gathers a broad candidate set, then SelectRelevantMemory
-// (the librarian) filters it down to what's actually aligned with the
-// current directive. If the librarian judges nothing relevant, we inject
-// nothing — strictly better than anchoring the strategist to misaligned
-// precedent.
+// A broad candidate set from the store, narrowed by the librarian to what suits
+// the current directive. Nothing relevant means nothing injected — better than
+// anchoring the strategist to misaligned precedent.
 //
-// mapWidth/mapHeight are currently unused but reserved for future map-class
-// filtering once enough games accumulate to justify it.
+// mapWidth/mapHeight are reserved for map-class filtering, once enough games
+// accumulate to justify it.
 func (s *Strategist) ensureMemory(ctx context.Context, mapWidth, mapHeight int) *types.MemoryContext {
 	_ = mapWidth
 	_ = mapHeight
@@ -131,10 +126,8 @@ func (s *Strategist) ensureMemory(ctx context.Context, mapWidth, mapHeight int) 
 	return bamlMem
 }
 
-// runLibrarian invokes SelectRelevantMemory with the candidate set and shapes
-// the output into the types.MemoryContext expected by GenerateDoctrine.
-// Returns nil (skip injection) on LLM failure or if the librarian selects
-// nothing.
+// runLibrarian narrows the candidate set for GenerateDoctrine, returning nil —
+// inject nothing — on LLM failure or an empty selection.
 func (s *Strategist) runLibrarian(
 	ctx context.Context,
 	directive, ourFaction, opponentFaction string,
@@ -249,9 +242,8 @@ func (s *Strategist) runLibrarian(
 	return out
 }
 
-// buildCandidates converts the store retrieval result into the librarian's
-// input shape, assigning stable per-call IDs so the librarian's output can
-// reference entries back.
+// buildCandidates shapes the store result for the librarian, assigning per-call
+// IDs so its output can refer back to entries.
 func buildCandidates(mem store.MemoryContext) types.MemoryCandidates {
 	out := types.MemoryCandidates{
 		Exemplars:    make([]types.CandidateExemplar, 0, len(mem.Exemplars)),
@@ -289,10 +281,9 @@ func buildCandidates(mem store.MemoryContext) types.MemoryCandidates {
 	return out
 }
 
-// toBAMLMemory shapes a store.MemoryContext into the BAML types shape that
-// GenerateDoctrine expects. Exemplars carry full context + rationale (to be
-// emulated); cautionaries drop the original rationale and substitute the
-// reviewer's failure explanation (to be avoided, not templated).
+// toBAMLMemory shapes a store.MemoryContext for GenerateDoctrine. Exemplars keep
+// their rationale, to be emulated; cautionaries swap theirs for the reviewer's
+// failure explanation, so they read as things to avoid rather than templates.
 func toBAMLMemory(mem store.MemoryContext) *types.MemoryContext {
 	out := &types.MemoryContext{
 		Exemplar_doctrines:  make([]types.PastDoctrineExample, 0, len(mem.Exemplars)),

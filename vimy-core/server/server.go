@@ -40,8 +40,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/doctrine/current", s.handleCurrentDoctrine)
 	s.mux.HandleFunc("GET /api/doctrine/history", s.handleDoctrineHistory)
 	s.mux.HandleFunc("GET /api/rules", s.handleRules)
-	// Served rather than inlined: templ does not interpolate inside a <script>,
-	// and a route is cacheable.
+	// A route rather than inline: templ won't interpolate inside a <script>, and
+	// this way it caches.
 	s.mux.HandleFunc("GET /static/vy-prism.js", s.handleVyGrammar)
 	s.mux.HandleFunc("GET /api/battlefield", s.handleBattlefield)
 	s.mux.HandleFunc("GET /api/record", s.handleRecord)
@@ -96,7 +96,6 @@ func (s *Server) handleSetDirective(w http.ResponseWriter, r *http.Request) {
 	s.strategist.SetDirective(body.Directive)
 	slog.Info("directive updated via dashboard", "directive", body.Directive)
 
-	// Return the updated directive form as HTML fragment for htmx swap.
 	views.DirectiveForm(body.Directive).Render(r.Context(), w)
 }
 
@@ -247,8 +246,8 @@ func (s *Server) handleDoctrineHistory(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(points)
 }
 
-// handleVyGrammar serves the Prism language definition for `.vy`, generated
-// from the keyword list rather than written out by hand.
+// handleVyGrammar serves the Prism definition for `.vy`, generated from the
+// keyword list rather than hand-written.
 func (s *Server) handleVyGrammar(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/javascript")
 	w.Header().Set("Cache-Control", "no-cache")

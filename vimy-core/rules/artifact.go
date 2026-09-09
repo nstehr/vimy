@@ -14,9 +14,9 @@ import (
 // the whole reason the expr backend exists. Only the action needs work: a Rule
 // holds a function, and JSON can only carry its name.
 
-// The compiled form of vimyc/rules/seed.vy, which is the hand translation of
-// `DefaultRules`. Committed rather than built, so a normal `go build` does not
-// need the Rust toolchain; regenerate with `make rules`.
+// The compiled form of seed.vy, the hand translation of DefaultRules. Committed
+// rather than built so `go build` needs no Rust toolchain; `make rules`
+// regenerates it.
 //
 //go:embed seed_rules.json
 var seedArtifact []byte
@@ -29,8 +29,8 @@ func SeedRules() ([]*Rule, error) {
 	return LoadArtifact(seedArtifact)
 }
 
-// artifactRule mirrors vimyc's `RuleSource`. The tags are the contract between
-// the two repos.
+// artifactRule mirrors vimyc's RuleSource; the tags are the contract between the
+// two repos.
 type artifactRule struct {
 	Name      string `json:"name"`
 	Priority  int    `json:"priority"`
@@ -42,10 +42,9 @@ type artifactRule struct {
 	Source    string `json:"source,omitempty"`
 }
 
-// LoadArtifact turns vimyc's output into rules the engine can take.
-//
-// Does not compile the conditions; `NewEngine` and `Swap` already do that, and
-// doing it here would mean two places that could disagree about how.
+// LoadArtifact turns vimyc's output into rules the engine can take. Conditions
+// stay uncompiled — NewEngine and Swap do that, and a second site could
+// disagree with them.
 func LoadArtifact(data []byte) ([]*Rule, error) {
 	var loaded []artifactRule
 	if err := json.Unmarshal(data, &loaded); err != nil {
@@ -102,12 +101,10 @@ func resolveAction(src string) (ActionFunc, error) {
 	return fn, nil
 }
 
-// parseActionSrc splits `form-squad(ground-attack, Ground, 8, Attack)` into its
-// name and arguments. A bare name yields nil arguments, which is what separates
-// a registry lookup from a factory call.
-//
-// No quoting or nesting to handle: every argument is a name or a number, which
-// `vimycLiteral` and the grammar both guarantee.
+// parseActionSrc splits `form-squad(ground-attack, Ground, 8, Attack)` into name
+// and arguments; nil arguments mark a registry lookup rather than a factory
+// call. No quoting or nesting to handle — the grammar guarantees every argument
+// is a name or a number.
 func parseActionSrc(src string) (string, []string, error) {
 	src = strings.TrimSpace(src)
 	open := strings.IndexRune(src, '(')
@@ -134,10 +131,9 @@ func parseActionSrc(src string) (string, []string, error) {
 
 // actionFactories builds the actions that take arguments.
 //
-// Each entry converts its own arguments rather than sharing a general inverse of
-// `vimycLiteral`, because there isn't one: a squad name is kebab on both sides
-// while a role is kebab there and snake here, and the string alone cannot say
-// which it is. The signature can, so the conversion lives with the signature.
+// Each entry converts its own arguments: there is no general inverse of
+// vimycLiteral, since a squad name is kebab on both sides while a role is kebab
+// there and snake here, and the string alone can't say which. The signature can.
 var actionFactories = map[string]func([]string) (ActionFunc, error){
 	"form-squad": func(a []string) (ActionFunc, error) {
 		if err := arity(a, 4); err != nil {

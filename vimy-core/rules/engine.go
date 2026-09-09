@@ -24,9 +24,9 @@ type RuleSummary struct {
 	Source       string
 }
 
-// Engine runs compiled rules against game state each tick.
-// Rules fire in priority order; exclusive rules block lower-priority rules
-// in the same category, preventing conflicting orders on the same queue.
+// Engine runs compiled rules against game state each tick, in priority order.
+// An exclusive rule blocks lower-priority rules in its category, so two rules
+// can't issue conflicting orders on the same queue.
 type Engine struct {
 	mu      sync.RWMutex
 	rules   []*Rule
@@ -36,11 +36,10 @@ type Engine struct {
 	prefs   UnitPreferences
 	bias    TargetBias
 
-	// Per-rule firing counters for the current doctrine window. Reset by
-	// FlushFiringStats when a doctrine swap occurs or the game ends.
-	// Only populated when traceFirings is true.
 	exporter *StateExporter
 
+	// Per-rule firing counters for the current doctrine window, populated only
+	// while traceFirings is on and reset by FlushFiringStats.
 	statsMu      sync.Mutex
 	traceFirings bool
 	fireCounts   map[string]int
@@ -53,10 +52,9 @@ type Engine struct {
 // and the tick range over which it fired.
 type RuleFiringStats struct {
 	FireCount int
-	// ActCount is how many of those firings actually did something: sent an
-	// order, or moved something in memory. FireCount counts matching
-	// conditions, which is a much weaker claim — a rule can match every tick
-	// and never act. Read the two together or not at all.
+	// ActCount is the firings that sent an order or moved something in memory.
+	// FireCount only counts matching conditions — a rule can match every tick
+	// and never act — so the two are only meaningful read together.
 	ActCount  int
 	FirstTick int
 	LastTick  int
@@ -93,9 +91,8 @@ func (e *Engine) Exporter() *StateExporter {
 	return e.exporter
 }
 
-// SetTraceFirings enables or disables per-rule firing instrumentation.
-// When disabled (the default), recordFiring is a no-op and FlushFiringStats
-// returns empty maps. Toggle takes effect on subsequent Evaluate calls.
+// SetTraceFirings toggles per-rule firing instrumentation, off by default.
+// Takes effect on subsequent Evaluate calls.
 func (e *Engine) SetTraceFirings(on bool) {
 	e.statsMu.Lock()
 	e.traceFirings = on
@@ -110,8 +107,7 @@ func (e *Engine) TracingEnabled() bool {
 	return e.traceFirings
 }
 
-// recordFiring increments the per-rule firing counter and updates the tick
-// range. No-op when tracing is disabled — one early-return per firing.
+// recordFiring is a no-op when tracing is off — one early return per firing.
 func (e *Engine) recordFiring(name string, tick int, acted bool) {
 	e.statsMu.Lock()
 	defer e.statsMu.Unlock()
@@ -128,10 +124,8 @@ func (e *Engine) recordFiring(name string, tick int, acted bool) {
 	}
 }
 
-// FlushFiringStats atomically reads and clears the current window's counters.
-// Callers use this on doctrine swap (attach stats to the outgoing doctrine
-// record) and at game end (attach stats to the final doctrine record).
-// Returns empty when tracing is disabled.
+// FlushFiringStats atomically reads and clears the window's counters, so the
+// caller can attach them to the doctrine record that just ended.
 func (e *Engine) FlushFiringStats() map[string]RuleFiringStats {
 	e.statsMu.Lock()
 	defer e.statsMu.Unlock()
@@ -151,8 +145,7 @@ func (e *Engine) FlushFiringStats() map[string]RuleFiringStats {
 	return out
 }
 
-// FiringStatsSnapshot returns a non-destructive copy of the current window's
-// counters. Used by the dashboard for live visibility; does NOT reset.
+// FiringStatsSnapshot copies the window's counters without resetting them.
 func (e *Engine) FiringStatsSnapshot() map[string]RuleFiringStats {
 	e.statsMu.Lock()
 	defer e.statsMu.Unlock()
@@ -168,10 +161,8 @@ func (e *Engine) FiringStatsSnapshot() map[string]RuleFiringStats {
 	return out
 }
 
-// RuleNames returns the names of all rules currently compiled into the
-// engine — the "available" rule set for the current doctrine window. Used
-// alongside FlushFiringStats so a coding agent can compute which rules were
-// available but never fired (counterfactual).
+// RuleNames is the doctrine window's available rule set. Paired with
+// FlushFiringStats it yields the rules that could have fired and didn't.
 func (e *Engine) RuleNames() []string {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
@@ -235,15 +226,12 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 		anyFired = true
 		slog.Debug("rule fired", "rule", r.Name, "priority", r.Priority, "category", r.Category)
 
-		// A matching condition is not the same as an action that did
-		// something. Several actions return without ordering anything when
-		// their own preconditions fail — a check the rule may not mirror — and
-		// counting those as work made the busiest rules in the archive the ones
-		// doing the least. `form-ground-attack` fired 15,702 times across
-		// thirteen games and formed almost nothing.
+		// A matching condition is not an action that did something: an action
+		// can return early on preconditions the rule doesn't mirror, and
+		// counting those made the busiest rules in the archive the idlest ones.
 		//
-		// Orders on the wire are the general signal; `markEffect` covers the
-		// two actions whose work never leaves memory.
+		// Orders on the wire are the signal; markEffect covers the two actions
+		// whose work never leaves memory.
 		var sentBefore uint64
 		if conn != nil {
 			sentBefore = conn.Sent()
@@ -274,10 +262,8 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	return nil
 }
 
-// Swap atomically replaces the rule set (called by the strategist when the LLM
-// generates a new doctrine). Compiles first; if compilation fails the old rules
-// remain active. Squads are cleared because the new rules may define different
-// squad names and sizes.
+// Swap atomically replaces the rule set. Compiles first, so a doctrine that
+// fails to compile leaves the running one in place.
 func (e *Engine) Swap(newRules []*Rule) error {
 	compiled, err := compileRules(newRules)
 	if err != nil {
@@ -291,27 +277,20 @@ func (e *Engine) Swap(newRules []*Rule) error {
 	e.rules = compiled
 	e.mu.Unlock()
 
-	// Squads the incoming rule set still forms are kept; only the orphans go.
+	// Keep squads the incoming rule set still forms. Dropping all of them on
+	// every swap meant no squad survived long enough to reach commit strength,
+	// which read in the logs as combat attrition.
 	//
-	// This used to drop every squad on every swap, which with a strategist that
-	// swaps every twenty seconds meant no squad ever lived long enough to reach
-	// commit strength. It read as combat attrition in the logs and was not:
-	// across thirteen archived losses `squad-attack` fired 13 times, and the
-	// ground attack squad existed in under a tenth of sampled states, because
-	// each swap took it away and the old FormSquad could not rebuild it.
-	//
-	// A squad the new rules cannot form still has to go: nothing would reinforce
-	// it, nothing would command it, and its members would sit assigned forever,
-	// invisible to `unassigned-idle-ground`.
+	// Orphans still have to go: nothing would reinforce or command them, and
+	// their members would stay assigned forever, invisible to the idle pool.
 	kept, dropped := e.retainSquads(squadNames(compiled))
 	slog.Info("rule set swapped", "count", len(compiled), "kept_squads", kept,
 		"dropped_squads", dropped, "rules", names)
 	return nil
 }
 
-// squadNames is every squad the rule set can form, read off the compiled
-// actions. `ActionSrc` is how vimyc spelled the call — a closure cannot be
-// asked what arguments it captured.
+// squadNames reads squad names off ActionSrc, the source text vimyc emitted —
+// a compiled closure can't be asked what arguments it captured.
 func squadNames(rules []*Rule) map[string]bool {
 	out := make(map[string]bool)
 	for _, r := range rules {
@@ -345,9 +324,8 @@ func (e *Engine) retainSquads(keep map[string]bool) (kept, dropped int) {
 	return kept, dropped
 }
 
-// Reset clears all accumulated state so the engine is ready for a new game.
-// The compiled rules and terrain are preserved; only per-game memory and
-// firing counters are wiped.
+// Reset wipes per-game memory and firing counters, keeping compiled rules and
+// terrain.
 func (e *Engine) Reset() {
 	e.memMu.Lock()
 	e.Memory = make(map[string]any)
@@ -367,8 +345,8 @@ func (e *Engine) Reset() {
 	slog.Info("engine reset")
 }
 
-// LockMemory acquires the memory mutex. Callers must pair with UnlockMemory.
-// Used by the strategist to safely read Memory from a background goroutine.
+// LockMemory lets the strategist read Memory from its own goroutine. Callers
+// must pair it with UnlockMemory.
 func (e *Engine) LockMemory()   { e.memMu.Lock() }
 func (e *Engine) UnlockMemory() { e.memMu.Unlock() }
 
@@ -415,8 +393,8 @@ func (e *Engine) SetTargetBias(b TargetBias) {
 	e.mu.Unlock()
 }
 
-// logIdleDiagnostics helps debug "why isn't the AI doing anything?" —
-// dumps queue state when zero rules fire. Throttled to avoid log spam.
+// logIdleDiagnostics answers "why isn't the AI doing anything?" — dumps queue
+// state when no rule fires, throttled.
 var lastDiagTick int
 
 func logIdleDiagnostics(gs model.GameState) {
@@ -442,8 +420,8 @@ func logIdleDiagnostics(gs model.GameState) {
 	)
 }
 
-// logMilitaryDiagnostics helps debug "why doesn't the AI attack?" — fires
-// every 100 ticks regardless of rule activity.
+// logMilitaryDiagnostics answers "why doesn't the AI attack?" — runs on a tick
+// interval regardless of rule activity.
 var lastMilitaryDiagTick int
 
 func logMilitaryDiagnostics(env RuleEnv) {
@@ -469,9 +447,8 @@ func logMilitaryDiagnostics(env RuleEnv) {
 	)
 }
 
-// logProductionDiagnostics logs production queue state every 100 ticks,
-// regardless of whether rules fired. Helps debug "why isn't X being produced?"
-// when other rules (e.g. infantry) are still firing normally.
+// logProductionDiagnostics answers "why isn't X being produced?" when unrelated
+// rules are still firing normally.
 var lastProdDiagTick int
 
 func logProductionDiagnostics(env RuleEnv) {
@@ -496,12 +473,9 @@ func logProductionDiagnostics(env RuleEnv) {
 	)
 }
 
-// logProduceInfantryGate reports every N ticks WHICH gates of the
-// produce-infantry rule are currently blocking it from firing. Used to
-// answer "why is production throughput only 17% of theoretical?" — the
-// rule fire_count only shows successful fires, not why the rule didn't
-// fire. This dumps the state of each gate so we can see what's actually
-// blocking (cash / queue busy / unit cap / axis burned).
+// logProduceInfantryGate reports which of produce-infantry's gates are blocking
+// it. fire_count records successful fires only, and says nothing about why a
+// rule stayed silent.
 var lastInfantryGateDiagTick int
 
 func logProduceInfantryGate(env RuleEnv) {
@@ -511,23 +485,18 @@ func logProduceInfantryGate(env RuleEnv) {
 	}
 	lastInfantryGateDiagTick = gs.Tick
 
-	// Evaluate each gate of the produce-infantry rule independently.
 	axisBurned := env.AxisBurned("infantry")
 	hasBarracks := env.HasRole("barracks")
 	queueBusy := env.QueueBusy("Infantry")
 	canBuildE1 := env.CanBuild("Infantry", "e1")
 	e1Count := env.UnitCount("e1")
 
-	// Also check the rush-variant gate.
 	isRushed := env.IsRushed()
 
-	// Total non-cash gate result: would the rule pass all non-cash gates?
 	gatesPassExceptCash := !axisBurned && hasBarracks && !queueBusy && canBuildE1
-	// Rush-variant: passes if rushed + others.
 	rushGatesPassExceptCash := isRushed && !axisBurned && hasBarracks && !queueBusy && canBuildE1
 
-	// Cash — we don't know the doctrine cap or exact reservations from here,
-	// but the base cash cost for a rifle is 100 (normal) or 50 (rush).
+	// Base rifle cost; the doctrine cap and reservations aren't visible here.
 	cash := gs.Player.Cash
 
 	slog.Info("produce-infantry gate diagnostic",
@@ -544,13 +513,11 @@ func logProduceInfantryGate(env RuleEnv) {
 	)
 }
 
-// logCashFlow tracks account balance (Cash + Resources) over time and
-// reports net delta per 500-tick window. Can't decompose income vs
-// spending without wiring up per-command cash tracking, but the net
-// delta tells us whether the economy is net-positive or net-negative,
-// and the pattern of spending vs harvester_return firings tells us
-// roughly whether income is the bottleneck (few returns) or spending is
-// (returns coming but cash still zero).
+// logCashFlow reports net change in Cash + Resources per window. Income and
+// spending can't be separated without per-command cash tracking, but the sign
+// of the delta against harvester_return firings distinguishes an income
+// bottleneck (few returns) from a spending one (returns arriving, cash still
+// zero).
 var (
 	lastCashFlowTick      int
 	lastCashSnapshot      int
@@ -589,27 +556,32 @@ func compileRules(rules []*Rule) ([]*Rule, error) {
 		}
 		r.program = prog
 	}
-	// Stable, so a tie resolves the same way every run. Most ties are broken in
-	// the rule set itself, but a handful cannot be: two rules whose priorities
-	// lerp on different doctrine knobs will land on the same number for some
-	// doctrine, and fixing that would mean ranking the knobs against each other
-	// once and for all. Source order decides those, and vimyc emits in a fixed
-	// file-then-declaration order, so "the same way" is also inspectable.
+	// Stable, so ties resolve identically every run. Two rules whose priorities
+	// lerp on different doctrine knobs will collide for some doctrine, and
+	// resolving that properly would mean ranking the knobs against each other.
+	// Source order decides instead, and vimyc emits in a fixed order, so the
+	// resolution is at least inspectable.
 	sort.SliceStable(rules, func(i, j int) bool {
 		return rules[i].Priority > rules[j].Priority
 	})
 	return rules, nil
 }
 
-// incomeSampleTicks is the window IncomeRate is measured over. Long enough that
-// a single purchase does not read as a collapse in income, short enough that a
-// rule reacting to it is reacting to now.
+// incomeSampleTicks — wide enough that one purchase isn't a collapse in income,
+// narrow enough that a rule reacting to it is reacting to now.
 const incomeSampleTicks = 500
 
-// sampleIncome maintains the net cash delta the savings model reads. Kept in
-// engine memory because a rate needs two observations and a RuleEnv has one.
+// sampleIncome keeps the net cash delta in engine memory: a rate needs two
+// observations and a RuleEnv sees one.
 func sampleIncome(env RuleEnv) {
-	cash := env.State.Player.Cash
+	// The same total the rules spend from. Player.Cash is the spendable half;
+	// ore waiting in the silos sits in Player.Resources, and RuleEnv.Cash sums
+	// both. Sampling the spendable half alone gave a delta that hovered at zero
+	// and was never positive in any state of game 89 — so `income-rate > 0`,
+	// the release the savings model depends on, could never fire. The model was
+	// permanently armed and removed 36 of the 43 percentage points of states
+	// where a base defence was affordable.
+	cash := env.State.Player.Cash + env.State.Player.Resources
 	tick := env.State.Tick
 	last, haveLast := env.Memory["incomeSampleTick"].(int)
 	prev, havePrev := env.Memory["incomeSampleCash"].(int)

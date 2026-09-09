@@ -30,10 +30,9 @@ type DoctrineRecord struct {
 	Events        []Event
 	HasEnemyIntel bool
 
-	// Rule-engine trace for the window this doctrine was active.
-	// RuleSet is the list of rules compiled in at doctrine swap time (the
-	// "available" set). RuleStats is filled in once the window closes — on
-	// the next doctrine swap or at game end.
+	// Rule-engine trace for this doctrine's window: RuleSet is what was compiled
+	// in at swap time, RuleStats what actually fired, filled in when the window
+	// closes.
 	RuleSet   []string
 	RuleStats map[string]rules.RuleFiringStats
 }
@@ -56,8 +55,8 @@ type BattlefieldStatus struct {
 	EnemyUnitsSeen     []TypeCount // cumulative historical
 }
 
-// Strategist runs in the background, periodically consulting the LLM
-// to generate a doctrine and swap the rule engine's rule set.
+// Strategist consults the LLM in the background for a doctrine, then swaps the
+// rule engine's rule set.
 type Strategist struct {
 	mu              sync.Mutex
 	latest          *model.GameState
@@ -69,9 +68,8 @@ type Strategist struct {
 	lastTick        int    // tick of last evaluation
 	ready           chan struct{}
 	prevSnap        *stateSnapshot // previous state snapshot for event diff
-	// prevCashSnapshot: cash observed at the last strategist evaluation.
-	// Used to compute cash_burn_rate (net cash change per interval) surfaced
-	// to the LLM as a "is this build order sustainable?" signal.
+	// Cash at the last evaluation, for the burn rate the LLM reads as "is this
+	// build order sustainable?".
 	prevCashSnapshot int
 	prevCashTick     int
 	// Compiles doctrines. Required — there is no other compiler.
@@ -80,45 +78,35 @@ type Strategist struct {
 	pending  []Event          // events accumulated since last evaluation
 	history  []DoctrineRecord // append-only log of all doctrine outputs
 
-	// stressEvents holds high-impact events (harvester/critical-building/
-	// strategy-countered) for several evaluation cycles after they fire.
-	// Without this, a forced pivot at eval N "consumes" the events feed and
-	// eval N+1 sees an empty event list — which the LLM reads as
-	// "situation resolved" and reverts the pivot prematurely (vimy-8vc).
-	// Keeping these visible across the stressEventTTL window lets the
-	// STICKY PIVOT prompt rule actually evaluate the right context.
+	// High-impact events held for several evaluations after they fire. A pivot
+	// otherwise consumes the feed, and the next evaluation reads the empty list
+	// as "resolved" and reverts.
 	stressEvents []Event
 
-	// burnStress holds the same kinds of events but never prunes within a
-	// match. Burn detection (computeBurnedAxes) walks this so a counter
-	// event remains correlatable with later doctrines hours of play later —
-	// without it, game 31 only ever held 1 vehicle counter in the 1500-tick
-	// window and never crossed the burn threshold despite 71 vehicle-heavy
-	// doctrines (vimy follow-up after game 31).
+	// The same events, unpruned for the match. Burn detection correlates a
+	// counter event with doctrines hours later, which a sliding window loses:
+	// one counter per window never crosses the threshold no matter how many
+	// doctrines repeat the mistake.
 	burnStress []Event
 
-	// Cumulative loss tracking — independent of event windowing.
-	// prevFreshIDs holds per-domain unit IDs from the PREVIOUS tick (never merged).
-	// totalLosses accumulates deaths across the entire game.
+	// Cumulative loss tracking, independent of event windowing: prevFreshIDs is
+	// last tick's per-domain IDs, unmerged, and totalLosses runs for the game.
 	prevFreshIDs map[string]map[int]bool
 	totalLosses  map[string]int
 
 	// Win/loss record — persists across resets within a session.
 	record []GameResult
 
-	// Cross-game persistence. Nil-safe: archival is skipped when store is nil.
+	// Cross-game persistence; nil disables archival.
 	store *store.Store
 
-	// Memory retrieval is cached for the duration of a game — one SQLite
-	// query on the first evaluate(), reused for subsequent re-evaluations.
-	// Cleared on Reset.
+	// One memory query per game, on the first evaluate(); cleared on Reset.
 	memoryCache     *types.MemoryContext
 	memoryAttempted bool
 	librarian       *LibrarianSnapshot // last librarian output, for dashboard inspection
 }
 
-// SetStore wires in persistent storage for post-game archival and memory
-// retrieval. Safe to call nil to disable.
+// SetStore wires in persistent storage; nil disables archival and memory.
 func (s *Strategist) SetStore(st *store.Store) {
 	s.mu.Lock()
 	s.store = st
@@ -193,9 +181,8 @@ func (s *Strategist) SetFaction(f string) {
 	s.mu.Unlock()
 }
 
-// SetOpponents records opponent factions for memory retrieval. v1 picks the
-// first non-allied opponent's faction; multi-opponent games degrade gracefully
-// to that first entry. An empty list leaves opponentFaction as "unknown".
+// SetOpponents records the first non-allied opponent's faction for memory
+// retrieval; multi-opponent games degrade to that entry.
 func (s *Strategist) SetOpponents(opponents []ipc.OpponentInfo) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -268,9 +255,8 @@ type RuleTraceSnapshot struct {
 	Stats   map[string]rules.RuleFiringStats
 }
 
-// GetRuleTraceSnapshot returns the live firing counters (non-destructive)
-// plus the current rule set. When tracing is disabled, Enabled is false and
-// the caller should render the "tracing off" state.
+// GetRuleTraceSnapshot reads the live firing counters without resetting them.
+// Enabled is false when tracing is off, and the counters mean nothing.
 func (s *Strategist) GetRuleTraceSnapshot() RuleTraceSnapshot {
 	return RuleTraceSnapshot{
 		Enabled: s.engine.TracingEnabled(),
@@ -330,8 +316,8 @@ func (s *Strategist) GetBattlefieldStatus() *BattlefieldStatus {
 	return status
 }
 
-// UpdateState stores the latest game state, detects events, and signals
-// readiness on the first call, interval boundaries, or significant events.
+// UpdateState stores the latest game state and detects events, signalling
+// readiness on the first call, on interval boundaries, and on significant events.
 func (s *Strategist) UpdateState(gs model.GameState) {
 	s.mu.Lock()
 	first := s.latest == nil
@@ -364,9 +350,8 @@ func (s *Strategist) UpdateState(gs model.GameState) {
 	}
 	s.prevFreshIDs = curFresh
 
-	// Detect events against the previous snapshot.
-	// prevSnap's domain ID sets are accumulated (high-water mark) so that
-	// losses add up across multiple state updates instead of resetting each tick.
+	// prevSnap's ID sets are a high-water mark, so losses accumulate across state
+	// updates rather than resetting every tick.
 	s.engine.LockMemory()
 	events := detectEvents(gs, s.engine.Memory, s.prevSnap)
 	snap := takeSnapshot(gs, s.engine.Memory)
@@ -388,17 +373,14 @@ func (s *Strategist) UpdateState(gs model.GameState) {
 		}
 
 		if counterFired {
-			// Counter event fired: reset baseline to fresh snapshot.
 			snap.lossBaselineTick = gs.Tick
 		} else if gs.Tick-s.prevSnap.lossBaselineTick < counterCooldownTicks {
-			// Within accumulation window: carry forward union of unit IDs
-			// so losses accumulate across multiple game state updates.
+			// Inside the window: union the ID sets so losses accumulate.
 			snap.infantryIDs = mergeIDSets(s.prevSnap.infantryIDs, snap.infantryIDs)
 			snap.vehicleIDs = mergeIDSets(s.prevSnap.vehicleIDs, snap.vehicleIDs)
 			snap.aircraftIDs = mergeIDSets(s.prevSnap.aircraftIDs, snap.aircraftIDs)
 			snap.lossBaselineTick = s.prevSnap.lossBaselineTick
 		} else {
-			// Accumulation window expired: reset baseline.
 			snap.lossBaselineTick = gs.Tick
 		}
 	} else {
@@ -446,25 +428,21 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	for k, v := range s.totalLosses {
 		losses[k] = v
 	}
-	// Widened from 8 to 16 (vimy-b9a) so the BURNED AXIS prompt rule can
-	// see repeated pivots that are 10-20 doctrines apart. Game 21 had 4
-	// air pivots across the match each followed by aircraft losses, but
-	// the LLM never saw 2 in a single window.
+	// Wide enough for the BURNED AXIS prompt rule to see pivots 10-20 doctrines
+	// apart — repeated air pivots each followed by losses are otherwise never
+	// visible together.
 	recentDoctrines := recentDoctrineSummaries(s.history, 16)
 
-	// Persist high-impact events so the LLM continues to see the stress
-	// signal across several evaluations after the original event fired
-	// (vimy-8vc). Without this, a forced pivot consumes the event feed and
-	// the next eval reads it as "resolved", reverting the pivot.
+	// Keep the stress signal visible for several evaluations; a pivot otherwise
+	// consumes the feed and the next one reads the silence as "resolved".
 	currentTick := 0
 	if gs != nil {
 		currentTick = gs.Tick
 	}
 	s.stressEvents = pruneStressEvents(s.stressEvents, currentTick)
 	s.stressEvents = appendStressEvents(s.stressEvents, events)
-	// burnStress accumulates the same kinds of events for the full match.
-	// Burn detection needs cross-match correlation between pivots and counter
-	// events, not just a 1500-tick sliding window.
+	// Burn detection correlates pivots with counter events across the whole
+	// match, not a sliding window.
 	s.burnStress = appendStressEvents(s.burnStress, events)
 	stressSnapshot := append([]Event(nil), s.stressEvents...)
 	burnedAxes := computeBurnedAxes(s.history, s.burnStress, currentTick)
@@ -488,33 +466,25 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	situation.Burned_axes = burnedAxes
 	situation.Being_rushed = beingRushed
 	situation.Harvester_harassed = harvesterHarassed
-	// Situation signals paired with the new tempo knobs (commit_ratio etc.).
-	// Ready ratio comes from squad state in engine memory; cash burn rate
-	// from the delta since our last evaluation; enemy-reach estimate from
-	// distance to any known enemy base.
+	// Situation signals the tempo knobs are read against.
 	situation.Ground_squad_ready_ratio = groundSquadReadyRatio(s.engine.Memory, *gs)
 	situation.Cash_burn_rate = int64(s.computeCashBurnRate(gs))
-	// Named rather than inferred: the roster lists in the prompt are keyed by
-	// side, and asking the model to know that germany is Allied does not work.
+	// Named rather than inferred: the prompt's rosters are keyed by side, and the
+	// model does not reliably know that germany is Allied.
 	situation.Faction_side = rules.SideOf(faction)
 	situation.Unbuildable_roles = rules.UnbuildableRoles(faction)
 	situation.Time_to_reach_enemy_estimate = int64(timeToReachEnemyEstimate(s.engine.Memory, *gs))
-	// Push burned axes into engine memory so production rules can hard-gate
-	// on AxisBurned() — previously the constraint was prompt-only and the
-	// LLM kept committing aircraft despite repeated Flak counters (game 27).
+	// A hard gate in the rule layer, because told only in the prompt the model
+	// kept committing aircraft into repeated flak counters.
 	burnedSet := make(map[string]bool, len(burnedAxes))
 	for _, a := range burnedAxes {
 		burnedSet[a] = true
 	}
 	s.engine.Memory["burnedAxes"] = burnedSet
-	// Push pressure flags into engine memory so production/defense rules can
-	// read them (mirrors burnedAxes). Lets the rule layer respond to a rush
-	// with cheaper cash gates and higher defense priority — the prompt-side
-	// rush response sets the doctrine shape but can't move the cash floors
-	// or rule priorities by itself.
+	// Likewise for pressure: the prompt shapes the doctrine, but only the rule
+	// layer can move cash floors and rule priorities in response to a rush.
 	s.engine.Memory["beingRushed"] = beingRushed
 	s.engine.Memory["harvesterHarassed"] = harvesterHarassed
-	// Doctrine-level repair budget cap (0 = disabled, current behavior).
 	if len(s.history) > 0 {
 		latest := s.history[len(s.history)-1].Doctrine
 		s.engine.Memory["repairBudgetRatio"] = latest.RepairBudgetRatio
@@ -534,11 +504,9 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	doctrine := fromBAML(bamlDoctrine)
 	doctrine.Validate()
 
-	// The strategist is told which roles are faction-locked and told to list
-	// only its own. It does so most of the time. When it does not, the unit is
-	// skipped where one is chosen — but `DoctrineParams` reads the raw list, so
-	// naming the other side's unit still moves rule priorities on the strength
-	// of a name. Dropped here, before anything reads it.
+	// Dropped before anything reads it: unit selection already skips unbuildable
+	// roles, but DoctrineParams reads the raw list and would move rule priorities
+	// on the strength of a name.
 	var dropped []string
 	doctrine, dropped = rules.FilterPreferences(doctrine, faction)
 	if len(dropped) > 0 {
@@ -546,10 +514,8 @@ func (s *Strategist) evaluate(ctx context.Context) {
 			"faction", faction, "doctrine", doctrine.Name, "dropped", dropped)
 	}
 
-	// Close out the previous doctrine window: flush the engine's firing
-	// counters and attach them to the last DoctrineRecord. The stats
-	// reflect rule activity during the window that just ended. No-op
-	// when rule tracing is disabled.
+	// Close out the previous window: the flushed counters belong to the
+	// DoctrineRecord that was active for them.
 	tracingOn := s.engine.TracingEnabled()
 	var priorStats map[string]rules.RuleFiringStats
 	if tracingOn {
@@ -602,9 +568,8 @@ func (s *Strategist) evaluate(ctx context.Context) {
 
 	compiled, err := s.compile(doctrine)
 	if err != nil {
-		// The engine keeps the rule set it has. Falling back to
-		// Anything else would be worse than doing nothing: it would hide
-		// exactly the failure this path exists to expose.
+		// Keep the running rule set. Any fallback would hide exactly the failure
+		// this path exists to surface.
 		slog.Error("doctrine did not compile; keeping the current rules",
 			"doctrine", doctrine.Name, "error", err)
 		return
@@ -614,10 +579,8 @@ func (s *Strategist) evaluate(ctx context.Context) {
 		return
 	}
 
-	// Capture the rule set available in the window that just opened so a
-	// coding agent can later diff "available" vs "actually fired". Skip
-	// when tracing is disabled — the rule_set_json archive is paired with
-	// firing stats and only meaningful alongside them.
+	// The window's available rule set, to diff later against what fired — which
+	// is why it is archived only when tracing is on.
 	s.mu.Lock()
 	if tracingOn {
 		ruleSet := s.engine.RuleNames()
@@ -629,8 +592,8 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	s.mu.Unlock()
 }
 
-// UseVimyc sets the compiler doctrines go through. Required: a strategist
-// without one cannot turn a doctrine into anything.
+// UseVimyc sets the compiler doctrines go through. Required — without one a
+// doctrine cannot become rules.
 func (s *Strategist) UseVimyc(c *rules.VimycCompiler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -680,9 +643,8 @@ func fromBAML(d types.Doctrine) rules.Doctrine {
 	}
 }
 
-// snapshotSuperweaponFires computes superweapon fire deltas and updates
-// the memory snapshot for the next evaluation cycle. Returns the fire
-// entries for inclusion in the GameSituation struct.
+// snapshotSuperweaponFires returns fire deltas since the last evaluation and
+// re-baselines for the next one.
 func snapshotSuperweaponFires(memory map[string]any) []types.SuperweaponFire {
 	totalFires := rules.GetSuperweaponFires(memory)
 	if len(totalFires) == 0 {
@@ -701,7 +663,6 @@ func snapshotSuperweaponFires(memory map[string]any) []types.SuperweaponFire {
 		})
 	}
 
-	// Snapshot for next eval's delta
 	snapshot := make(map[string]int, len(totalFires))
 	for k, v := range totalFires {
 		snapshot[k] = v
@@ -711,18 +672,13 @@ func snapshotSuperweaponFires(memory map[string]any) []types.SuperweaponFire {
 	return fires
 }
 
-// stressEventTTL is how long a high-impact event stays in the persisted
-// feed after its original fire tick. 1500 ticks ~= 3 evaluation intervals at
-// the default 500-tick cadence, which is enough for the STICKY PIVOT prompt
-// rule to see the signal across the pivot evaluation and at least one
-// follow-up before the LLM is allowed to consider reverting.
+// stressEventTTL keeps a high-impact event in the feed for roughly three
+// evaluation intervals — the pivot itself plus a follow-up, before the model is
+// allowed to consider reverting.
 const stressEventTTL = 1500
 
-// stressKinds enumerates the event kinds that should persist beyond a
-// single evaluation. These all signal sustained pressure that a one-shot
-// pivot rarely resolves: economy raids, base damage, and explicit counter
-// detection. Lower-impact events (first_contact, phase_transition, etc.)
-// are intentionally excluded so the persisted feed stays tight.
+// stressKinds are the events signalling pressure a single pivot rarely
+// resolves. Lower-impact kinds stay out so the persisted feed stays tight.
 var stressKinds = map[EventKind]bool{
 	EventCriticalBuildingLost: true,
 	EventArmyDevastated:       true,
@@ -767,9 +723,8 @@ func appendStressEvents(buf []Event, fresh []Event) []Event {
 	return buf
 }
 
-// mergeStressEvents combines fresh events with persisted stress events,
-// deduping by (Kind, Tick). Used when handing the event list to the LLM
-// so it sees both this-tick events and recent unresolved stress.
+// mergeStressEvents dedupes fresh and persisted events by (Kind, Tick), so the
+// LLM sees this tick's events alongside recent unresolved stress.
 func mergeStressEvents(fresh, persisted []Event) []Event {
 	if len(persisted) == 0 {
 		return fresh
@@ -790,17 +745,13 @@ func mergeStressEvents(fresh, persisted []Event) []Event {
 	return out
 }
 
-// axisDominantThreshold is the weight at or above which a doctrine is
-// considered to "pivot to" that axis. Mirrors the convergence-break wording
-// in the prompt (axis weight >= ~0.55).
+// axisDominantThreshold is where a doctrine counts as pivoting to an axis.
+// Mirrors the convergence-break wording in the prompt.
 const axisDominantThreshold = 0.55
 
-// burnedAxisMinPivots is how many pivots-with-counter must occur before an
-// axis is marked burned for the rest of the match. Per-axis because air
-// counters (SAM/Flak clusters) are essentially permanent — one confirmed
-// counter is enough to mark the axis. Infantry/vehicle/naval keep the 2-
-// counter threshold so we don't burn an axis off a single bad engagement
-// (rifles vs. one tesla doesn't mean abandon all infantry).
+// burnedAxisMinPivots is how many countered pivots burn an axis. Air needs only
+// one: SAM and flak clusters are effectively permanent. The others need two, so
+// a single bad engagement — rifles into one tesla — doesn't abandon the axis.
 var burnedAxisMinPivots = map[string]int{
 	"air":      1,
 	"infantry": 2,
@@ -808,32 +759,24 @@ var burnedAxisMinPivots = map[string]int{
 	"naval":    2,
 }
 
-// burnedAxisLookbackTicks limits how long after a pivot doctrine a counter
-// event "counts" against it. Roughly two evaluation intervals — the same
-// window stress events persist for under stressEventTTL.
+// burnedAxisLookbackTicks is how long after a pivot a counter still counts
+// against it — the same window stress events persist for.
 const burnedAxisLookbackTicks = 1500
 
-// burnedAxisRecoveryTicks lets an axis un-burn after a counter-free period.
-// 0 = no recovery (burns persist for the rest of the match). Air gets a
-// recovery window so an "air superiority" directive can resume committing
-// aircraft once SAMs have plausibly been cleared (post-SEAD). Without this,
-// one SAM kill in the first 10k ticks would neuter the directive for the
-// rest of a 100k+ tick match even after vimy successfully suppressed the AA
-// threat. Other axes keep persistent burn because counter-tech (Tesla, Flame
-// Tower) tends to keep stacking through the match.
+// burnedAxisRecoveryTicks un-burns an axis after a counter-free period; 0 means
+// the burn holds for the match. Only air recovers: AA can be suppressed, and
+// without recovery one early SAM kill neuters an air-superiority directive for
+// the remaining 100k ticks. Ground counter-tech only stacks up over a match.
 var burnedAxisRecoveryTicks = map[string]int{
 	"air": 5000,
 }
 
-// computeBurnedAxes inspects the FULL game history (not just the recent
-// window) and returns axes that have been pivoted to burnedAxisMinPivots+
-// times AND each pivot was followed within burnedAxisLookbackTicks by a
-// domain-specific counter event. The returned list is what the BURNED
-// AXIS prompt rule treats as a hard constraint for subsequent doctrines.
+// computeBurnedAxes returns axes pivoted to at least burnedAxisMinPivots times,
+// each pivot followed by a domain-specific counter event. Downstream this is a
+// hard constraint, not a suggestion.
 //
-// vimy-b9a: previously this detection lived only in the prompt and only
-// looked at the last 8 doctrines, missing repeat air pivots that were
-// 10-20 doctrines apart (game 21: 4 air pivots, none caught).
+// Over the full history rather than a recent window: repeat air pivots are
+// routinely 10-20 doctrines apart and a short window catches none of them.
 func computeBurnedAxes(history []DoctrineRecord, stress []Event, currentTick int) []string {
 	if len(history) == 0 {
 		return nil
@@ -871,8 +814,8 @@ func computeBurnedAxes(history []DoctrineRecord, stress []Event, currentTick int
 		if n < threshold {
 			continue
 		}
-		// Recovery window: if a recovery period is configured for this axis
-		// and the most recent counter is older than that, the axis un-burns.
+		// An axis whose latest counter has aged out of its recovery window
+		// un-burns.
 		if rt, has := burnedAxisRecoveryTicks[axis]; has && rt > 0 {
 			if currentTick-axisLatestCounter[axis] > rt {
 				continue
@@ -883,9 +826,8 @@ func computeBurnedAxes(history []DoctrineRecord, stress []Event, currentTick int
 	return out
 }
 
-// latestAxisCounter returns the tick of the latest stress event that
-// matches the given axis and fired within burnedAxisLookbackTicks ticks
-// AFTER pivotTick. Returns (0, false) when no matching event exists.
+// latestAxisCounter returns the tick of the most recent matching stress event
+// within the lookback window after pivotTick.
 func latestAxisCounter(pivotTick int, axis string, stress []Event) (int, bool) {
 	latest := 0
 	found := false
@@ -904,8 +846,7 @@ func latestAxisCounter(pivotTick int, axis string, stress []Event) (int, bool) {
 	return latest, found
 }
 
-// eventMatchesAxis is the same matching rule axisCounteredAfter uses,
-// factored out so latestAxisCounter and axisCounteredAfter can share it.
+// eventMatchesAxis is shared by latestAxisCounter and axisCounteredAfter.
 func eventMatchesAxis(e Event, axis string) bool {
 	detail := strings.ToLower(e.Detail)
 	switch axis {
@@ -921,11 +862,9 @@ func eventMatchesAxis(e Event, axis string) bool {
 	return false
 }
 
-// axisCounteredAfter reports whether a stress event matching the axis fired
-// within burnedAxisLookbackTicks ticks AFTER the given pivot tick. Matching
-// uses event detail strings — strategy_countered events carry the domain
-// in their detail (e.g. "aircraft taking heavy losses", "infantry taking
-// heavy losses", "army_devastated" implies vehicle/ground commitment).
+// axisCounteredAfter reports whether a matching stress event fired inside the
+// lookback window after a pivot. Matching is on the detail string, which is
+// where strategy_countered events carry their domain.
 func axisCounteredAfter(pivotTick int, axis string, stress []Event) bool {
 	for _, e := range stress {
 		if e.Tick < pivotTick || e.Tick-pivotTick > burnedAxisLookbackTicks {
@@ -954,50 +893,31 @@ func axisCounteredAfter(pivotTick int, axis string, stress []Event) bool {
 	return false
 }
 
-// Pressure-flag thresholds (vimy-w13). The user observation that prompted
-// this: in a rush scenario harvesters will ALWAYS be under attack — small
-// base, no perimeter. So we can't treat "harvester_under_attack present" as
-// a single emergency signal. Split it into two cases that need different
-// doctrine responses:
+// Pressure-flag thresholds. Harvesters under attack is not one signal: in a
+// rush they always are, because there is no perimeter yet. The two cases want
+// opposite responses, so they are separate flags:
 //
-//   - being_rushed: early game + small base + recent harvester pressure.
-//     Response should be COUNTER-FORCE (rifle/dog spam, pillbox at the
-//     threatened side), not turtle. Killing the rushers is what unblocks
-//     the economy, not bunkering.
-//
-//   - harvester_harassed: mid/late game + established base + sustained
-//     harvester losses. Response should be DISPERSAL / ESCORTS / static
-//     defense near refineries. Can briefly slow the main push.
-//
-// Both flags are computed from the stress-event buffer (which already
-// persists harvester events for ~1500 ticks) plus current building count.
+//   - being_rushed: early game. Counter-force — killing the rushers is what
+//     unblocks the economy, not bunkering.
+//   - harvester_harassed: sustained losses against an established base.
+//     Dispersal, escorts and static defense, at some cost to the main push.
 const (
-	// rushTickCutoff was 6000 — too tight for slow-paced rushes. Game 33's
-	// first harvester attack came at tick 9980 against a still-small base
-	// (<=6 buildings), but being_rushed was false because the tick window
-	// had already closed, so the soft harvester_harassed rule fired
-	// instead of the stronger rush response. Widening to 10500 lets the
-	// rush rule catch this tempo.
+	// Wide enough for slow-paced rushes: a first harvester attack near tick
+	// 10000 against a still-small base is a rush, and a tighter window sends it
+	// to the softer harassment response instead.
 	rushTickCutoff = 10500
-	// Building-count gates removed (was 6, then 12, never fired): even at 12
-	// the count was routinely exceeded by tick 9-10k because vimy builds
-	// power + refinery + barracks + WF + radar + a few defenses + helipad
-	// before raids arrive. The tick window already encodes "early game";
-	// adding a building-count condition just made the flag silently false.
-	// The rush-mode rules themselves cap their output (cap = 2x infantryCap
-	// for rifles, normal defenseCap for pillboxes) so leaving the flag on
-	// throughout the rush window can't produce runaway output — it just
-	// lets cheap defenders spawn when the doctrine doctrine would normally
-	// be cash-gated.
+	// No building-count gate: vimy routinely clears any plausible threshold
+	// before raids arrive, so the condition only made the flag silently false.
+	// The tick window already means "early game", and the rush rules cap their
+	// own output, so leaving the flag on for the window can't run away.
 	harassTickFloor          = 10500
 	harassMinHarvesterEvents = 2    // sustained pressure, not one-off
 	pressureLookbackTicks    = 2000 // "recent" stress events window
 )
 
-// computePressureFlags returns (beingRushed, harvesterHarassed) from the
-// current tick, game state, and persisted stress events. Both flags can be
-// false; at most one should be true at a time given the disjoint tick
-// thresholds, but the prompt handles either case independently.
+// computePressureFlags returns (beingRushed, harvesterHarassed). Both can be
+// false; the disjoint tick thresholds keep both from being true at once, though
+// the prompt handles each independently.
 func computePressureFlags(currentTick int, gs *model.GameState, stress []Event) (bool, bool) {
 	if gs == nil {
 		return false, false
@@ -1026,12 +946,9 @@ func computePressureFlags(currentTick int, gs *model.GameState, stress []Event) 
 	return beingRushed, harvesterHarassed
 }
 
-// recentDoctrineSummaries returns the last n doctrines from history as
-// compact shape fingerprints for the strategist prompt. Passing these back to
-// groundSquadReadyRatio returns idle/target ratio for the ground-attack squad,
-// or 0.0 if the squad hasn't formed yet. Paired with the doctrine's
-// commit_ratio knob so the LLM can gauge whether its intended commit threshold
-// is achievable this tick.
+// groundSquadReadyRatio is the ground-attack squad's idle/target ratio, 0 when
+// it hasn't formed. Read against the doctrine's commit_ratio so the LLM can see
+// whether its intended commit threshold is reachable.
 func groundSquadReadyRatio(memory map[string]any, gs model.GameState) float64 {
 	squads, ok := memory["squads"].(map[string]*rules.Squad)
 	if !ok {
@@ -1056,10 +973,9 @@ func groundSquadReadyRatio(memory map[string]any, gs model.GameState) float64 {
 	return float64(idle) / float64(sq.TargetSize)
 }
 
-// computeCashBurnRate returns the net cash delta since the last strategist
-// evaluation. Positive = income exceeds spending; negative = losing cash.
-// First eval returns 0 (no prior snapshot). Stores current cash for next
-// eval's diff.
+// computeCashBurnRate is the net cash delta since the last evaluation, positive
+// when income exceeds spending. Zero on the first, and re-baselines as a side
+// effect.
 func (s *Strategist) computeCashBurnRate(gs *model.GameState) int {
 	if gs == nil {
 		return 0
@@ -1073,10 +989,8 @@ func (s *Strategist) computeCashBurnRate(gs *model.GameState) int {
 	return burn
 }
 
-// timeToReachEnemyEstimate returns a rough tick-count estimate for a ground
-// unit to walk from our base centroid to the nearest known enemy base. Uses
-// a straight-line distance and a per-tick step size approximation. Returns
-// -1 when no enemy base intel exists.
+// timeToReachEnemyEstimate is straight-line distance to the nearest known enemy
+// base at an approximate walking pace, or -1 with no intel.
 func timeToReachEnemyEstimate(memory map[string]any, gs model.GameState) int {
 	bases, ok := memory["enemyBases"].(map[string]rules.EnemyBaseIntel)
 	if !ok || len(bases) == 0 {
@@ -1102,16 +1016,14 @@ func timeToReachEnemyEstimate(memory map[string]any, gs model.GameState) int {
 			best = d
 		}
 	}
-	// Rifle walks ~0.25 cells per tick in RA. Convert map distance to ticks.
+	// A rifle walks ~0.25 cells per tick in RA.
 	const ticksPerMapUnit = 4.0
 	return int(best * ticksPerMapUnit)
 }
 
-// recentDoctrineSummaries returns the last n doctrines from history as
-// compact shape fingerprints for the strategist prompt. Passing these back to
-// the LLM lets it see when its own attempts are converging on a single shape
-// that the battlefield keeps rejecting — the signal needed to force a pivot
-// that lessons alone don't produce (see vimy-os6).
+// recentDoctrineSummaries fingerprints the last n doctrines for the prompt, so
+// the LLM can see its own attempts converging on a shape the battlefield keeps
+// rejecting — a pivot signal that lessons alone don't produce.
 func recentDoctrineSummaries(history []DoctrineRecord, n int) []types.RecentDoctrine {
 	if n <= 0 || len(history) == 0 {
 		return nil
@@ -1138,9 +1050,8 @@ func recentDoctrineSummaries(history []DoctrineRecord, n int) []types.RecentDoct
 	return out
 }
 
-// buildSituation constructs a structured GameSituation from the current
-// game state, memory, events, superweapon fire data, and cumulative losses.
-// Pure function (aside from reading memory) — no side effects.
+// buildSituation assembles the GameSituation handed to the LLM. No side effects
+// beyond reading memory.
 func buildSituation(gs model.GameState, memory map[string]any, events []Event, swFires []types.SuperweaponFire, totalLosses map[string]int) types.GameSituation {
 	sit := types.GameSituation{
 		Tick:              int64(gs.Tick),
@@ -1159,7 +1070,7 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 		Superweapon_fires: swFires,
 	}
 
-	// Enemy units and buildings summary (currently visible)
+	// Currently visible enemies.
 	enemyUnitCounts := make(map[string]int)
 	enemyBuildingCounts := make(map[string]int)
 	for _, e := range gs.Enemies {
@@ -1176,7 +1087,6 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 		sit.Enemy_buildings = append(sit.Enemy_buildings, types.TypeCount{Type: t, Count: int64(c)})
 	}
 
-	// Buildings summary
 	buildingCounts := make(map[string]int)
 	for _, b := range gs.Buildings {
 		buildingCounts[b.Type]++
@@ -1185,7 +1095,6 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 		sit.Buildings = append(sit.Buildings, types.TypeCount{Type: t, Count: int64(c)})
 	}
 
-	// Units summary
 	unitCounts := make(map[string]int)
 	idleCount := 0
 	for _, u := range gs.Units {
@@ -1199,7 +1108,6 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 	}
 	sit.Idle_unit_count = int64(idleCount)
 
-	// Active production queues
 	for _, pq := range gs.ProductionQueues {
 		if pq.CurrentItem != "" {
 			sit.Active_production = append(sit.Active_production, types.ActiveProduction{
@@ -1236,7 +1144,6 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 		}
 	}
 
-	// Historical enemy sightings
 	for t, c := range rules.GetEnemyUnitsSeen(memory) {
 		sit.Enemy_units_seen = append(sit.Enemy_units_seen, types.TypeCount{Type: t, Count: int64(c)})
 	}
@@ -1244,9 +1151,8 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 		sit.Enemy_buildings_seen = append(sit.Enemy_buildings_seen, types.TypeCount{Type: t, Count: int64(c)})
 	}
 
-	// Capturable neutrals (oil derricks, comm centers, hospitals, etc.) —
-	// without this the strategist has no signal to raise capture_priority
-	// when scouts uncover tech buildings (vimy-b2c).
+	// Without these the strategist has no reason to raise capture_priority when
+	// scouts turn up a tech building.
 	if len(gs.Capturables) > 0 {
 		capCounts := make(map[string]int)
 		for _, c := range gs.Capturables {
@@ -1257,7 +1163,6 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 		}
 	}
 
-	// Known enemy bases
 	if bases, ok := memory["enemyBases"].(map[string]rules.EnemyBaseIntel); ok {
 		for _, base := range bases {
 			sit.Known_enemy_bases = append(sit.Known_enemy_bases, types.EnemyBase{
@@ -1269,7 +1174,6 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 		}
 	}
 
-	// Recent events
 	for _, e := range events {
 		sit.Recent_events = append(sit.Recent_events, types.GameEvent{
 			Kind:   string(e.Kind),
@@ -1278,7 +1182,6 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 		})
 	}
 
-	// Cumulative combat stats
 	if len(totalLosses) > 0 {
 		sit.Combat_stats = &types.CombatStats{
 			Infantry_lost: int64(totalLosses["infantry"]),

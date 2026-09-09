@@ -473,3 +473,32 @@ func TestSwapToRulesWithoutSquadsDropsThemAll(t *testing.T) {
 		t.Error("squads survived a swap to a rule set that forms none")
 	}
 }
+
+// income-rate must be measured on the same money the rules spend. Player.Cash
+// is the spendable half; ore waiting in the silos is Player.Resources, and
+// RuleEnv.Cash sums both. Sampling the spendable half alone made income-rate
+// non-positive in every state of game 89, which armed the savings model
+// permanently and starved base defences.
+func TestSampleIncomeCountsOreInSilos(t *testing.T) {
+	mem := map[string]any{}
+	env := func(tick, cash, res int) RuleEnv {
+		return RuleEnv{Memory: mem, State: model.GameState{
+			Tick:   tick,
+			Player: model.Player{Cash: cash, Resources: res},
+		}}
+	}
+	// First call only seeds the baseline.
+	sampleIncome(env(0, 0, 1000))
+	if _, ok := mem["incomeRate"]; ok {
+		t.Fatal("the first sample should establish a baseline, not a rate")
+	}
+	// Spendable cash unchanged, but a thousand credits of ore arrived.
+	sampleIncome(env(incomeSampleTicks, 0, 2000))
+	got, _ := mem["incomeRate"].(int)
+	if got != 1000 {
+		t.Errorf("incomeRate = %d, want 1000: ore in the silos is income", got)
+	}
+	if RuleEnv(env(incomeSampleTicks, 0, 2000)).IncomeRate() != 1000 {
+		t.Error("IncomeRate() disagrees with what sampleIncome stored")
+	}
+}

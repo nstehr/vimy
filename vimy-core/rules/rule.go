@@ -8,30 +8,24 @@ import (
 // ActionFunc sends commands to the OpenRA mod when a rule's condition is true.
 type ActionFunc func(env RuleEnv, conn *ipc.Connection) error
 
-// Rule is the atomic unit of AI behavior: a condition → action pair.
-// The engine evaluates rules by priority and uses Category + Exclusive
-// to prevent conflicting actions on the same production queue.
+// Rule is a condition → action pair, the atomic unit of AI behavior. Category
+// and Exclusive are what stop two rules issuing conflicting orders on one
+// production queue.
 type Rule struct {
 	Name         string // human-readable identifier
 	Priority     int    // higher = evaluated first
 	Category     string // grouping for exclusive semantics
 	Exclusive    bool   // if true, blocks lower-priority rules in same category
 	ConditionSrc string // expr source (preserved for serialization)
-	// Why the rule exists, when the rule set said. A condition explains what a
-	// rule tests; this explains what it is for, which is what someone reading a
-	// game back actually wants.
+	// Why the rule exists, when the rule set said. The condition says what it
+	// tests; this says what it is for, which is what reading a game back needs.
 	Because string
-	// The rule as `.vy`, after the doctrine was applied — what a person reads.
-	// A condition says what the engine tests; this says it in the language the
-	// rule was written in, which is the one someone would edit.
+	// The rule as `.vy` with the doctrine applied — the form someone would edit.
 	Source  string
 	program *vm.Program // compiled bytecode
 	Action  ActionFunc
-	// How vimyc spells this action, for actions built by a factory. Empty for
-	// the rest, which are named by their ActionRegistry id.
-	//
-	// Needed because a closure cannot be identified at runtime: every
-	// `FormSquad(...)` shares one code pointer, so the arguments it captured
-	// are unrecoverable once it is built.
+	// How vimyc spells a factory-built action; empty for registry actions, which
+	// their id names. Needed because every FormSquad(...) closure shares one code
+	// pointer, so its captured arguments are unrecoverable at runtime.
 	ActionSrc string
 }

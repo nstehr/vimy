@@ -1,10 +1,9 @@
 package rules
 
-// ActionRegistry maps action ids to their functions.
-//
-// Nothing reads it yet — the compiler references the functions directly. It
-// exists for the rule-set authoring path, where a `do` field names an action by
-// id rather than by Go symbol. Keys are kebab to match that language.
+// ActionRegistry maps action ids to their functions, for the rule-set authoring
+// path where a `do` field names an action by id rather than Go symbol. Keys are
+// kebab to match that language. Nothing reads it yet — the compiler references
+// the functions directly.
 var ActionRegistry = map[string]ActionFunc{
 	"produce-mcv":                 ActionProduceMCV,
 	"deploy-mcv":                  ActionDeployMCV,
@@ -63,8 +62,8 @@ var ActionRegistry = map[string]ActionFunc{
 	"produce-flame-tower":         ActionProduceFlameTower,
 	"produce-tesla-coil":          ActionProduceTeslaCoil,
 
-	// Used by compiled rules but absent until the vimyc port needed to name
-	// them. Nothing reads this map yet, which is how they went unnoticed.
+	// Used by compiled rules but missing until the vimyc port needed to name
+	// them — nothing reads this map, which is how they went unnoticed.
 	"cancel-stuck-aircraft":      ActionCancelStuckAircraft,
 	"defend-critical-building":   ActionDefendCriticalBuilding,
 	"deliver-assault-apc":        ActionDeliverAssaultAPC,

@@ -11,8 +11,8 @@ import (
 	"github.com/nstehr/vimy/vimy-core/store"
 )
 
-// retrospectiveSnapshot captures everything the retrospective needs, taken
-// under the strategist lock before Reset wipes the history.
+// retrospectiveSnapshot is everything the review needs, taken under the
+// strategist lock before Reset wipes the history.
 type retrospectiveSnapshot struct {
 	ourFaction      string
 	opponentFaction string
@@ -23,20 +23,18 @@ type retrospectiveSnapshot struct {
 	history         []DoctrineRecord
 	totalLosses     map[string]int
 	store           *store.Store
-	// Where this game's states were written, so a replay can find them. Empty
-	// when the sidecar ran without --export-states.
+	// Where this game's states were written, for replay. Empty without
+	// --export-states.
 	exportPath string
 	// The directive these doctrines were written from.
 	directive string
 }
 
-// snapshotForReview takes a snapshot of everything the retrospective will
-// need. Must be called while the strategist still holds its history, i.e.
-// before Reset. Returns nil if no history exists (nothing to review).
+// snapshotForReview must run before Reset, while the history still exists. Nil
+// means there was nothing to review.
 func (s *Strategist) snapshotForReview(won bool, exportPath string) *retrospectiveSnapshot {
-	// Close the final doctrine window by flushing firing counters BEFORE
-	// copying history. Attach stats to the last DoctrineRecord so the
-	// archive reflects the entire game. No-op when tracing is disabled.
+	// Close the final doctrine window before copying, so the archive covers the
+	// whole game rather than stopping at the last swap.
 	var finalStats map[string]rules.RuleFiringStats
 	if s.engine.TracingEnabled() {
 		finalStats = s.engine.FlushFiringStats()
@@ -76,10 +74,9 @@ func (s *Strategist) snapshotForReview(won bool, exportPath string) *retrospecti
 	return snap
 }
 
-// runRetrospective launches the post-game review in a goroutine. Safe to call
-// with a nil snapshot (returns immediately). The goroutine outlives the
-// HandleGameEnd handler by design — vimy is a long-running process and the
-// review is not latency-critical.
+// runRetrospective launches the post-game review in a goroutine that outlives
+// HandleGameEnd by design: the sidecar is long-running and the review is not
+// latency-critical. A nil snapshot is a no-op.
 func (s *Strategist) runRetrospective(ctx context.Context, snap *retrospectiveSnapshot) {
 	if snap == nil {
 		return
@@ -159,10 +156,8 @@ type archivalPayload struct {
 	lessons    []store.InputLesson
 }
 
-// buildArchival shapes a retrospective result into storage inputs. Pure
-// function — no I/O, no LLM calls, no locks. If haveReview is false, the
-// review argument is ignored and only the minimal game + doctrines (unrated)
-// are archived.
+// buildArchival shapes a review into storage inputs; no I/O, no LLM, no locks.
+// Without haveReview the review is ignored and the doctrines archive unrated.
 func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveReview bool) archivalPayload {
 	out := archivalPayload{
 		gameCtx: store.GameContext{
@@ -231,8 +226,8 @@ func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveRev
 	return out
 }
 
-// toBAMLDoctrine is the inverse of fromBAML in strategist.go — it converts a
-// rules.Doctrine back into the BAML types.Doctrine shape for use in prompts.
+// toBAMLDoctrine is the inverse of fromBAML, for putting a doctrine back into a
+// prompt.
 func toBAMLDoctrine(d rules.Doctrine) types.Doctrine {
 	return types.Doctrine{
 		Name:                           d.Name,

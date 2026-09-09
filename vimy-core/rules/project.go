@@ -2,12 +2,12 @@ package rules
 
 // Projecting a RuleEnv into the flat state vimyc's evaluator consumes.
 //
-// Lives in the package rather than in a test because two consumers need it and
-// two implementations would drift: the offline dump that builds vimyc's
-// differential corpus, and the live exporter that records real games.
+// In the package rather than in a test because two consumers need it — the
+// offline dump behind vimyc's differential corpus and the live exporter — and
+// two implementations would drift.
 //
-// Costs about 1ms against 17us to evaluate the seed rules, so the live exporter
-// samples rather than recording every evaluation.
+// Reflection over the manifest's shape, not a line per predicate, so adding a
+// predicate needs no change here.
 
 import (
 	"math/rand"
@@ -33,10 +33,6 @@ type vimycState struct {
 	CallsFloat  map[string]float64 `json:"calls_float"`
 	TypeCounts  map[string]int     `json:"type_counts"`
 }
-
-// States are stored once and referenced by index: only 400 are distinct, and
-// inlining each into all thirteen of its cases made the file 21MB instead of
-// under two.
 
 // The argument values worth projecting, per domain. A predicate taking a role is
 // projected once per role, and so on — the state records answers, so every
@@ -81,10 +77,6 @@ func fmtFloat(f float64) string {
 	return strconv.FormatFloat(f, 'g', -1, 64)
 }
 
-// project asks the env every question a rule could ask, and writes the answers
-// down. Driven by reflection over the manifest's shape rather than by a
-// hand-written line per predicate, so a new predicate needs no change here.
-
 // recordCallArgs notes, per method and argument position, every literal a
 // condition passes. Shared so a live recording and the offline dump agree on
 // what a projection should ask.
@@ -128,14 +120,11 @@ func conditionArgs(rules []*Rule) (map[string][]map[string]bool, map[string]bool
 	return out, seen
 }
 
-// projectFor asks the env every question the given rules could ask, and writes
-// the answers down.
+// projectFor asks the env every question the given rules could ask.
 //
-// Always against a rule set. There used to be a doctrine-wide variant that
-// asked everything `CompileDoctrine` could ever emit; with the compiler gone
-// there is no such set to enumerate, and narrowing to the rules actually loaded
-// was already the better answer — the union asked about 38 thresholds where a
-// live rule set uses two.
+// Always scoped to a rule set: the doctrine-wide variant asked about 38
+// thresholds where a live rule set uses two, and with CompileDoctrine gone
+// there is no such set left to enumerate anyway.
 func projectFor(env RuleEnv, rules []*Rule) vimycState {
 	lits, used := conditionArgs(rules)
 	return projectWith(env, lits, used)
@@ -193,10 +182,9 @@ func projectWith(env RuleEnv, lits map[string][]map[string]bool, used map[string
 			}
 			out := rv.Method(i).Call(in)[0]
 
-			// Roles are snake on this side, kebab in the language. Numbers
-			// are normalised, because these come from the literal text in a
-			// condition while the other side has parsed them: Go's `0.10` and
-			// vimyc's `0.1` are the same threshold and must key the same.
+			// Roles are snake here, kebab in the language. Numbers arrive as the
+			// literal text of a condition while the other side has parsed them,
+			// so `0.10` and `0.1` must normalise to the same key.
 			wire := make([]string, len(combo))
 			for k, a := range combo {
 				wire[k] = normaliseLiteral(a)
@@ -303,9 +291,8 @@ func generateState(rng *rand.Rand) model.GameState {
 		case 2:
 			item, progress = "powr", 100
 		}
-		// Buildable drives CanBuild, and an empty one makes every `can-build`
-		// condition false — which silently left five of the thirteen seed rules
-		// unexercised until the coverage check caught it.
+		// An empty Buildable makes every can-build condition false, silently
+		// leaving the rules behind them unexercised.
 		var buildable []string
 		for _, candidate := range []string{"powr", "proc", "weap", "barr", "e1", "mcv"} {
 			if rng.Intn(2) == 0 {

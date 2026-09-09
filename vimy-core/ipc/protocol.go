@@ -8,8 +8,8 @@ import (
 	"net"
 )
 
-// Envelope is the wire format shared with the OpenRA mod.
-// Data is kept as RawMessage so handlers can defer deserialization to the concrete type.
+// Envelope is the wire format shared with the OpenRA mod. Data stays raw so a
+// handler deserializes into its own concrete type.
 type Envelope struct {
 	Type string          `json:"type"`
 	Data json.RawMessage `json:"data"`
@@ -23,15 +23,14 @@ func NewEnvelope(msgType string, data any) (Envelope, error) {
 	return Envelope{Type: msgType, Data: raw}, nil
 }
 
-// ReadEnvelope reads a single length-prefixed JSON envelope from the connection.
-// The 4-byte LE prefix matches the C# BinaryWriter on the OpenRA side.
+// ReadEnvelope reads one length-prefixed envelope; the 4-byte LE prefix matches
+// the C# BinaryWriter on the OpenRA side.
 func ReadEnvelope(conn net.Conn) (Envelope, error) {
 	var length uint32
 	if err := binary.Read(conn, binary.LittleEndian, &length); err != nil {
 		return Envelope{}, fmt.Errorf("read length: %w", err)
 	}
 
-	// Guard against corrupted frames or malicious payloads.
 	if length == 0 || length > 1<<20 {
 		return Envelope{}, fmt.Errorf("invalid message length: %d", length)
 	}

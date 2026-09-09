@@ -47,9 +47,8 @@ type GameContext struct {
 	// Where the state export for this game was written, when one was. What
 	// lets a replay find the states that go with these doctrines.
 	ExportPath string
-	// The directive the strategist was working from. The weights it chose came
-	// from this sentence, so a post mortem that stops at the weights stops one
-	// step short.
+	// The directive the weights were chosen from — a post mortem that stops at
+	// the weights stops one step short.
 	Directive string
 }
 
@@ -72,9 +71,8 @@ type LessonRow struct {
 	Confidence float64
 }
 
-// InputDoctrine is the minimal shape the store needs to archive one doctrine.
-// Callers pass a slice of these (serialized) rather than the full agent types,
-// to keep the store package free of agent/rules imports.
+// InputDoctrine is what the store needs to archive a doctrine — serialized
+// rather than the agent types, so this package imports neither agent nor rules.
 type InputDoctrine struct {
 	Tick         int
 	DoctrineJSON string // already-serialized rules.Doctrine
@@ -89,9 +87,8 @@ type InputDoctrine struct {
 // InputRuleFiring is a per-rule, per-doctrine-window firing record.
 type InputRuleFiring struct {
 	RuleName string
-	// FireCount is how often the condition matched; ActCount how often the
-	// action then did something. They are not the same measure and a rule
-	// where they diverge is the interesting kind.
+	// FireCount is condition matches, ActCount actions that did something. A rule
+	// where the two diverge is the interesting kind.
 	FireCount int
 	ActCount  int
 	FirstTick int
@@ -114,11 +111,9 @@ type MemoryFilter struct {
 	TopMLessons      int
 }
 
-// SameSideFactions returns the factions that share a tech tree with the
-// given faction (vimy-wkv). Memory queries should match any faction on the
-// same side: france/england/germany are Allied, russia/ukraine are Soviet.
-// Cross-side leakage stays blocked because Soviet and Allied units differ
-// (APC vs Ranger, Iron Curtain vs Chronosphere, etc.).
+// SameSideFactions returns the factions sharing a tech tree, which is the right
+// granularity for memory retrieval. Cross-side stays blocked: the unit rosters
+// don't correspond.
 func SameSideFactions(faction string) []string {
 	switch faction {
 	case "france", "england", "germany":
@@ -130,9 +125,8 @@ func SameSideFactions(faction string) []string {
 	}
 }
 
-// MemoryContext is the assembled retrieval result. Exemplars are examples
-// worth emulating; Cautionaries are patterns worth AVOIDING (framed as
-// negative constraints, not as templates).
+// MemoryContext is the assembled retrieval result: Exemplars to emulate,
+// Cautionaries framed as constraints to avoid rather than as templates.
 type MemoryContext struct {
 	Exemplars    []ArchivedDoctrine
 	Cautionaries []ArchivedDoctrine
@@ -193,8 +187,8 @@ func (s *Store) migrate() error {
 	return goose.Up(s.db, "migrations")
 }
 
-// RecordGame inserts a minimal game row. Used when no retrospective is
-// available — preserves the legacy dashboard counters.
+// RecordGame inserts a minimal row when no retrospective is available, so the
+// dashboard counters stay correct.
 func (s *Store) RecordGame(r GameRecord) error {
 	_, err := s.queries.InsertGame(context.Background(), db.InsertGameParams{
 		ExportPath:      sql.NullString{},
@@ -246,9 +240,8 @@ func (s *Store) Losses() int {
 	return int(n)
 }
 
-// ArchiveGame inserts the game row and all per-doctrine records. reviewJSON
-// is the JSON-encoded GameReview (may be ""); qualityTag may be "" if no
-// review was produced. Returns the new game's ID.
+// ArchiveGame inserts the game row and its per-doctrine records, returning the
+// new game's ID. reviewJSON and qualityTag are empty when no review ran.
 func (s *Store) ArchiveGame(
 	ctx context.Context,
 	gameCtx GameContext,
@@ -296,8 +289,7 @@ func (s *Store) ArchiveGame(
 				DoctrineID: doctrineID,
 				RuleName:   f.RuleName,
 				FireCount:  int64(f.FireCount),
-				// Always Valid: anything this code writes was measured. NULL is
-				// reserved for the rows that predate the counter.
+				// Always Valid — NULL is reserved for rows predating the counter.
 				ActCount:  sql.NullInt64{Int64: int64(f.ActCount), Valid: true},
 				FirstTick: int64(f.FirstTick),
 				LastTick:  int64(f.LastTick),
@@ -347,11 +339,9 @@ func (s *Store) ArchiveLessons(
 	return tx.Commit()
 }
 
-// QueryMemory fetches exemplar doctrines (to emulate), cautionary doctrines
-// (to avoid), and lessons for the librarian to judge. SQL filters only on
-// our_faction — the librarian decides cross-opponent relevance semantically,
-// so opponent_faction on MemoryFilter is accepted for future use but not
-// applied at the SQL layer.
+// QueryMemory gathers exemplars, cautionaries and lessons for the librarian to
+// judge. SQL filters on our_faction only: cross-opponent relevance is a
+// semantic call, so MemoryFilter's opponent_faction is accepted but unused.
 func (s *Store) QueryMemory(ctx context.Context, f MemoryFilter) (MemoryContext, error) {
 	if f.TopKExemplars <= 0 {
 		f.TopKExemplars = 2
@@ -363,11 +353,9 @@ func (s *Store) QueryMemory(ctx context.Context, f MemoryFilter) (MemoryContext,
 		f.TopMLessons = 5
 	}
 
-	// Same-side fan-out (vimy-wkv). sqlc + sqlite mishandles slice params
-	// when combined with named params like @lim (positional indices shift),
-	// so we run the single-faction query for each side member and merge.
-	// Limits are applied per-faction; the librarian's TopK selection layer
-	// trims the union to the desired final size.
+	// One query per side member rather than a slice param: sqlc and sqlite shift
+	// positional indices when a slice is combined with named params. Limits apply
+	// per faction; the librarian trims the union.
 	sideFactions := SameSideFactions(f.OurFaction)
 
 	var exemplars []db.QueryExemplarDoctrinesRow
@@ -522,9 +510,7 @@ func (s *Store) TopLessons(ctx context.Context, limit int) ([]GlobalLesson, erro
 	return out, nil
 }
 
-// EncodeJSON is a convenience helper so callers outside this package can
-// produce the JSON payloads expected by ArchiveGame/ArchiveLessons without
-// pulling in encoding/json themselves.
+// EncodeJSON produces the payloads ArchiveGame and ArchiveLessons expect.
 func EncodeJSON(v any) (string, error) {
 	if v == nil {
 		return "", nil
@@ -576,11 +562,8 @@ type ReplayableGame struct {
 	Directive       string
 }
 
-// ReplayableGames lists the games that recorded an export, newest first.
-//
-// Games without one are omitted rather than listed as unavailable: a game with
-// no states cannot be replayed, and offering it only to fail is worse than not
-// offering it.
+// ReplayableGames lists games that recorded an export, newest first. Games
+// without one are omitted rather than offered and then failed.
 func (s *Store) ReplayableGames(ctx context.Context) ([]ReplayableGame, error) {
 	rows, err := s.queries.ListReplayableGames(ctx)
 	if err != nil {
@@ -631,10 +614,8 @@ func (s *Store) DoctrinesForGame(ctx context.Context, gameID int64) ([]DoctrineW
 	return out, nil
 }
 
-// LinkExport associates an export file with a game.
-//
-// Backfill for games recorded before the archive knew where its states went.
-// New games carry the path from the moment they are archived.
+// LinkExport backfills games recorded before the archive tracked export paths;
+// new games carry theirs from the moment they are archived.
 func (s *Store) LinkExport(ctx context.Context, gameID int64, path string) error {
 	if err := s.queries.SetGameExportPath(ctx, db.SetGameExportPathParams{
 		ExportPath: nullableString(path),
@@ -668,22 +649,17 @@ func (s *Store) AllGames(ctx context.Context) ([]ReplayableGame, error) {
 	return out, nil
 }
 
-// Firing is what a rule actually did during a game.
-//
-// Distinct from anything a replay can tell you: a replay reads the sampled
-// states in the export, so a rule that fired a handful of times across a whole
-// game can be absent from every sample and look as though it never could. These
-// counts come from the game itself.
+// Firing is what a rule did during a game, which a replay cannot recover: a
+// replay sees only sampled states, so a rule that fired a handful of times can
+// be absent from every sample and read as one that never could.
 type Firing struct {
 	Matched int
 	// Acted is -1 when the game predates the counter, which is not the same as
 	// zero and must not be read as "it did nothing".
 	Acted int
-	// When the rule first and last did something. A replay can say what blocked
-	// a rule but not when a working rule did its work, and "it fired" and "it
-	// fired for the first time two thirds of the way through" are different
-	// findings — the second is how a scouting rule that works looked like a
-	// scouting rule that was broken.
+	// When the rule first and last did something. "It fired" and "it first fired
+	// two thirds of the way in" are different findings, and only the second
+	// distinguishes a working scouting rule from a broken one.
 	FirstTick, LastTick int
 }
 

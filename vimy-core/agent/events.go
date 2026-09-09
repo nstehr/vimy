@@ -21,26 +21,22 @@ const (
 	EventSuperweaponReady     EventKind = "superweapon_ready"
 	EventFirstContact         EventKind = "first_contact"
 	EventStrategyCountered    EventKind = "strategy_countered"
-	// Harvester harass signal. Separate from economy_crisis (which fires only
-	// on total collapse) because sustained flee cycles can strangle income
-	// without any harvester dying — the count stays at cap so the rule-engine
-	// replacement rule stays silent. These events let the retrospective write
-	// "protect harvesters" lessons and the LLM raise ground_def proactively.
+	// Separate from economy_crisis, which needs total collapse: sustained flee
+	// cycles strangle income without a harvester dying, so the count stays at cap
+	// and nothing downstream notices.
 	EventHarvesterLost        EventKind = "harvester_lost"
 	EventHarvesterUnderAttack EventKind = "harvester_under_attack"
 )
 
-// Event represents a significant game event detected by diffing consecutive
-// game states. Events are accumulated on the strategist and included in the
-// LLM situation summary so it knows *why* it's being asked to re-evaluate.
+// Event is a change detected by diffing consecutive game states. Carried into
+// the LLM situation summary so it knows why it is being asked to re-evaluate.
 type Event struct {
 	Kind   EventKind
 	Tick   int
 	Detail string // human-readable description for the LLM
 }
 
-// stateSnapshot captures the diffable fields from a game state tick.
-// The strategist stores one and compares against the next tick to detect events.
+// stateSnapshot is the diffable subset of a game state, held for one tick.
 type stateSnapshot struct {
 	buildingIDs  map[int]string // id → type for owned buildings
 	combatCount  int            // number of non-economic, non-harvester units
@@ -51,29 +47,25 @@ type stateSnapshot struct {
 	superReady   map[string]bool
 	enemiesSeen  bool // any enemies visible
 
-	// Per-domain unit tracking for strategy_countered detection
 	infantryIDs map[int]bool
 	vehicleIDs  map[int]bool
 	aircraftIDs map[int]bool
 
-	// Cooldown: tick of last strategy_countered event (carried forward by strategist)
+	// Carried forward by the strategist as a cooldown.
 	lastCounterTick int
 
-	// Harvester harass tracking. harvestersFleeing is the count of
-	// harvesters currently in the flee-tracking map — a proxy for "actively
-	// being chased off their ore". lastHarvesterAttackTick is the cooldown
-	// marker for EventHarvesterUnderAttack.
+	// harvestersFleeing proxies "being chased off their ore";
+	// lastHarvesterAttackTick is the event cooldown.
 	harvestersFleeing       int
 	lastHarvesterAttackTick int
 
-	// lossBaselineTick is when the domain ID accumulation window started.
-	// Within the window, domain ID sets grow (new units added) but dead units
-	// stay in the set so countMissing reflects accumulated losses.
+	// Start of the accumulation window. Dead units stay in the domain ID sets
+	// until it closes, so countMissing sees the total rather than one tick's.
 	lossBaselineTick int
 }
 
-// criticalBuildingTypes are buildings whose loss fundamentally changes
-// what the AI can do and should trigger immediate re-evaluation.
+// criticalBuildingTypes change what the AI can do at all, so losing one forces
+// immediate re-evaluation.
 var criticalBuildingTypes = map[string]bool{
 	rules.ConstructionYard: true,
 	rules.WarFactory:       true,
@@ -93,7 +85,6 @@ func baseType(t string) string {
 	return base
 }
 
-// isCriticalBuilding handles faction variants (e.g. "fact.england" → "fact").
 func isCriticalBuilding(t string) bool {
 	return criticalBuildingTypes[baseType(t)]
 }
@@ -151,15 +142,12 @@ var threatDisplayName = map[string]string{
 // counterCooldownTicks is the minimum gap between strategy_countered events.
 const counterCooldownTicks = 200
 
-// harvesterAttackCooldownTicks is the minimum gap between
-// harvester_under_attack events. 500 ticks (~20s at 25Hz) gives the
-// retrospective multiple signal pings across a sustained harass session
-// without flooding the event log on every tick of threat.
+// harvesterAttackCooldownTicks lets a sustained harass register several times
+// over without filling the event log a tick at a time.
 const harvesterAttackCooldownTicks = 500
 
-// counterLossThresholds is the minimum units lost per domain to trigger the event.
-// Infantry dies much faster than vehicles/aircraft, so a lower threshold
-// ensures the event fires sooner for infantry swarms getting shredded.
+// counterLossThresholds is per domain because infantry dies far faster than
+// vehicles or aircraft, and a shared threshold would fire too late for it.
 var counterLossThresholds = map[string]int{
 	"infantry": 2,
 	"vehicle":  3,
@@ -187,9 +175,8 @@ var lateGameBuildings = map[string]bool{
 	rules.IronCurtain:      true,
 }
 
-// gamePhase determines the game phase from building milestones, with tick
-// as a generous fallback for stalled games. Tick-only thresholds caused the
-// LLM to think it was mid-game when only barracks and a few troops existed.
+// gamePhase reads building milestones, falling back to tick for stalled games.
+// On tick alone the LLM called barracks and a few troops mid-game.
 func gamePhase(gs model.GameState) string {
 	hasLate := false
 	hasMid := false
@@ -215,8 +202,8 @@ func gamePhase(gs model.GameState) string {
 		return "Mid Game"
 	}
 
-	// Barracks + 5 combat units = valid mid-game (infantry rush).
-	// Just barracks + 2 troops stays "Early Game" to avoid premature transitions.
+	// Barracks plus a real infantry force is a valid mid-game (infantry rush);
+	// barracks plus a couple of troops is not.
 	if hasBarracks {
 		combatCount := 0
 		for _, u := range gs.Units {
@@ -232,7 +219,6 @@ func gamePhase(gs model.GameState) string {
 	return "Early Game"
 }
 
-// isCombatUnit returns true if the unit is a combat unit (not harvester or MCV).
 func isCombatUnit(u model.Unit) bool {
 	t := baseType(u.Type)
 	return t != rules.Harvester && t != rules.MCV
@@ -298,7 +284,6 @@ func takeSnapshot(gs model.GameState, memory map[string]any) stateSnapshot {
 		}
 	}
 
-	// Check for building-based enemy intel
 	if bases, ok := memory["enemyBases"].(map[string]rules.EnemyBaseIntel); ok {
 		for _, base := range bases {
 			if base.FromBuildings {
@@ -308,7 +293,6 @@ func takeSnapshot(gs model.GameState, memory map[string]any) stateSnapshot {
 		}
 	}
 
-	// Harvesters actively fleeing — populated by the flee-harvesters rule.
 	snap.harvestersFleeing = rules.CountFleeingHarvesters(memory)
 
 	return snap
@@ -383,9 +367,8 @@ func detectEvents(gs model.GameState, memory map[string]any, prev *stateSnapshot
 		})
 	}
 
-	// 5b. harvester_lost: an individual harvester was destroyed this tick.
-	// Distinct from economy_crisis (which fires only on total collapse) so the
-	// retrospective can learn from early harass losses before they compound.
+	// 5b. harvester_lost: one harvester died — distinct from economy_crisis so
+	// early harass is learnable before it compounds.
 	if cur.harvesterCnt < prev.harvesterCnt && cur.harvesterCnt > 0 {
 		lost := prev.harvesterCnt - cur.harvesterCnt
 		events = append(events, Event{
@@ -396,11 +379,8 @@ func detectEvents(gs model.GameState, memory map[string]any, prev *stateSnapshot
 		_ = lost // kept for future detail-enrichment if we start emitting kill counts > 1
 	}
 
-	// 5c. harvester_under_attack: harvesters currently being chased off their
-	// ore, even if not dying. Sustained flee cycles strangle income because
-	// the harvester-replacement rule stays silent (count-at-cap); without a
-	// signal here, the LLM has no way to learn "protect harvesters" from the
-	// event log.
+	// 5c. harvester_under_attack: chased off the ore without dying. Nothing else
+	// reports this — the replacement rule sees the count still at cap.
 	if cur.harvestersFleeing > 0 {
 		lastTick := prev.lastHarvesterAttackTick
 		if lastTick == 0 || gs.Tick-lastTick >= harvesterAttackCooldownTicks {
@@ -432,9 +412,8 @@ func detectEvents(gs model.GameState, memory map[string]any, prev *stateSnapshot
 		})
 	}
 
-	// 8. strategy_countered: forces being hard-countered by enemy composition.
-	// Fires when we lose 3+ units in a domain AND relevant enemy counter-threats
-	// are visible. 200-tick cooldown prevents spam during prolonged battles.
+	// 8. strategy_countered: domain losses with the matching enemy counter
+	// visible. Cooldown keeps a prolonged battle from spamming.
 	if prev.lastCounterTick == 0 || gs.Tick-prev.lastCounterTick >= counterCooldownTicks {
 		type domainCheck struct {
 			name    string
@@ -514,9 +493,8 @@ func formatThreats(threats map[string]int) string {
 	return strings.Join(parts, ", ")
 }
 
-// mergeIDSets returns the union of two ID sets. Used to accumulate domain
-// unit IDs across ticks so that losses add up over the observation window
-// instead of resetting each tick.
+// mergeIDSets unions two ID sets, so losses accumulate over the observation
+// window instead of resetting each tick.
 func mergeIDSets(a, b map[int]bool) map[int]bool {
 	merged := make(map[int]bool, len(a)+len(b))
 	for id := range a {
