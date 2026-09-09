@@ -542,3 +542,49 @@ func TestSwapClearsSquadsTheSeedRulesCannotForm(t *testing.T) {
 		t.Errorf("expected no squads after a swap to rules that form none, got %d", n)
 	}
 }
+
+// A squad in combat is not idle, and combat is the only situation
+// squad-disengage runs in: the rule requires the squad away from base and
+// outnumbered. Gating the action on idleness meant that at the moment it most
+// needed to withdraw it had nobody to order. Games 88, 90 and 91:
+// squad-disengage-ground-attack matched 155 times and ordered something 10.
+func TestSquadDisengageOrdersUnitsThatAreFighting(t *testing.T) {
+	memory := map[string]any{
+		"squads": map[string]*Squad{
+			"ground-attack": {Name: "ground-attack", UnitIDs: []int{1, 2, 3}},
+		},
+	}
+	env := RuleEnv{
+		Memory: memory,
+		State: model.GameState{
+			Tick: 1000,
+			// None idle: every member is engaged.
+			Units: []model.Unit{
+				{ID: 1, X: 900, Y: 900, Idle: false},
+				{ID: 2, X: 910, Y: 900, Idle: false},
+				{ID: 3, X: 900, Y: 910, Idle: false},
+			},
+			Buildings: []model.Building{{ID: 9, Type: "fact", X: 100, Y: 100}},
+		},
+	}
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	before := conn.Sent()
+	if err := SquadDisengage("ground-attack")(env, conn); err != nil {
+		t.Fatal(err)
+	}
+	if conn.Sent() == before {
+		t.Fatal("a squad locked in combat was given no retreat order")
+	}
+
+	// And it must not re-order every tick: that cancels the in-flight path and
+	// leaves the squad standing still under fire.
+	mid := conn.Sent()
+	if err := SquadDisengage("ground-attack")(env, conn); err != nil {
+		t.Fatal(err)
+	}
+	if conn.Sent() != mid {
+		t.Error("re-issued the same retreat order immediately, cancelling the path")
+	}
+}

@@ -36,6 +36,7 @@ const (
 	mcvDeployCooldownTicks = 50
 	mcvMaxDeployAttempts   = 3
 	guardResendTicks       = 100
+	disengageResendTicks   = 100
 	mcvFallbackStep        = 250
 	mcvFallbackMaxRings    = 3
 )
@@ -2861,11 +2862,36 @@ func RecallOverextended(name string, leashPct float64) ActionFunc {
 // the local threat ratio is too high (outmatched).
 func SquadDisengage(name string) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
-		ids := squadIdleActorIDs(env, name)
+		// Committable, not idle. A squad in combat is not idle, and combat is
+		// the only situation this runs in: the rule requires the squad to be
+		// away from base and outnumbered. Gating on idleness meant the moment
+		// it most needed to withdraw it had nobody to order. Across games 88,
+		// 90 and 91 squad-disengage-ground-attack matched 155 times and ordered
+		// something 10 — 145 decisions to retreat that never reached a unit,
+		// while every vehicle built died: 6 delivered 6 lost in game 90, 8 and
+		// 8 in game 91.
+		//
+		// The same mistake as guard-harvesters, fixed there on 2026-09-08 and
+		// not generalised.
+		ids := squadCommittableActorIDs(env, name)
 		if len(ids) == 0 {
 			return nil
 		}
+		// Re-issuing a move every tick cancels the in-flight path, so a
+		// retreating squad would stand still being shot. Only re-order when the
+		// destination has really changed or the order has gone stale.
 		centX, centY := env.BuildingCentroid()
+		type disengageOrder struct {
+			X, Y, Tick int
+		}
+		orders := memoryMap[string, disengageOrder](env.Memory, "squadDisengageOrder")
+		if prev, ok := orders[name]; ok &&
+			prev.X == centX && prev.Y == centY &&
+			env.State.Tick-prev.Tick < disengageResendTicks {
+			return nil
+		}
+		orders[name] = disengageOrder{X: centX, Y: centY, Tick: env.State.Tick}
+
 		for _, id := range ids {
 			slog.Debug("squad disengaging", "squad", name, "unit", id, "dest_x", centX, "dest_y", centY)
 			if err := conn.Send(ipc.TypeMove, ipc.MoveCommand{
