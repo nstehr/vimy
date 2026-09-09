@@ -209,15 +209,51 @@ nothing to do with the analysis it was built for:
 None of those were analysis features. They are what a real compiler gives you
 for free once it exists, and they are the strongest evidence for the claim above.
 
-## What none of it has done
+## What none of it had done, until it did
 
-Five games, five losses. `squad-attack` has still never fired. Every finding
-here is about **mechanism** — what the rule set could not do and why — and not
-one of them has yet produced a game Vimy won.
+For most of a day this section read: five games, five losses, `squad-attack`
+never once fired, and not one finding here had produced a game Vimy won. That
+was worth writing down, and it is worth keeping the correction next to it.
 
-That distinction is worth holding onto. A tool that explains a loss precisely is
-not the same as a tool that prevents one, and the archive now contains a great
-deal of well-attributed losing.
+Game 88 was a win. The first in eleven games, and the numbers say what carried
+it:
+
+| | games 85-87 | game 88 |
+|---|---|---|
+| harvesters | median 5, max 5 | median 9, max 9 |
+| combat vehicles | max 2 | max 5 |
+| `squad-attack-known-base` | 0-2 firings | 58 firings, from 12% |
+| result | loss | **win** |
+
+The last constraint was one clause. `produce-extra-harvester` carried
+`role-count(harvester) < role-count(refinery) + 1`, which permits about one
+harvester per refinery where the game wants two, so the rule acted exactly once
+in each of games 85, 86 and 87 and the economy stood at four refineries and
+five harvesters in all three. Changing `+ 1` to `* 2` moved it to nine, and
+everything downstream that had been an argument with the cash gate stopped
+being one.
+
+Two things that matters for, and one it does not.
+
+It is **one game**, against one opponent, and germany-vs-russia is the same
+matchup that lost 83 and 86. A single win does not separate "the cap was the
+binding constraint" from "this opponent played badly". The measured claims are
+narrower and they hold regardless: the economy moved from five harvesters to
+nine, the vehicle ceiling broke for the first time in the series, and the AI
+attacked fifty-eight times having managed none in the game before.
+
+It also took **the whole stack**. Scouting found the enemy at tick 1770 instead
+of 13250. The airfield stopped spending the war factory's money, so the factory
+arrived at 4% instead of 57%. The service depot was priced as the tech gate it
+is, unlocking every real tank in the game. `FormSquad` formed partial squads,
+`Swap` stopped deleting them, and `form-defense-squad` stopped demanding a pool
+of eight. Each of those was necessary and none was sufficient — every one of
+them was in place for games 86 and 87, which lost.
+
+The claim this document makes is not "the compiler wins games". It is that a
+compiler which keeps its structure can tell you which clause is standing in the
+way, one at a time, until none is. That is what happened, and the last one was
+a `+ 1`.
 
 ## What is still missing, and why it is the same lesson
 
