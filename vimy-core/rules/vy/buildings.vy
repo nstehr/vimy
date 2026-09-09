@@ -134,7 +134,7 @@ rule build-service-depot {
   because "not a repair bay — fix is the prerequisite for the medium tank, the heavy tank and the mammoth, so without one the only armour either side can field is the Allied light tank; game 84 never built it, fought with light tanks and artillery, and met six tesla tanks and two mammoths"
   category economy exclusive
   do produce-service-depot
-  require vehicle-weight > 0.3
+  require vehicle-weight > 0.1
   require not is-rushed()
   require not queue-busy(Building)
   require can-build-role(service-depot)
