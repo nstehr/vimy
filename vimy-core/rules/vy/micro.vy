@@ -97,6 +97,7 @@ rule scout-with-idle-units {
   because "two idle units, because the action sends at most two — it used to ask for a whole attack group, so the only path to early intel waited on six spare units the squads were consuming, and game 83 saw nothing at all until tick 13250 of 24020"
   do scout
   require not enemies-visible
+  require not has-enemy-intel()
   require count(unassigned-idle-ground) >= 2
 }
 
