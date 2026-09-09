@@ -193,6 +193,30 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     {{.Preempted}} that held but lost their category. The sample is every 15th evaluation.
   </p>
 
+  {{if .NoOps}}
+  <section>
+    <h2>Rules that fired and did nothing</h2>
+    <p class="lede">
+      The condition held and the action ordered nothing. Blame analysis cannot see this — it replays
+      <em>conditions</em>, so a rule that matched and achieved nothing looks like a rule that worked.
+      A gate the action enforces but the rule does not state shows up here and nowhere else.
+    </p>
+    <div class="figure">
+      <div class="figure-head">
+        <span class="figure-title">Matched, but ordered nothing</span>
+        <span class="legend"><span style="font-family:var(--mono)">never acted first, then by share wasted</span></span>
+      </div>
+      <div class="onset">
+        {{range .NoOps}}
+        <span class="on-name">{{.Name}}</span>
+        <span class="on-track"><span class="on-bar{{if gt .Acted 0}} early{{end}}" style="left:0;width:{{printf "%.1f" .WastePct}}%"></span></span>
+        <span class="on-when">{{.Acted}}/{{.Matched}} acted</span>
+        {{end}}
+      </div>
+    </div>
+  </section>
+  {{end}}
+
   {{if .Late}}
   <section>
     <h2>When each working rule first did something</h2>

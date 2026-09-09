@@ -100,6 +100,27 @@ type finding struct {
 	Detail   string
 }
 
+// noOp is a rule whose condition held and whose action did nothing.
+//
+// The axis blame analysis cannot see. Currie replays CONDITIONS, so a rule that
+// matched and then achieved nothing looks like a rule that worked. Five of the
+// findings on 8-9 September were exactly this shape — FormSquad refusing to
+// form a partial squad, deploy-mcv retrying one tile, repair-buildings holding
+// a cash floor the rule did not state, guard-harvesters and squad-disengage
+// both asking for idle members of a squad that was busy fighting — and every
+// one was found by hand in SQL rather than by this report.
+type noOp struct {
+	Name    string
+	Matched int
+	Acted   int
+	Gap     int
+	// Share of matches that ordered something. Zero is the interesting case:
+	// the rule fires and the action is inert.
+	ActRate float64
+	// The complement, as a percentage, for the bar.
+	WastePct float64
+}
+
 type view struct {
 	Title      string
 	States     int
@@ -116,6 +137,8 @@ type view struct {
 	Faction string
 	// The two or three facts worth reading before anything else.
 	Findings []finding
+	// Rules that matched and did nothing, worst first.
+	NoOps []noOp
 	// Working rules the timeline had no room for. Counted, because a silent cap
 	// reads as "this is all of them".
 	LateOmitted int
@@ -391,6 +414,35 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 	if len(v.Late) > 24 {
 		v.LateOmitted = len(v.Late) - 24
 		v.Late = v.Late[:24]
+	}
+
+	for name, f := range firings {
+		if f.Acted < 0 || f.Matched <= 0 || f.Matched == f.Acted {
+			continue
+		}
+		v.NoOps = append(v.NoOps, noOp{
+			Name: name, Matched: f.Matched, Acted: f.Acted,
+			Gap:      f.Matched - f.Acted,
+			ActRate:  float64(f.Acted) / float64(f.Matched),
+			WastePct: 100 * (1 - float64(f.Acted)/float64(f.Matched)),
+		})
+	}
+	// Rules that never acted at all first, then by how much work was wasted.
+	// Ranking on the gap alone buries a rule that failed thirteen times under
+	// one that failed nine hundred, and in game 91 the thirteen were the ones
+	// that decided it.
+	sort.Slice(v.NoOps, func(i, j int) bool {
+		zi, zj := v.NoOps[i].Acted == 0, v.NoOps[j].Acted == 0
+		if zi != zj {
+			return zi
+		}
+		if v.NoOps[i].ActRate != v.NoOps[j].ActRate {
+			return v.NoOps[i].ActRate < v.NoOps[j].ActRate
+		}
+		return v.NoOps[i].Gap > v.NoOps[j].Gap
+	})
+	if len(v.NoOps) > 10 {
+		v.NoOps = v.NoOps[:10]
 	}
 
 	reconcile(&v, firings)
