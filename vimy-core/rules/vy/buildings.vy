@@ -273,7 +273,8 @@ rule build-extra-war-factory {
   priority 490
   category economy exclusive
   do produce-war-factory
-  require vehicle-weight > 0.6
+  because "one war factory serialises the whole ground army with the ore trucks: harvesters, artillery and tanks all queue through it, and games 86-90 never fielded more than two combat vehicles at once. The old gate of 0.6 was strictly above the highest weight the strategist chose in 106 of 107 windows"
+  require vehicle-weight > 0.4
   require not is-rushed()
   require not queue-busy(Building)
   require can-build-role(war-factory)
