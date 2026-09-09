@@ -199,12 +199,14 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     <p class="lede">
       The condition held and the action ordered nothing. Blame analysis cannot see this — it replays
       <em>conditions</em>, so a rule that matched and achieved nothing looks like a rule that worked.
-      A gate the action enforces but the rule does not state shows up here and nowhere else.
+      <b>Read the zeroes.</b> A rule that never once acted has a gate inside its action that its
+      condition does not state. A partial rate is usually the opposite — an idempotency throttle
+      declining to re-issue an order the units are already carrying out, which is correct.
     </p>
     <div class="figure">
       <div class="figure-head">
         <span class="figure-title">Matched, but ordered nothing</span>
-        <span class="legend"><span style="font-family:var(--mono)">never acted first, then by share wasted</span></span>
+        <span class="legend"><span style="font-family:var(--mono)">never acted first — those are the bugs</span></span>
       </div>
       <div class="onset">
         {{range .NoOps}}
