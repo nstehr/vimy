@@ -261,7 +261,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
         <span class="site-src">{{.Source}}</span>
         <span class="site-n">{{printf "%.0f" .SoleRate}}<span style="font-size:.7rem;font-weight:400">% of its chances</span></span>
         <div class="bar"><i style="width:{{pct .SolePct}}%"></i></div>
-        <span class="site-meta">{{.File}}:{{.Line}} · blocks {{len .Rules}} rule{{if ne (len .Rules) 1}}s{{end}} · {{.Sole}} sole, {{.Blocked}} blocked over {{$.States}} states{{if .Live}} · <b style="color:var(--calm)">already works</b>{{end}}{{if .Impossible}} · <b style="color:var(--calm)">{{$.Faction}} can never have {{.Impossible}}</b>{{end}}</span>
+        <span class="site-meta">{{.File}}:{{.Line}} · blocks {{len .Rules}} rule{{if ne (len .Rules) 1}}s{{end}} · {{.Sole}} sole, {{.Blocked}} blocked over {{$.States}} states{{if .Live}} · <b style="color:var(--calm)">already works</b>{{end}}{{if .Impossible}} · <b style="color:var(--calm)">{{$.Faction}} can never have {{.Impossible}}</b>{{end}}{{if .QuietAxis}} · <b style="color:var(--calm)">the doctrine kept {{.QuietAxis}} at {{printf "%.2f" .QuietAt}} — this rule was told to stay quiet</b>{{end}}</span>
       </div>
       {{else}}
       <div class="site"><span class="site-src">Nothing was ever solely responsible.</span></div>

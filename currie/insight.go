@@ -72,7 +72,7 @@ func (l *llmInsighter) Read(ctx context.Context, r *Replay) (*Insight, error) {
 // facts projects a replay into what the model reads — the same numbers the page
 // shows and only those, so it cannot make a claim the reader can't check.
 func facts(r *Replay) types.GameFacts {
-	v := buildWith("", r.Report, r.Windows_, r.Firings, r.Game.DurationTicks, r.Game.OurFaction)
+	v := buildWith("", r.Report, r.Windows_, r.Firings, r.Game.DurationTicks, r.Game.OurFaction, r.Doctrines)
 
 	f := types.GameFacts{
 		Our_faction:      r.Game.OurFaction,
@@ -105,7 +105,7 @@ func facts(r *Replay) types.GameFacts {
 		// Guards, lines whose rules already work, and clauses this faction can
 		// never satisfy are not findings. Ranking puts them last, but the model
 		// should not see them at all — it has led with one before.
-		if s.Live() || s.Guard() || s.Impossible != "" {
+		if s.Live() || s.Guard() || s.Impossible != "" || s.QuietAxis != "" {
 			continue
 		}
 		f.Top_clauses = append(f.Top_clauses, types.BlockedClause{

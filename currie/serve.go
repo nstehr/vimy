@@ -231,7 +231,7 @@ func (s *server) handleGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	v := buildWith(fmt.Sprintf("game %d · %s vs %s · %s", rep.Game.ID, rep.Game.OurFaction,
-		rep.Game.OpponentFaction, outcome(rep.Game.Won)), rep.Report, rep.Windows_, rep.Firings, rep.Game.DurationTicks, rep.Game.OurFaction)
+		rep.Game.OpponentFaction, outcome(rep.Game.Won)), rep.Report, rep.Windows_, rep.Firings, rep.Game.DurationTicks, rep.Game.OurFaction, rep.Doctrines)
 	v.Windows = rep.Windows
 	v.Orphaned = rep.Orphaned
 	v.Approximate = rep.Approximate

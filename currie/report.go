@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nstehr/vimy/vimy-core/rules"
 	"github.com/nstehr/vimy/vimy-core/store"
 )
 
@@ -26,6 +27,11 @@ type site struct {
 	// games: a shorter game yields fewer of everything, and the length difference
 	// then reads as a finding.
 	SoleRate float64
+	// The doctrine axis every rule on this line serves, when they all serve one
+	// the doctrine kept near zero. Such a line is the rule set obeying orders,
+	// not a constraint worth relaxing.
+	QuietAxis string
+	QuietAt   float64
 	// What this line asks for that the faction can never have; empty when the
 	// clause is satisfiable in principle. Such a line is correct and inert.
 	Impossible string
@@ -172,8 +178,8 @@ type view struct {
 }
 
 // buildWith adds the analysis that needs the windows kept apart.
-func buildWith(title string, rep report, windows []windowStats, firings map[string]store.Firing, durationTicks int, faction string) view {
-	v := build(title, rep, firings, durationTicks, faction)
+func buildWith(title string, rep report, windows []windowStats, firings map[string]store.Firing, durationTicks int, faction string, doctrines []rules.Doctrine) view {
+	v := build(title, rep, firings, durationTicks, faction, doctrines)
 	byRule := make(map[string][]clauseReport, len(rep.Rules))
 	for _, r := range rep.Rules {
 		byRule[r.Rule] = r.Clauses
@@ -214,7 +220,7 @@ func plural(n int) string {
 	return "s"
 }
 
-func build(title string, rep report, firings map[string]store.Firing, durationTicks int, faction string) view {
+func build(title string, rep report, firings map[string]store.Firing, durationTicks int, faction string, doctrines []rules.Doctrine) view {
 	v := view{Title: title, States: rep.States, RuleCount: len(rep.Rules)}
 
 	// Keyed on text as well as position, so an inlined def reads as one site
@@ -266,19 +272,42 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 	// exists and its forming rule correctly declined to run twice. Ranked by
 	// blame alone these fill the first page. They stay, below the lines that
 	// actually stopped something.
+	quiet := quietAxes(doctrines)
 	for i := range v.Sites {
 		v.Sites[i].Impossible = impossibleFor(v.Sites[i].Source, faction)
+		// Only when EVERY rule the line blocks serves the same switched-off
+		// axis. A shared def like reserves() blocks rules across the whole set,
+		// and one quiet caller must not excuse it.
+		axis, all := "", len(v.Sites[i].Rules) > 0
+		for _, r := range v.Sites[i].Rules {
+			a := axisOf(r)
+			if a == "" {
+				all = false
+				break
+			}
+			if axis == "" {
+				axis = a
+			} else if axis != a {
+				all = false
+				break
+			}
+		}
+		if all {
+			if med, ok := quiet[axis]; ok {
+				v.Sites[i].QuietAxis, v.Sites[i].QuietAt = axis, med
+			}
+		}
 	}
 	sort.SliceStable(v.Sites, func(i, j int) bool {
-		ai := v.Sites[i].Live() || v.Sites[i].Guard() || v.Sites[i].Impossible != ""
-		aj := v.Sites[j].Live() || v.Sites[j].Guard() || v.Sites[j].Impossible != ""
+		ai := v.Sites[i].Live() || v.Sites[i].Guard() || v.Sites[i].Impossible != "" || v.Sites[i].QuietAxis != ""
+		aj := v.Sites[j].Live() || v.Sites[j].Guard() || v.Sites[j].Impossible != "" || v.Sites[j].QuietAxis != ""
 		if ai != aj {
 			return aj
 		}
 		return v.Sites[i].Sole > v.Sites[j].Sole
 	})
 	for _, st := range v.Sites {
-		if st.Live() || st.Guard() || st.Impossible != "" {
+		if st.Live() || st.Guard() || st.Impossible != "" || st.QuietAxis != "" {
 			v.InertSites++
 		}
 	}
@@ -375,7 +404,7 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 	// that blocked most, the rule that fired and achieved nothing, and the
 	// building that arrived latest.
 	for _, st := range v.Sites {
-		if st.Live() || st.Guard() || st.Impossible != "" {
+		if st.Live() || st.Guard() || st.Impossible != "" || st.QuietAxis != "" {
 			continue
 		}
 		v.Findings = append(v.Findings, finding{
@@ -403,6 +432,14 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 	for i := len(v.Late) - 1; i >= 0; i-- {
 		if !strings.HasPrefix(v.Late[i].Name, "build-") {
 			continue
+		}
+		// A building the doctrine deprioritised arriving late is obedience.
+		// Game 95 led with "build-airfield first acted 73% into the game" on a
+		// doctrine that held air_weight at 0.05 all game.
+		if a := axisOf(v.Late[i].Name); a != "" {
+			if _, quiet := quietAxes(doctrines)[a]; quiet {
+				continue
+			}
 		}
 		v.Findings = append(v.Findings, finding{
 			Headline: fmt.Sprintf("%s first acted %.0f%% into the game", v.Late[i].Name, v.Late[i].Pct),
