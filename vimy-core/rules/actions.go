@@ -36,9 +36,18 @@ const (
 	mcvDeployCooldownTicks = 50
 	mcvMaxDeployAttempts   = 3
 	guardResendTicks       = 100
-	disengageResendTicks   = 100
-	mcvFallbackStep        = 250
-	mcvFallbackMaxRings    = 3
+	// How long a squad that has withdrawn is left alone by the attacking rules.
+	// squad-reengage sends any idle squad member at the enemy the moment it
+	// stops moving, so without this a withdrawal walks home, arrives, goes idle
+	// and is immediately sent back — which in game 95 was the busiest combat
+	// rule in the game at 32 acts against 8 deliberate attacks. Distinct from
+	// the damaged-unit mark, which clear-healed-units releases as soon as the
+	// unit is at full health: a unit that withdrew intact is exactly the case
+	// that would release instantly.
+	disengageHoldTicks   = 300
+	disengageResendTicks = 100
+	mcvFallbackStep      = 250
+	mcvFallbackMaxRings  = 3
 )
 
 func ActionDeployMCV(env RuleEnv, conn *ipc.Connection) error {
@@ -2732,9 +2741,20 @@ func squadIdleActorIDs(env RuleEnv, name string) []uint32 {
 		}
 	}
 	retreating := getRetreatingUnits(env.Memory)
+	held := memoryMap[int, int](env.Memory, "disengagedUntil")
 	var ids []uint32
 	for _, id := range sq.UnitIDs {
 		_, isRetreating := retreating[id]
+		// A unit that has just withdrawn is not available to the attacking
+		// rules until it has had time to regroup. squadCommittableActorIDs is
+		// deliberately not filtered this way: a withdrawal must still be able
+		// to command units it has already pulled back.
+		if until, ok := held[id]; ok {
+			if env.State.Tick < until {
+				continue
+			}
+			delete(held, id)
+		}
 		if idleSet[id] && !isRetreating {
 			ids = append(ids, uint32(id))
 		}
@@ -2891,6 +2911,11 @@ func SquadDisengage(name string) ActionFunc {
 			return nil
 		}
 		orders[name] = disengageOrder{X: centX, Y: centY, Tick: env.State.Tick}
+
+		held := memoryMap[int, int](env.Memory, "disengagedUntil")
+		for _, id := range ids {
+			held[int(id)] = env.State.Tick + disengageHoldTicks
+		}
 
 		for _, id := range ids {
 			slog.Debug("squad disengaging", "squad", name, "unit", id, "dest_x", centX, "dest_y", centY)

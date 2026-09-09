@@ -588,3 +588,43 @@ func TestSquadDisengageOrdersUnitsThatAreFighting(t *testing.T) {
 		t.Error("re-issued the same retreat order immediately, cancelling the path")
 	}
 }
+
+// squad-reengage sends any idle squad member at the enemy the moment it stops
+// moving — 32 acts in game 95 against 8 deliberate attacks. Without a hold, a
+// squad ordered to withdraw walks home, goes idle on arrival and is sent
+// straight back, so the retreat is undone by the busiest rule in the game.
+func TestDisengagedUnitsAreNotImmediatelySentBack(t *testing.T) {
+	memory := map[string]any{
+		"squads": map[string]*Squad{
+			"ground-attack": {Name: "ground-attack", UnitIDs: []int{1, 2}},
+		},
+	}
+	env := func(tick int, idle bool) RuleEnv {
+		return RuleEnv{
+			Memory: memory,
+			State: model.GameState{
+				Tick: tick,
+				Units: []model.Unit{
+					{ID: 1, X: 900, Y: 900, Idle: idle},
+					{ID: 2, X: 910, Y: 900, Idle: idle},
+				},
+				Buildings: []model.Building{{ID: 9, Type: "fact", X: 100, Y: 100}},
+			},
+		}
+	}
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	// Withdraw while fighting.
+	if err := SquadDisengage("ground-attack")(env(1000, false), conn); err != nil {
+		t.Fatal(err)
+	}
+	// They arrive home and go idle: the attacking rules must not see them yet.
+	if ids := squadIdleActorIDs(env(1100, true), "ground-attack"); len(ids) != 0 {
+		t.Errorf("a squad that just withdrew was offered to the attacking rules: %v", ids)
+	}
+	// After the hold expires they are available again.
+	if ids := squadIdleActorIDs(env(1000+disengageHoldTicks+1, true), "ground-attack"); len(ids) != 2 {
+		t.Errorf("units stayed benched after the hold expired: got %d, want 2", len(ids))
+	}
+}
