@@ -23,10 +23,9 @@ var pages embed.FS
 
 // The web app.
 //
-// Point it at a Vimy state directory and it lists what is in there. Replaying a
-// game costs a vimyc subprocess per doctrine window — a few seconds for a long
-// game — so a result is cached until the process exits. Nothing about an
-// archived game changes, so there is nothing to invalidate.
+// Replaying a game costs a vimyc subprocess per doctrine window, so results are
+// cached for the life of the process. Safe because an archived game's states
+// never change; a rules edit is handled by the on-disk cache's fingerprint.
 type server struct {
 	dir      string
 	rulesDir string
@@ -42,9 +41,8 @@ type server struct {
 	sweeps   map[int64]*sweepJob
 }
 
-// sweepJob is one game's parameter sweep, in flight or finished. Like the
-// model's reading it takes longer than a page load — a few hundred vimyc runs —
-// so it is started with the page and fetched when it is done.
+// sweepJob is one game's parameter sweep. A few hundred vimyc runs, so like the
+// model's reading it starts with the page and is fetched when it finishes.
 type sweepJob struct {
 	done   chan struct{}
 	sweeps []Sweep
@@ -53,18 +51,17 @@ type sweepJob struct {
 
 // insightJob is one game's reading, in flight or finished.
 //
-// The replay takes half a second and the model takes half a minute, so they
-// cannot share a request. The job starts when the page is asked for and the
-// page polls for it; a finished one is kept, because it costs a call to make
-// and nothing about an archived game changes.
+// Half a second for the replay against half a minute for the model, so they
+// cannot share a request: the job starts with the page and the page polls it.
+// Finished readings are kept — they cost a paid call and never go stale.
 type insightJob struct {
 	done    chan struct{}
 	insight *Insight
 	err     error
 }
 
-// insighter turns a replay into prose. Nil when no model is configured, which
-// is not an error — the report stands on its own.
+// insighter turns a replay into prose. Nil when no model is configured; the
+// report stands on its own.
 type insighter interface {
 	Read(ctx context.Context, r *Replay) (*Insight, error)
 }
@@ -109,9 +106,8 @@ type indexView struct {
 	Games      []gameRow
 	Unlinked   int
 	HasInsight bool
-	// Export files in the state directory that no game claims, offered for
-	// attaching to a game recorded before the archive noted where its states
-	// went.
+	// Unclaimed exports, offered for attaching to games recorded before the
+	// archive tracked export paths.
 	Loose []looseExport
 	Note  string
 }
@@ -160,12 +156,12 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "index.html.tmpl", v)
 }
 
-// exports lists the state exports sitting in the directory, newest first,
-// marking the ones a game already claims.
+// exports lists the state exports in the directory, newest first, marking those
+// a game already claims.
 //
-// Offered rather than guessed: an export's filename is the minute it was
-// written, which is close to a game's end but not derivable from it, and a
-// wrong pairing produces a confident report about the wrong game.
+// Offered rather than guessed: the filename is the minute it was written, close
+// to a game's end but not derivable from it, and a wrong pairing yields a
+// confident report about the wrong game.
 func (s *server) exports(claimed map[string]bool) []looseExport {
 	entries, err := os.ReadDir(filepath.Join(s.dir, "exports"))
 	if err != nil {
@@ -241,8 +237,8 @@ func (s *server) handleGame(w http.ResponseWriter, r *http.Request) {
 	v.Approximate = rep.Approximate
 	v.Home = "/"
 
-	// Started here, rendered later. The report is what the reader came for and
-	// it is ready now; the prose arrives when it arrives.
+	// The report is what the reader came for and it is ready now; the prose
+	// arrives when it arrives.
 	if s.insight != nil {
 		s.startInsight(id, rep)
 		v.InsightURL = fmt.Sprintf("/game/%d/insight", id)
@@ -336,8 +332,8 @@ func (s *server) startInsight(id int64, rep *Replay) {
 
 	go func() {
 		defer close(job.done)
-		// Its own context: the request that started this is long gone by the
-		// time the model answers, and cancelling then would waste the call.
+		// Its own context: the originating request is long gone by the time the
+		// model answers, and cancelling then wastes a paid call.
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 		started := time.Now()
@@ -378,8 +374,7 @@ func (s *server) handleInsight(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "insight.html.tmpl", v)
 }
 
-// insightView is the fragment's own model, so the placeholder knows where to
-// ask again.
+// insightView carries the poll URL so the placeholder knows where to ask again.
 type insightView struct {
 	URL     string
 	Pending bool

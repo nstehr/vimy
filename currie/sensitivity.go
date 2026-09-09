@@ -9,18 +9,17 @@ import (
 
 // Telling a rule-set problem from a doctrine that priced itself out.
 //
-// A blame site says a `require` stopped a rule. It does not say whose fault
-// that is, and the two cases want opposite responses:
+// A blame site says a `require` stopped a rule, not whose fault that is, and the
+// two cases want opposite responses:
 //
-//   - The clause blocks about as much under every doctrine. The rule set asks
-//     for something the game rarely provides — go and change the rule.
-//   - The clause blocks heavily under some doctrines and barely under others.
-//     The rules are fine and the strategist priced itself out — go and change
-//     the prompt, or the weights it is allowed to reach.
+//   - Blocking about as much under every doctrine: the rule set asks for
+//     something the game rarely provides. Change the rule.
+//   - Blocking heavily under some doctrines and barely under others: the rules
+//     are fine and the strategist priced itself out. Change the prompt, or the
+//     weights it can reach.
 //
-// The same rule sources compile to different thresholds under different
-// doctrines, and a game runs dozens of them, so the archive already contains the
-// experiment. This reads it.
+// A game runs dozens of doctrines, each compiling the same sources to different
+// thresholds, so the archive already contains the experiment.
 
 // Sensitivity is one clause, and what its blocking tracks.
 type Sensitivity struct {
@@ -35,9 +34,8 @@ type Sensitivity struct {
 	// Block rate across windows, weighted by states.
 	Low, High, Overall float64
 
-	// The doctrine input whose value best separates the windows where this
-	// clause blocked from the ones where it did not. Empty when nothing
-	// separates them.
+	// The doctrine input best separating the windows where this clause blocked
+	// from those where it did not; empty when nothing separates them.
 	Knob      string
 	KnobLow   float64 // mean value of the knob in the low-blocking half
 	KnobHigh  float64
@@ -66,9 +64,8 @@ func (s Sensitivity) Verdict() string {
 	}
 }
 
-// doctrinalSpread is how far apart the two halves must be before the difference
-// is worth naming. Below this the clause is blocking for reasons the doctrine
-// does not control.
+// doctrinalSpread is the gap between halves worth naming; below it the clause
+// blocks for reasons no doctrine controls.
 const doctrinalSpread = 0.25
 
 // minWindowsPerSide keeps a split from being decided by one short window.
@@ -81,8 +78,8 @@ func sensitivity(windows []windowStats, sites []site, byRule map[string][]clause
 		return nil // too few doctrines to say anything about variation
 	}
 
-	// Every doctrine input that actually varied. A weight the strategist never
-	// moved explains nothing, and testing it only invites a false positive.
+	// Only inputs that actually varied: a weight the strategist never moved
+	// explains nothing and only invites a false positive.
 	knobs := map[string]bool{}
 	for k := range windows[0].Params {
 		first, varies := windows[0].Params[k], false
@@ -97,17 +94,16 @@ func sensitivity(windows []windowStats, sites []site, byRule map[string][]clause
 		}
 	}
 
-	// One row per site, not per rule. A `require` written inside a def is
-	// inlined into every rule that calls it, and those are the same line with
-	// the same threshold — listing them separately says the same thing six
-	// times and buries the sites that only appear once.
+	// One row per site: a `require` inside a def is the same line at the same
+	// threshold in every caller, and listing them separately buries the sites
+	// that appear once.
 	var out []Sensitivity
 	for _, st := range sites {
 		var keys []string
 		for _, rule := range st.Rules {
 			for _, c := range byRule[rule] {
-				// `site.File` is a basename by the time it reaches a template;
-				// a clause still carries the path it was compiled from.
+				// site.File is a basename by template time; a clause still carries
+				// its compiled path.
 				if filepath.Base(c.File) != filepath.Base(st.File) ||
 					c.Line != st.Line || c.Source != st.Source {
 					continue
@@ -131,10 +127,9 @@ func sensitivity(windows []windowStats, sites []site, byRule map[string][]clause
 	return out
 }
 
-// analyseSite measures one source line across the doctrine windows.
-//
-// The rate is averaged over the rules the line appears in: a shared clause
-// blocking five rules in a window is one fact about the line, not five.
+// analyseSite measures one source line across doctrine windows, averaging over
+// the rules it appears in — a shared clause blocking five rules is one fact
+// about the line, not five.
 func analyseSite(windows []windowStats, knobs map[string]bool, st site, keys []string) Sensitivity {
 	type point struct {
 		rate   float64
@@ -173,10 +168,9 @@ func analyseSite(windows []windowStats, knobs map[string]bool, st site, keys []s
 		s.Overall = num / den
 	}
 
-	// Split the windows at each knob's median and compare the halves. A median
-	// split rather than a correlation: the doctrine inputs move together, so a
-	// correlation coefficient reads as significance it has not earned, and
-	// "blocks 34% below 0.55 and 96% above" is a claim someone can check.
+	// Median split rather than correlation: the doctrine inputs move together, so
+	// a coefficient reads as significance it hasn't earned, and "blocks 34% below
+	// 0.55 and 96% above" is a claim someone can check.
 	for k := range knobs {
 		vals := make([]float64, 0, len(pts))
 		for _, p := range pts {

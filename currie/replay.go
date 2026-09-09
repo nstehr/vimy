@@ -15,9 +15,8 @@ import (
 	"github.com/nstehr/vimy/vimy-core/store"
 )
 
-// A subprocess rather than a library, matching how vimy-core compiles a
-// doctrine: the boundary is a rule set and a state stream in, a report out, and
-// the analysis belongs to the compiler that owns the syntax.
+// A subprocess, as vimy-core compiles a doctrine: rule set and states in, report
+// out, and the analysis belongs to the compiler that owns the syntax.
 type report struct {
 	States     int               `json:"states"`
 	Rules      []ruleReport      `json:"rules"`
@@ -47,16 +46,14 @@ type clauseReport struct {
 
 // Replaying a game window by window.
 //
-// A game runs under many doctrines — 37 in the game of 7 Sep — and each compiles
-// to its own rule set with its own thresholds. Replaying every state against one
-// doctrine answers a question nobody asked. So the states are split by the rule
-// set that was actually in force and each group is replayed against it.
+// A game runs under dozens of doctrines, each compiling to its own rule set with
+// its own thresholds, so states are split by the set actually in force and each
+// group replayed against it. Replaying everything against one doctrine answers a
+// question nobody asked.
 //
-// The pairing is exact because the recording says which set it ran: every case
-// carries the fingerprint of its rule set. Inferring it does not work — a
-// doctrine takes effect after it is archived, and two doctrines can differ only
-// in a threshold inside a comparison, which no amount of matching on names or
-// recorded state can see.
+// Exact, because every case carries its rule set's fingerprint. Inferring the
+// pairing does not work: a doctrine takes effect after it is archived, and two
+// can differ only in a threshold inside a comparison.
 
 type exportFile struct {
 	States []json.RawMessage `json:"states"`
@@ -90,13 +87,11 @@ type Replay struct {
 	Report      report
 	// The doctrines the strategist chose, in the order they took effect.
 	DoctrineNames []string
-	// The doctrines themselves, with the strategist's reasoning. What links the
-	// directive to the weights.
+	// The doctrines with the strategist's reasoning — what links the directive to
+	// the weights.
 	Doctrines []rules.Doctrine
-	// What each rule actually did in the game, from the archive rather than the
-	// replay. A replay reads sampled states, so a rule that fired a handful of
-	// times across a whole game can be absent from every sample and look as
-	// though it never could fire.
+	// From the archive, not the replay: a replay reads sampled states, so a rule
+	// that fired a handful of times can be absent from every sample.
 	Firings map[string]store.Firing
 	// Per-window block rates, for telling a rule-set problem from a doctrine
 	// that priced itself out.
@@ -106,7 +101,6 @@ type Replay struct {
 // replayGame pairs a game's states to its doctrines and blames each window
 // against the rules that were actually running.
 func replayGame(ctx context.Context, st *store.Store, g store.ReplayableGame, rulesDir, bin string) (*Replay, error) {
-	// Compressed or not: recordings made before compression must stay readable.
 	raw, err := rules.ReadExport(expand(g.ExportPath))
 	if err != nil {
 		return nil, fmt.Errorf("export for game %d: %w", g.ID, err)
@@ -128,9 +122,9 @@ func replayGame(ctx context.Context, st *store.Store, g store.ReplayableGame, ru
 	if err != nil {
 		return nil, fmt.Errorf("vimyc: %w", err)
 	}
-	// The same sources the blame runs against. Without this the fingerprints
-	// come from whatever was embedded when this binary was built, and a replay
-	// can blame against one rule set while pairing against another.
+	// The same sources the blame runs against. Otherwise fingerprints come from
+	// whatever was embedded at build time, and the replay pairs against one rule
+	// set while blaming another.
 	compiler.RulesDir = rulesDir
 
 	// Fingerprint every rule set the game could have been running, including the
@@ -155,9 +149,8 @@ func replayGame(ctx context.Context, st *store.Store, g store.ReplayableGame, ru
 		chosen = append(chosen, d)
 	}
 
-	// Each state belongs to the rule set that was running when it was recorded.
-	// A state appears in many cases; the fingerprint is the same across all of
-	// them, so the first one wins.
+	// A state appears in many cases carrying the same fingerprint, so the first
+	// wins.
 	seen := make(map[int]bool, len(exp.States))
 	rep := &Replay{Game: g}
 	for _, c := range exp.Cases {
@@ -174,18 +167,16 @@ func replayGame(ctx context.Context, st *store.Store, g store.ReplayableGame, ru
 		rep.Matched++
 	}
 
-	// Nothing matched: the `.vy` sources have been edited since this game, so
-	// recompiling its doctrines produces rule sets it never ran. The archive
-	// records the doctrine but not the artifact it compiled to, so an exact
-	// replay of an older game is not recoverable.
+	// Nothing matched: the sources have been edited since this game, and the
+	// archive records the doctrine but not the artifact it compiled to, so an
+	// exact replay is unrecoverable.
 	//
-	// Falling back to pairing by tick — the doctrine of the moment, applied to
-	// today's rules. Wrong in a knowable way, and better than replaying a whole
-	// game against one doctrine, so it is offered and labelled rather than
-	// refused.
-	// Tested on doctrine windows rather than on matched states: a game starts on
-	// the seed rule set, whose fingerprint is stable across source edits, so a
-	// seed match alone would look like success while leaving nothing to replay.
+	// Fall back to pairing by tick — the doctrine of the moment against today's
+	// rules. Wrong in a knowable way, so it is labelled rather than refused.
+	//
+	// Tested on doctrine windows, not matched states: the seed set's fingerprint
+	// survives source edits, so a seed match alone would look like success while
+	// leaving nothing to replay.
 	paired := 0
 	for _, w := range byID {
 		if w.Rating != "seed" {
@@ -220,8 +211,6 @@ func replayGame(ctx context.Context, st *store.Store, g store.ReplayableGame, ru
 			if !ok {
 				continue
 			}
-			// The window in force is the last one that took effect at or
-			// before this tick.
 			w := byTick[0]
 			for _, cand := range byTick {
 				if cand.Tick <= tick {
@@ -248,8 +237,7 @@ func replayGame(ctx context.Context, st *store.Store, g store.ReplayableGame, ru
 	if rep.Windows == 0 {
 		return nil, fmt.Errorf("game %d: no states paired to any archived doctrine", g.ID)
 	}
-	// From the archive, not the replay: the two disagree wherever sampling
-	// missed a rule, and the disagreement is worth showing rather than hiding.
+	// The two disagree wherever sampling missed a rule, which is worth showing.
 	if firings, err := st.FiringsForGame(ctx, g.ID); err == nil {
 		rep.Firings = firings
 	}
@@ -265,8 +253,8 @@ func blameWindow(w *window, rulesDir, bin string) (report, error) {
 	return blameStates(rules.DoctrineParams(w.Doctrine), w.States, rulesDir, bin)
 }
 
-// blameStates is blameWindow with the parameters given rather than derived, so
-// a sweep can override one input and leave the rest as they were.
+// blameStates takes parameters rather than deriving them, so a sweep can
+// override one input and leave the rest alone.
 func blameStates(params map[string]float64, raw []json.RawMessage, rulesDir, bin string) (report, error) {
 	dir, err := os.MkdirTemp("", "currie-")
 	if err != nil {
@@ -330,17 +318,14 @@ func ruleArgs(dir string) ([]string, error) {
 // merger sums per-window reports into one.
 //
 // Keyed on rule name and clause index rather than position: specialisation drops
-// rules a doctrine cannot use, so two windows rarely emit the same list. The
-// clause index is stable for a rule that survives, because every window compiles
-// the same `.vy` sources and only the parameters differ.
+// what a doctrine cannot use, so two windows rarely emit the same list. Clause
+// indices survive because every window compiles the same sources.
 type merger struct {
 	rules      map[string]*ruleReport
 	order      []string
 	thresholds []thresholdReport
-	// Per-window block rates, kept alongside the sums. Summing answers "what
-	// stopped this rule"; keeping the windows apart answers the more useful
-	// question of whether it stopped it because of how the rules are written or
-	// because of what the strategist asked for that window.
+	// Per-window block rates alongside the sums. The sum says what stopped a
+	// rule; the windows say whether it was the rule set or that window's doctrine.
 	windows []windowStats
 }
 
@@ -379,11 +364,9 @@ func (m *merger) addWindow(r report, name string, params map[string]float64, sta
 }
 
 func (m *merger) add(r report) {
-	// Gates are kept per window, not merged. A curve's candidate values come
-	// from the distribution of that window's states, so two windows rarely
-	// offer the same ones and adding them position by position sums counts
-	// taken at different thresholds. Relief is computed per window and summed
-	// afterwards, where it is well defined.
+	// Per window, not merged: candidate values come from that window's state
+	// distribution, so adding them position by position sums counts taken at
+	// different thresholds. Relief sums afterwards, where it is well defined.
 	m.thresholds = append(m.thresholds, r.Thresholds...)
 	for _, in := range r.Rules {
 		cur, ok := m.rules[in.Rule]
@@ -413,8 +396,6 @@ func (m *merger) result(states int) report {
 	out := report{States: states}
 	for _, name := range m.order {
 		r := m.rules[name]
-		// Recomputed after merging: the culprit of the whole game is not
-		// necessarily the culprit of any one window.
 		r.Culprit = nil
 		best := -1
 		for i, c := range r.Clauses {
@@ -435,11 +416,9 @@ func (m *merger) result(states int) report {
 	return out
 }
 
-// runVimyc compiles the rule set and replays the states, returning the report.
-//
-// Warnings on stderr — shared priorities, shadowed rules — are findings about
-// the rule set rather than failures, so they are passed through rather than
-// swallowed or treated as an error.
+// runVimyc compiles the rule set and replays the states. Warnings on stderr —
+// shared priorities, shadowed rules — are findings about the rule set, so they
+// pass through rather than being swallowed or raised as errors.
 func runVimyc(bin string, args []string) ([]byte, error) {
 	cmd := exec.Command(bin, args...)
 	var out, errs bytes.Buffer

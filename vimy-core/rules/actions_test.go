@@ -42,8 +42,7 @@ func TestDefenseHint_SingleBuilding(t *testing.T) {
 		},
 		Memory: make(map[string]any),
 	}
-	// With a single building, radius clamps to 3, and candidates are placed
-	// around the perimeter. Result must be near the building.
+	// One building clamps the radius to 3, so every candidate is near it.
 	for range 20 {
 		x, y := defenseHint(env)
 		dx := math.Abs(float64(x - 100))
@@ -120,10 +119,8 @@ func TestDefenseHint_SpreadFromExisting(t *testing.T) {
 }
 
 func TestDefenseHint_HarvesterEmergencyBiasesToRefinery(t *testing.T) {
-	// Main base at (100,100). Refinery far out at (400,400) — periphery.
-	// Without harvester emergency, threat-toward-enemy dominates and defenses
-	// land near the main cluster. With 2+ harvesters fleeing, defenses should
-	// shift toward the refinery (large positive X AND Y).
+	// A refinery far from the main cluster. Normally threat-toward-enemy wins;
+	// with harvesters fleeing, placement should shift to the refinery.
 	env := RuleEnv{
 		State: model.GameState{
 			Buildings: []model.Building{
@@ -220,9 +217,8 @@ func TestDefenseHint_NoEnemyIntel(t *testing.T) {
 }
 
 func TestDefenseHint_PullsTowardChokepoint(t *testing.T) {
-	// Base sits in a pocket of land. A bridge at zone (3,2) — map ~(350,250)
-	// — is the only crossing to the enemy side. Defenses should cluster near
-	// that bridge far more often than on the opposite side of the base.
+	// The bridge at zone (3,2) is the only crossing to the enemy side, so
+	// defenses should favour it over the far side of the base.
 	grid := &model.TerrainGrid{
 		Cols: 7, Rows: 5, CellW: 100, CellH: 100,
 		Grid: []model.TerrainType{
@@ -265,8 +261,7 @@ func TestDefenseHint_PullsTowardChokepoint(t *testing.T) {
 		t.Errorf("expected placements to favor bridge: near=%d away=%d", nearBridge, awayFromBridge)
 	}
 
-	// Critical: defenses must never land on the bridge zone itself — a
-	// pillbox on the only crossing would strand our own units.
+	// Never on the bridge itself: that strands our own units.
 	onBridge := 0
 	for range 300 {
 		x, y := defenseHint(env)
@@ -281,8 +276,8 @@ func TestDefenseHint_PullsTowardChokepoint(t *testing.T) {
 
 // --- ActionUnloadAPCNearTarget ---
 
-// Verify unload threshold is permissive enough to survive APC pathing stalls.
-// The previous 5-cell threshold was too tight and the engineer never disembarked.
+// The unload threshold has to survive APC pathing stalls; too tight and the
+// engineer never disembarks.
 func TestActionUnloadAPCNearTarget_UnloadsAtNewThreshold(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
@@ -313,8 +308,8 @@ func TestActionUnloadAPCNearTarget_UnloadsAtNewThreshold(t *testing.T) {
 	}
 }
 
-// APC stuck at the same tile beyond apcStallTicks must unload even if still
-// farther than the normal unload threshold — stall is the fallback path.
+// Past apcStallTicks the APC unloads regardless of distance — stall is the
+// fallback path.
 func TestActionUnloadAPCNearTarget_UnloadsOnStall(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
@@ -331,8 +326,7 @@ func TestActionUnloadAPCNearTarget_UnloadsOnStall(t *testing.T) {
 		},
 		Memory: map[string]any{
 			"apcDeliveryProgress": map[int]apcProgressEntry{
-				// Hasn't moved for >apcStallTicks. Use a generous gap so this
-				// test stays valid if the threshold gets bumped further.
+				// A generous gap, so a raised threshold doesn't invalidate this.
 				10: {LastTick: 500, LastX: 50, LastY: 50},
 			},
 			"apcCargoIntent": map[int]string{10: apcIntentEngineer},
@@ -349,9 +343,8 @@ func TestActionUnloadAPCNearTarget_UnloadsOnStall(t *testing.T) {
 	}
 }
 
-// A brief non-movement window (e.g. server hasn't started pathing yet) must
-// NOT trigger a premature stall-unload. This is the original bug: 50 ticks
-// was too short, so APCs unloaded at base before ever reaching the target.
+// A brief non-movement window — the server not having started pathing — must not
+// read as a stall, or APCs unload at base and never reach the target.
 func TestActionUnloadAPCNearTarget_DoesNotStallPrematurely(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
@@ -420,9 +413,8 @@ func TestActionUnloadAPCNearTarget_TracksProgressWhileMoving(t *testing.T) {
 	}
 }
 
-// Move commands must be throttled — re-issuing the same destination each tick
-// cancels the in-flight path in OpenRA and pins the APC in place. Observed live:
-// 473 Move(123,123) sent over a 13-minute game with actor moving only 14 cells.
+// Re-issuing the same destination cancels the in-flight path and pins the APC,
+// so Move must be throttled.
 func TestActionUnloadAPCNearTarget_ThrottlesMoveSpam(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
@@ -473,8 +465,8 @@ func TestActionUnloadAPCNearTarget_ThrottlesMoveSpam(t *testing.T) {
 	}
 }
 
-// With no visible capturable, the loaded APC should go explore, not no-op.
-// This is the scout-with-loaded-APC behaviour aggressive-capture doctrines rely on.
+// With nothing to capture the loaded APC scouts rather than idling — what
+// aggressive-capture doctrines depend on.
 func TestActionUnloadAPCNearTarget_ExploresWhenNoCapturable(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
@@ -508,10 +500,9 @@ func TestActionUnloadAPCNearTarget_ExploresWhenNoCapturable(t *testing.T) {
 	}
 }
 
-// Re-invoking with the same APC far from its current target must keep the
-// waypoint index — otherwise the APC would pick a new destination every tick
-// and never reach any of them. With round-robin patrol the waypoint index is
-// authoritative; X,Y are derived from it each call.
+// The waypoint index must survive re-invocation, or the APC picks a fresh
+// destination every tick and reaches none. The index is authoritative; X,Y are
+// derived from it.
 func TestActionUnloadAPCNearTarget_ExploreTargetSticky(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
@@ -552,8 +543,8 @@ func TestActionUnloadAPCNearTarget_ExploreTargetSticky(t *testing.T) {
 
 // --- APC cargo disambiguation ---
 
-// An engineer-tagged APC must not be picked up by the combat-loaded list, and
-// vice versa. This is the core invariant for split-intent delivery rules.
+// The core invariant for split-intent delivery: neither list picks up the
+// other's APCs.
 func TestAPCCargoIntent_FiltersByTag(t *testing.T) {
 	env := RuleEnv{
 		State: model.GameState{
@@ -582,11 +573,9 @@ func TestAPCCargoIntent_FiltersByTag(t *testing.T) {
 	}
 }
 
-// Stale tags for dead APCs must be cleaned up. Empty (but live) APCs keep
-// their tag — an APC that just had a load command sent shows CargoCount=0
-// for a tick or two before the server processes the Enter, and pruning
-// during that window strands the APC forever (no deliver rule will pick
-// it up once CargoCount finally increments because the tag is gone).
+// Dead APCs are pruned; live empty ones keep their tag. A freshly-loaded APC
+// reads as empty for a tick or two, and pruning there strands it — no deliver
+// rule picks it up once the cargo finally registers.
 func TestAPCCargoIntent_PrunesStaleTags(t *testing.T) {
 	env := RuleEnv{
 		State: model.GameState{
@@ -618,8 +607,7 @@ func TestAPCCargoIntent_PrunesStaleTags(t *testing.T) {
 	}
 }
 
-// After unload, the tag must be explicitly cleared so the APC can pick up a
-// new mission (e.g. get re-tagged combat by a later load-assault-infantry).
+// Unload clears the tag, so the APC can be re-tagged for a new mission.
 func TestAPCCargoIntent_ClearedOnUnload(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
@@ -1092,18 +1080,13 @@ func TestActionScoutPatrol_ThrottlesMoveSpam(t *testing.T) {
 	}
 }
 
-// A scouting APC stuck on an unreachable waypoint (e.g. corner blocked by a
-// chokepoint) must re-pick a different waypoint. Observed live: 140 Move
-// commands to (123,123), APC crawled 3 cells in 7 minutes because the
-// deterministic farthest-first pick kept returning the same unreachable
-// corner every TTL window.
+// A scouting APC stuck on an unreachable waypoint must re-pick. A deterministic
+// pick returns the same blocked corner every TTL window and the APC never moves.
 func TestActionUnloadAPCNearTarget_StalledScoutRepicksDifferentWaypoint(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
 
-	// Map big enough to yield multiple candidate waypoints. APC at (27,38)
-	// with a prior stale target assigned to the far corner — same position
-	// observed in the live game.
+	// Enough map for several candidates, with a stale assignment to a far corner.
 	prevEntry := apcExploreEntry{X: 123, Y: 123, AssignedAt: 0}
 
 	env := RuleEnv{
@@ -1120,8 +1103,7 @@ func TestActionUnloadAPCNearTarget_StalledScoutRepicksDifferentWaypoint(t *testi
 			"apcCargoIntent":   map[int]string{10: apcIntentEngineer},
 			"apcExploreTarget": map[int]apcExploreEntry{10: prevEntry},
 			"apcDeliveryProgress": map[int]apcProgressEntry{
-				// APC has been at (27,38) since tick 50 → 250 ticks stuck
-				// which exceeds apcScoutStallTicks (200).
+				// 250 ticks stuck, past apcScoutStallTicks.
 				10: {LastTick: 50, LastX: 27, LastY: 38},
 			},
 		},
@@ -1141,11 +1123,9 @@ func TestActionUnloadAPCNearTarget_StalledScoutRepicksDifferentWaypoint(t *testi
 	}
 }
 
-// APC scout mode must rotate through every waypoint, matching ActionScoutPatrol.
-// Previous farthest-first pick oscillated between opposite corners and left
-// mid-edges permanently unvisited — so enemy bases along map edges were never
-// sighted, HasEnemyIntel() stayed false, and doctrines waiting on building
-// intel sat at base forever.
+// Scout mode rotates through every waypoint, as ActionScoutPatrol does.
+// Farthest-first oscillates between opposite corners and never visits mid-edges,
+// so a map-edge enemy base is never sighted and intel-gated doctrines never move.
 func TestActionUnloadAPCNearTarget_RoundRobinVisitsAllWaypoints(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
@@ -1158,9 +1138,8 @@ func TestActionUnloadAPCNearTarget_RoundRobinVisitsAllWaypoints(t *testing.T) {
 	}
 
 	visited := make(map[[2]int]bool)
-	// Simulate the APC teleporting to each assigned waypoint (arrival) so the
-	// round-robin advances. Over len(waypoints) iterations every waypoint
-	// should be seen at least once.
+	// Teleport the APC to each assignment so the rotation advances; every
+	// waypoint should come up within one full cycle.
 	apcPos := [2]int{96, 99} // near map corner, like the live game
 	mem := map[string]any{"apcCargoIntent": map[int]string{10: apcIntentEngineer}}
 
@@ -1181,7 +1160,6 @@ func TestActionUnloadAPCNearTarget_RoundRobinVisitsAllWaypoints(t *testing.T) {
 		}
 		entry := getAPCExploreTargets(mem)[10]
 		visited[[2]int{entry.X, entry.Y}] = true
-		// Simulate arrival so next iteration advances.
 		apcPos = [2]int{entry.X, entry.Y}
 	}
 
@@ -1192,10 +1170,8 @@ func TestActionUnloadAPCNearTarget_RoundRobinVisitsAllWaypoints(t *testing.T) {
 	}
 }
 
-// Capture commands must be throttled — re-issuing the same Capture order each
-// tick cancels the in-flight walk-to-target activity in OpenRA, so engineers
-// never arrive. Observed live: 111 captures of the same (engineer,target)
-// pair in a single game with zero completions.
+// Re-issuing a Capture cancels the in-flight walk to the target, so engineers
+// never arrive without throttling.
 func TestActionCaptureBuilding_ThrottlesOrderSpam(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
@@ -1263,15 +1239,12 @@ func TestActionCaptureBuilding_ThrottlesOrderSpam(t *testing.T) {
 
 // The return rule leaves alone whatever the flee rule is moving.
 //
-// Both fire on the same tick, in different categories so exclusivity cannot
-// arbitrate, and both send the harvester to the nearest refinery — so a
-// harvester fled to the refinery, arrived idle, was sent back out, and came
-// straight back into danger. 696 flee firings against 486 returns across 17,000
-// ticks of game 71 (vimy-mfq).
+// Both fire on the same tick in different categories, so exclusivity cannot
+// arbitrate, and both aim at the nearest refinery — the harvester arrives idle,
+// is sent back out, and walks straight into danger again.
 //
-// Asserted on what the action recorded rather than on the wire: it writes a
-// `harvestSent` entry per harvester it dispatches, which is the same thing the
-// resend guard reads.
+// Asserted on the `harvestSent` entries rather than the wire: they are what the
+// resend guard itself reads.
 func TestSendIdleHarvestersSkipsFleeingOnes(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
@@ -1310,9 +1283,8 @@ func TestSendIdleHarvestersSkipsFleeingOnes(t *testing.T) {
 		t.Errorf("dispatched the fleeing harvester instead of the free one: %+v", sent)
 	}
 
-	// A stale entry must not hold a harvester forever. The map is only pruned
-	// while something is in danger, so once a threat leaves, the entry can sit
-	// there untouched — which froze every harvester that had ever fled.
+	// The map is pruned only while something is in danger, so a stale entry can
+	// sit untouched — and must not hold the harvester forever.
 	env = newEnv()
 	getHarvesterFleeState(env.Memory)[1] = harvesterFleeEntry{
 		Tick: env.State.Tick - harvesterFleeResend - 1, X: 20, Y: 20,
@@ -1351,11 +1323,9 @@ func TestFleeHarvestersClearsItsMapWhenTheThreatLeaves(t *testing.T) {
 	}
 }
 
-// The relocation loop had no memory: mcvFallbackLocation was a pure function of
-// the building centroid, so every relocation sent the MCV to the same tile and
-// each was followed by three more deploys at a spot that had already failed
-// three times. Game 85 recorded deploy-mcv matching 336 times and ordering
-// something 39 times, across the last quarter of a game it could not rebuild in.
+// Successive relocations must pick different tiles. A fallback derived purely
+// from the building centroid returns the same one forever, and each is followed
+// by three more deploys at a spot that has already failed three times.
 func TestMCVFallbackTriesSomewhereNew(t *testing.T) {
 	all := make([]model.TerrainType, 64)
 	for i := range all {
@@ -1377,10 +1347,9 @@ func TestMCVFallbackTriesSomewhereNew(t *testing.T) {
 	}
 }
 
-// Anchored on the MCV, not on what is left of the base. The centroid is derived
-// from remaining buildings, so while a base is overrun it converges on the
-// fighting — the least likely place a deploy succeeds, and the only situation
-// this code runs in.
+// Anchored on the MCV, not the surviving base. A centroid of remaining buildings
+// converges on the fighting while a base is overrun — the worst place to deploy,
+// and the only situation this runs in.
 func TestMCVFallbackIgnoresTheShrinkingBase(t *testing.T) {
 	all := make([]model.TerrainType, 64)
 	for i := range all {

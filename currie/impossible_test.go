@@ -20,10 +20,9 @@ func TestImpossibleForDetects(t *testing.T) {
 	}
 }
 
-// Completion guards are success, not blame. Game 86 fed the model
-// `not squad-exists(air-attack)` at 372 of 372 states and it came back as the
-// second most important finding of the game — the squad existed, and the rule
-// that forms it had correctly declined to form it twice.
+// Completion guards are success, not blame. `not squad-exists(air-attack)`
+// blocking every state means the squad exists and its forming rule correctly
+// declined to run twice — but fed to the model it comes back as a top finding.
 func TestSatisfiedByCompletionCoversSquadsAndIntel(t *testing.T) {
 	guards := []string{
 		"require (not squad-exists(air-attack) and count(unassigned-idle-air) >= 2)",

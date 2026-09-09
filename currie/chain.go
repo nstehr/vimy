@@ -10,20 +10,18 @@ import (
 
 // Following a missing thing back to whatever was supposed to make it.
 //
-// A clause like `count(idle-minelayers) > 0` is not a threshold. It is a report
-// that no minelayer exists, and relaxing it — to "available" rather than "idle",
-// or by removing it — changes nothing, because the problem is upstream. Three
-// separate readings of the same game recommended exactly that, on three
-// different rules, because a blame count cannot tell the difference between "the
-// gate is too tight" and "the thing does not exist".
+// `count(idle-minelayers) > 0` is not a threshold, it is a report that no
+// minelayer exists — and loosening or removing it changes nothing, because the
+// problem is upstream. A blame count cannot tell "this gate is too tight" from
+// "the thing does not exist", and readings of the same game kept recommending
+// the former.
 //
-// So when the clause that stopped a rule is an existence test, this looks for
-// the rule whose action was supposed to produce that thing, and reports on it
-// instead. One hop is enough: it moves the question from "why is this gate
-// closed" to "why did nothing make one", which is the question worth asking.
+// So an existence test is followed one hop, to the rule whose action should have
+// produced the thing. That moves the question from why the gate is closed to why
+// nothing made one.
 
-// existence matches the clause shapes that report a thing missing rather than a
-// quantity being too small.
+// existence matches clauses reporting a thing missing rather than a quantity
+// being too small.
 var existence = []*regexp.Regexp{
 	regexp.MustCompile(`count\(([a-z0-9-]+)\)\s*(?:>\s*0|==\s*0|>=\s*1)`),
 	regexp.MustCompile(`role-count\(([a-z0-9-]+)\)\s*(?:>\s*0|==\s*0|>=\s*1)`),
@@ -56,7 +54,6 @@ func thingName(s string) string {
 // Chain is a dead rule, the thing its blocking clause reports missing, and the
 // rule that was supposed to make it.
 type Chain struct {
-	// The rule that could not fire, and the clause that stopped it.
 	Rule   string
 	Clause string
 	File   string
@@ -65,8 +62,8 @@ type Chain struct {
 	// What the clause reports missing.
 	Thing string
 
-	// The rule whose action would have produced it. Empty when the rule set has
-	// no such rule, which is itself the answer.
+	// The rule whose action would have produced it. Empty when no such rule
+	// exists, which is itself the answer.
 	Maker string
 	// Whether that rule ever fired and did something in the real game.
 	MakerMatched, MakerActed int
@@ -90,20 +87,15 @@ func (c Chain) Verdict() string {
 	}
 }
 
-// satisfiedByCompletion reports whether a clause reads "the thing does not
-// exist yet" — the guard a producing rule carries so it stops once it has
-// succeeded. A maker held by one of these has done its job.
+// satisfiedByCompletion matches the guard a producing rule carries so it stops
+// once it has succeeded. A maker held by one has done its job.
 func satisfiedByCompletion(source string) bool {
 	return strings.Contains(source, "not has-role(") ||
 		strings.Contains(source, "not has-unit(") ||
-		// A squad that exists is a squad-forming rule that succeeded. Game 86
-		// reported `not squad-exists(air-attack)` as blocking 372 of 372 states
-		// and the model read it as the second most important finding of the
-		// game — it means the air squad was formed and the rule declined to
-		// form it again.
+		// A squad that exists is a forming rule that succeeded — read as a top
+		// blocker otherwise, since it blocks every state after the first.
 		strings.Contains(source, "not squad-exists(") ||
-		// Likewise the guard a scouting producer carries: blocked by this means
-		// the enemy was found.
+		// The scouting producer's guard: blocked by it means the enemy was found.
 		strings.Contains(source, "not has-enemy-intel(") ||
 		regexp.MustCompile(`role-count\([a-z0-9-]+\)\s*==\s*0`).MatchString(source) ||
 		strings.Contains(source, "lost-role(")
@@ -112,16 +104,15 @@ func satisfiedByCompletion(source string) bool {
 // chains walks each dead rule's culprit clause back to whatever produces the
 // thing it asks for.
 func chains(rep report, dead []deadRule, firings map[string]int) []Chain {
-	// What each action produces, by the noun in its name: `produce-minelayer`
-	// makes a minelayer. Reading the action rather than the rule name because a
-	// rule may be called anything, while an action names what it does.
+	// Keyed on the noun in the action's name, not the rule's: a rule may be
+	// called anything, while an action names what it does.
 	makers := map[string]*ruleReport{}
 	for i, r := range rep.Rules {
 		for _, verb := range []string{"produce-", "build-", "rebuild-"} {
 			if strings.HasPrefix(r.Action, verb) {
 				thing := thingName(strings.TrimPrefix(r.Action, verb))
-				// The first rule wins, and rules arrive in source order, so a
-				// primary rule beats its rebuild- and extra- variants.
+				// Source order, so a primary rule beats its rebuild- and extra-
+				// variants.
 				if _, seen := makers[thing]; !seen {
 					makers[thing] = &rep.Rules[i]
 				}
@@ -138,11 +129,9 @@ func chains(rep report, dead []deadRule, firings map[string]int) []Chain {
 		if thing == "" {
 			continue // a real threshold, not an existence report
 		}
-		// The noun has to be something the rules can build. `idle-ground` reduces
-		// to "ground", and reporting that no rule produces one is nonsense — it
-		// is a quantity of units, not a unit. Without this check the section
-		// invents a missing thing for every collection predicate, which is the
-		// same over-claiming it was built to stop.
+		// The noun must be something the rules build. `idle-ground` reduces to
+		// "ground", and reporting that nothing produces one is nonsense — without
+		// this the section invents a missing thing per collection predicate.
 		if !rules.IsRole(thing) {
 			continue
 		}
@@ -151,11 +140,8 @@ func chains(rep report, dead []deadRule, firings map[string]int) []Chain {
 			File: d.Culprit.File, Line: d.Culprit.Line, Thing: thing,
 		}
 		if m, ok := makers[thing]; ok {
-			// A maker that is itself blocked only by "the thing already
-			// exists" is not blocked, it has finished. `recover-mcv` requires
-			// `not has-role(construction-yard)`, so once the MCV is deployed
-			// both it and `deploy-mcv` fall silent — which is the deployment
-			// having worked, not a chain to follow.
+			// A maker blocked only by "the thing already exists" has finished,
+			// not stalled — `recover-mcv` falls silent once the MCV is deployed.
 			if m.Culprit != nil && *m.Culprit < len(m.Clauses) &&
 				satisfiedByCompletion(m.Clauses[*m.Culprit].Source) {
 				continue
@@ -172,7 +158,6 @@ func chains(rep report, dead []deadRule, firings map[string]int) []Chain {
 		}
 		out = append(out, c)
 	}
-	// The ones with a named cause first: they are the ones that lead somewhere.
 	sort.SliceStable(out, func(i, j int) bool {
 		return (out[i].MakerCulprit != "") && (out[j].MakerCulprit == "")
 	})
@@ -184,16 +169,13 @@ func chains(rep report, dead []deadRule, firings map[string]int) []Chain {
 
 // --- Clauses this faction can never satisfy ---
 //
-// Game 85 was germany, and four of its top eight blame sites were
-// support-power-ready(SovietParatroopers), support-power-ready(UkraineParabombs)
-// and friends at 445 sole out of 475 states. Every one is correct and inert: an
-// Allied player never holds a Soviet power, so the rule cannot fire and nothing
-// about it should be changed.
+// An Allied game's top blame sites were all support-power-ready on Soviet
+// powers, blocking nearly every state. Correct and inert: the rule cannot fire
+// and nothing about it should change.
 //
-// Blame cannot tell "this gate is too tight" from "this gate is shut for the
-// whole game by something no doctrine controls", so they rank as though they
-// were the tightest constraints in the game. They are the third kind of noise
-// found today, after guards that already succeeded and rules the sample missed.
+// Blame cannot tell a gate that is too tight from one held shut all game by
+// something no doctrine controls, so these rank as the tightest constraints in
+// the game. Third kind of noise, after succeeded guards and sampling misses.
 
 var supportPowerClause = regexp.MustCompile(`support-power-ready\(([A-Za-z]+)\)`)
 var roleClause = regexp.MustCompile(`(?:has-role|can-build-role|role-count)\(([a-z0-9-]+)\)`)
@@ -211,8 +193,8 @@ func impossibleFor(source, faction string) string {
 	}
 	for _, m := range roleClause.FindAllStringSubmatch(source, -1) {
 		role := strings.ReplaceAll(m[1], "-", "_")
-		// Only a positive mention: `not has-role(x)` is satisfied by never
-		// having x, which is the opposite of impossible.
+		// Positive mentions only: `not has-role(x)` is satisfied by never having
+		// x, which is the opposite of impossible.
 		if strings.Contains(source, "not has-role("+m[1]+")") {
 			continue
 		}

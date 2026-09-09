@@ -13,16 +13,15 @@ import (
 
 // Insight is what the model made of a replay.
 //
-// Mirrored rather than aliased so the template and the report file do not
-// depend on generated code, and so a build without a model configured still
-// compiles the page that shows it.
+// Mirrored rather than aliased to the generated type, so the templates don't
+// depend on generated code and a build with no model still compiles the page.
 type Insight struct {
 	Summary    string
 	Findings   []Finding
 	Suggestion string
 	Caveat     string
-	// Null when the blocking was not doctrinal: rewriting the directive would
-	// not help, and offering a rewrite anyway would be confidently useless.
+	// Nil when the blocking was not doctrinal — rewriting the directive would not
+	// help, and suggesting it anyway is confidently useless.
 	Directive *DirectiveAdvice
 }
 
@@ -42,8 +41,8 @@ type Finding struct {
 // llmInsighter reads a replay through BAML.
 type llmInsighter struct{}
 
-// newInsighter returns nil when no key is configured, which is not an error:
-// the report is the product and the prose is commentary on it.
+// newInsighter returns nil with no key configured. Not an error: the report is
+// the product, the prose is commentary.
 func newInsighter() (insighter, error) {
 	if os.Getenv("OPENAI_API_KEY") == "" && os.Getenv("ANTHROPIC_API_KEY") == "" {
 		return nil, nil
@@ -70,10 +69,8 @@ func (l *llmInsighter) Read(ctx context.Context, r *Replay) (*Insight, error) {
 	return ins, nil
 }
 
-// facts projects a replay into what the model is asked to read.
-//
-// Deliberately the same numbers the page shows, and only those: a model given a
-// wider view than the reader can make a claim the reader cannot check.
+// facts projects a replay into what the model reads — the same numbers the page
+// shows and only those, so it cannot make a claim the reader can't check.
 func facts(r *Replay) types.GameFacts {
 	v := buildWith("", r.Report, r.Windows_, r.Firings, r.Game.DurationTicks, r.Game.OurFaction)
 
@@ -92,9 +89,8 @@ func facts(r *Replay) types.GameFacts {
 		Directive:        r.Game.Directive,
 	}
 
-	// A sample rather than all of them: a long game writes forty doctrines and
-	// their rationales are long, and the model needs enough to see the pattern
-	// the directive produced rather than every instance of it.
+	// Sampled: a long game writes forty doctrines with long rationales, and the
+	// model needs the pattern rather than every instance of it.
 	step := max(len(r.Doctrines)/8, 1)
 	for i := 0; i < len(r.Doctrines); i += step {
 		d := r.Doctrines[i]
@@ -106,10 +102,9 @@ func facts(r *Replay) types.GameFacts {
 		})
 	}
 	for _, s := range v.Sites {
-		// A guard, a line whose rules all already work, or one this faction can
-		// never satisfy is not a finding. The ranking already puts these last,
-		// but the model should never see them at all: it read one as the second
-		// most important thing about game 86.
+		// Guards, lines whose rules already work, and clauses this faction can
+		// never satisfy are not findings. Ranking puts them last, but the model
+		// should not see them at all — it has led with one before.
 		if s.Live() || s.Guard() || s.Impossible != "" {
 			continue
 		}

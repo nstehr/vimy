@@ -8,11 +8,10 @@ import (
 
 // What a numeric gate would have cost at another value.
 //
-// `sole` says removing a clause lets a rule fire. It does not say whether
-// *moving* it would, and for a threshold that is the question worth asking. A
-// gate at 600 against a treasury that never exceeded 50 is not mistuned — it is
-// asking for something that never happened, and lowering it to 500 buys
-// nothing. A gate sitting in the middle of the observed range is a dial.
+// `sole` says removing a clause lets a rule fire, not whether *moving* it would
+// — which for a threshold is the question. A gate at 600 against a treasury that
+// never passed 50 is not mistuned, it asks for something that never happened,
+// and 500 buys nothing. A gate inside the observed range is a dial.
 
 type thresholdReport struct {
 	Rule    string       `json:"rule"`
@@ -39,15 +38,15 @@ type Gate struct {
 	Line   int
 	Source string
 	Rules  []string
-	// The value the gate had. A range, because the same line compiles to a
-	// different number under every doctrine and this row spans all of them.
+	// A range, because the same line compiles to a different number under every
+	// doctrine and this row spans all of them.
 	AtLow, AtHigh float64
 	Blocked       int
 	Reached       float64
 	Curve         []curvePoint
 
-	// States that moving the gate, without leaving the observed range, would
-	// stop blocking. Zero means the gate is not the dial it looks like.
+	// States moving the gate would unblock, without leaving the observed range.
+	// Zero means it is not the dial it looks like.
 	Relief int
 	// The values that buy `Relief`, over the windows where any was available.
 	ReliefLow, ReliefHigh float64
@@ -56,8 +55,8 @@ type Gate struct {
 	ReliefPct  float64
 }
 
-// Untunable reports a gate set beyond anything the measured side reached — the
-// change worth making is to the rule, not to the number.
+// Untunable is a gate set beyond anything the measured side reached: change the
+// rule, not the number.
 func (g Gate) Untunable() bool { return g.Relief == 0 }
 
 // gates ranks the thresholds worth tuning, merging the ones that are the same
@@ -75,15 +74,12 @@ func gates(in []thresholdReport, states int) []Gate {
 	var order []key
 
 	for _, t := range in {
-		// Relief per window, where the curve's candidates and the counts they
-		// were measured at belong together.
 		best := t.Blocked
 		bestAt := t.At
 		for _, p := range t.Curve {
-			// Strictly inside the observed range. At or below the floor the
-			// comparison stops excluding anything, and a gate that excludes
-			// nothing is not a gate that was turned — it is one that was
-			// removed, which `sole` already reports.
+			// Strictly inside the observed range: at or below the floor the gate
+			// excludes nothing, which is removal rather than tuning and is what
+			// `sole` already reports.
 			if p.At < t.At && p.At <= t.Reached && p.At > t.Floor && p.Blocked < best {
 				best, bestAt = p.Blocked, p.At
 			}
@@ -134,8 +130,8 @@ func gates(in []thresholdReport, states int) []Gate {
 		}
 		return out[i].Blocked > out[j].Blocked
 	})
-	// Only the gates that are dials. A gate with no relief is already reported
-	// by the blame section, where the honest reading of it lives.
+	// Dials only. A gate with no relief belongs to the blame section, where the
+	// honest reading of it lives.
 	kept := out[:0]
 	for _, g := range out {
 		if g.Relief > 0 {

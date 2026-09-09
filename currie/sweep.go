@@ -7,17 +7,16 @@ import (
 
 // Asking what a doctrine input the strategist never tried would have done.
 //
-// The sensitivity analysis reads variation the strategist actually produced, so
-// it can only speak about values it chose. If `tech-priority` never went below
-// 0.55 all game, no amount of reading the archive says what 0.2 would have
-// done. A sweep replays the recorded states with one input overridden, holding
-// every other input at what that window really had.
+// Sensitivity reads only the variation the strategist produced: if tech-priority
+// never went below 0.55, no reading of the archive says what 0.2 would do. A
+// sweep replays the recorded states with one input overridden and every other
+// held at what that window really had.
 //
-// The limit is worth stating plainly, because it is easy to forget: these
-// states came from the game that happened. A sweep says whether a rule would
-// have been *satisfiable* in the situations that arose, not that the game would
-// have gone differently — different rules produce different situations from the
-// first tick. It is a lower bound on what changed, not a prediction.
+// The limit matters and is easy to forget. These states came from the game that
+// happened, so a sweep says a rule would have been *satisfiable* in the
+// situations that arose — not that the game would have gone differently, since
+// different rules produce different situations from the first tick. A lower
+// bound, not a prediction.
 
 // SweepPoint is one value of one input, and what the rule set could do there.
 type SweepPoint struct {
@@ -34,24 +33,20 @@ type SweepPoint struct {
 type Sweep struct {
 	Knob   string
 	Points []SweepPoint
-	// The range the strategist actually used, so the page can say which part of
-	// the sweep is extrapolation.
+	// What the strategist actually used, so the page can mark the extrapolated
+	// part of the sweep.
 	UsedLow, UsedHigh float64
 	// Live at the best and worst points, for the summary line.
 	Best, Worst SweepPoint
 }
 
-// material is how much a sweep must move the held count before the difference
-// is worth naming a best for. One rule flickering in and out of reach across a
-// whole range is noise, and calling it an optimum would be the same overclaim
-// this tool exists to avoid.
+// material is how far a sweep must move the held count to be worth naming a best
+// for. One rule flickering in and out of reach across the range is noise.
 const material = 0.05
 
-// Verdict is the sentence to put next to the numbers.
-//
-// Judged on held states rather than live rules: a rule satisfiable once and a
-// rule satisfiable four hundred times both count as live, so the coarser
-// measure hides most of what a sweep finds.
+// Verdict is the sentence to put next to the numbers, judged on held states: a
+// rule satisfiable once and one satisfiable four hundred times are both "live",
+// which hides most of what a sweep finds.
 func (s Sweep) Verdict() string {
 	if s.Worst.Held == 0 || float64(s.Best.Held-s.Worst.Held)/float64(s.Worst.Held) < material {
 		return "changes almost nothing"
@@ -71,15 +66,13 @@ func (s Sweep) Material() bool {
 	return s.Worst.Held > 0 && float64(s.Best.Held-s.Worst.Held)/float64(s.Worst.Held) >= material
 }
 
-// sweepValues are the points every float input is tried at. Fixed rather than
-// derived: the question is what the strategist did not try, so the grid has to
-// include values it never reached.
+// sweepValues is fixed rather than derived from the data: the question is what
+// the strategist did not try, so the grid must include what it never reached.
 var sweepValues = []float64{0.1, 0.3, 0.5, 0.7, 0.9}
 
-// sweep replays the game with one input overridden at each value.
-//
-// Every other input keeps the value its own window really had, so this measures
-// one knob rather than one doctrine.
+// sweep replays the game with one input overridden at each value, every other
+// input held at what its window really had — so it measures one knob, not one
+// doctrine.
 func sweep(knobs []string, windows []windowStats, run func(map[string]float64, int) (report, error)) ([]Sweep, error) {
 	var out []Sweep
 	for _, knob := range knobs {
@@ -131,9 +124,8 @@ func sweep(knobs []string, windows []windowStats, run func(map[string]float64, i
 	return out, nil
 }
 
-// sweepKnobs picks what is worth trying: the inputs the sensitivity analysis
-// already implicates, which keeps a sweep to a handful of runs rather than one
-// per doctrine input.
+// sweepKnobs limits the sweep to inputs sensitivity already implicates, so it
+// costs a handful of runs rather than one per doctrine input.
 func sweepKnobs(sens []Sensitivity, params map[string]float64) []string {
 	seen := map[string]bool{}
 	var out []string
@@ -141,9 +133,8 @@ func sweepKnobs(sens []Sensitivity, params map[string]float64) []string {
 		if !s.Doctrinal || s.Knob == "" || seen[s.Knob] {
 			continue
 		}
-		// Only inputs that are a fraction. Group sizes and the prefers-* flags
-		// are not points on a 0-to-1 line, and sweeping them there would try
-		// values that mean nothing.
+		// Fractions only. Group sizes and prefers-* flags are not points on a
+		// 0-to-1 line, and sweeping them there tries meaningless values.
 		if v, ok := params[s.Knob]; !ok || v < 0 || v > 1 {
 			continue
 		}

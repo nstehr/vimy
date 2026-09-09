@@ -474,11 +474,10 @@ func TestSwapToRulesWithoutSquadsDropsThemAll(t *testing.T) {
 	}
 }
 
-// income-rate must be measured on the same money the rules spend. Player.Cash
-// is the spendable half; ore waiting in the silos is Player.Resources, and
-// RuleEnv.Cash sums both. Sampling the spendable half alone made income-rate
-// non-positive in every state of game 89, which armed the savings model
-// permanently and starved base defences.
+// income-rate must be measured on the money the rules actually spend, which is
+// RuleEnv.Cash — Player.Cash plus the ore in the silos. Sampling the spendable
+// half alone reads as non-positive income forever, arming the savings model
+// permanently and starving base defences.
 func TestSampleIncomeCountsOreInSilos(t *testing.T) {
 	mem := map[string]any{}
 	env := func(tick, cash, res int) RuleEnv {

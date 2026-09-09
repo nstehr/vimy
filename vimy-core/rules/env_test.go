@@ -91,7 +91,7 @@ func TestOverextendedSquadMembers(t *testing.T) {
 func TestOverextendedSquadMembers_ExemptsForwardStaging(t *testing.T) {
 	// Our base at (100,100). Enemy base at (900,900). Unit 2 at (550,550) — a
 	// flank-waypoint staging position halfway between bases, closer to enemy
-	// than to home. Must NOT be flagged overextended (vimy-rmb).
+	// than to home. Must NOT be flagged overextended.
 	env := RuleEnv{
 		State: model.GameState{
 			MapWidth:  1000,
@@ -157,7 +157,7 @@ func TestOverextendedSquadMembers_FlagsOffAxisWanderer(t *testing.T) {
 func TestOverextendedSquadMembers_ExemptsUnitsNearEnemyBase(t *testing.T) {
 	// Unit 2 is far from our base (would normally be flagged) but adjacent to
 	// a known enemy base — it's correctly forward-deployed and must not be
-	// recalled (vimy-91b).
+	// recalled.
 	env := RuleEnv{
 		State: model.GameState{
 			MapWidth:  1000,
@@ -574,7 +574,7 @@ func TestBestAirTarget_GroundDefBoosted(t *testing.T) {
 		// pbox at dist=20: score = 21 * 1.0 / sqrt(20) ≈ 4.70
 		// proc at dist=5:  score =  6 * 1.0 / sqrt(5)  ≈ 2.68
 		// (Construction yard / fact is intentionally NOT used here — its
-		// post-vimy-68x value of 12 is high enough that a 3x bias on a
+		// value of 12 is high enough that a 3x bias on a
 		// neighbouring pillbox can't overcome it at close range, which is
 		// the new and correct behaviour.)
 		env := RuleEnv{
@@ -700,7 +700,7 @@ func TestUpdateIntel_ClearsStaleIntel(t *testing.T) {
 func TestUpdateIntel_ScoutPassThroughDoesNotClear(t *testing.T) {
 	// Scout is briefly near the enemy base and no enemy visible at that
 	// instant. Intel must NOT clear — otherwise a scout patrol wipes the
-	// enemy base intel every rotation (observed live in vimy match).
+	// enemy base intel every rotation.
 	env := RuleEnv{
 		State: model.GameState{
 			Tick: 3500,
@@ -1440,13 +1440,11 @@ func TestUpdateDefenseIntel_RemembersVisible(t *testing.T) {
 
 // The generic vehicle rule must not build what a dedicated rule caps.
 //
-// `produce-vehicle` caps on CombatVehicleCount, so anything it can pick is
-// built past whatever cap the role's own rule computed. Game 68: flak trucks
-// peaked at 5 alive against a cap of 2, and nine of twelve vehicles came from
-// produce-vehicle rather than produce-flak-truck (vimy-77s).
+// produce-vehicle caps on CombatVehicleCount, so anything it can pick is built
+// past whatever cap the role's own rule computed — flak trucks reached 5 alive
+// against a cap of 2 that way.
 func TestGenericVehicleProductionSkipsCappedRoles(t *testing.T) {
-	// A Vehicle queue offering only what the reported game offered: no radar,
-	// so every tank is gated out and a flak truck is all that is left.
+	// No radar, so every tank is gated out and a flak truck is all that is left.
 	env := RuleEnv{
 		State: model.GameState{
 			ProductionQueues: []model.ProductionQueue{
@@ -1467,22 +1465,19 @@ func TestGenericVehicleProductionSkipsCappedRoles(t *testing.T) {
 		t.Errorf("generic production chose %q", got)
 	}
 
-	// It is still chosen through the preference list, which is the path the
-	// reported game actually took — flak_truck was the doctrine's third
-	// preference and won every firing.
+	// The preference list is the path that actually leaked: a flak truck listed
+	// third behind two unbuildable tanks won every firing.
 	env.Preferences.Vehicle = []string{"heavy_tank", "medium_tank", "flak_truck"}
 	if got := env.BestBuildableVehicle(); got != "" {
 		t.Errorf("a preferred flak truck was chosen: %q", got)
 	}
 
-	// And a role without a rule of its own is still reachable, or nothing
-	// would ever build it.
+	// A role with no rule of its own stays reachable, or nothing builds it.
 	env.State.ProductionQueues[0].Buildable = append(
 		env.State.ProductionQueues[0].Buildable, "dtrk")
 	if !env.CanBuildRole("demo_truck") {
 		t.Skip("this faction cannot build a demo truck")
 	}
-	// The item name, which is what the queue takes.
 	if got := env.BestBuildableVehicle(); got != "dtrk" {
 		t.Errorf("demo truck not reachable: %q", got)
 	}
@@ -1490,10 +1485,8 @@ func TestGenericVehicleProductionSkipsCappedRoles(t *testing.T) {
 
 // A lone rifleman is not danger; a tank is.
 //
-// HarvestersInDanger counted any enemy within range, so one e1 was
-// indistinguishable from a tank column — and one of them parked the economy for
-// 17,000 ticks of game 71, the harvesters shuttling to the refinery and back
-// without ever filling up (vimy-mfq).
+// Counting any enemy within range makes one e1 indistinguishable from a tank
+// column, and one of them parks the economy shuttling between ore and refinery.
 func TestHarvestersInDangerWeighsTheThreat(t *testing.T) {
 	harvester := model.Unit{ID: 1, Type: "harv", X: 50, Y: 50, HP: 600, MaxHP: 600}
 	env := func(enemies ...model.Enemy) RuleEnv {

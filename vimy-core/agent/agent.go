@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/nstehr/vimy/vimy-core/ipc"
 	"github.com/nstehr/vimy/vimy-core/model"
@@ -22,6 +24,9 @@ type Agent struct {
 	Strategist *Strategist
 	Store      *store.Store
 	ctx        context.Context
+
+	// When a game state was last processed, for the stall watchdog.
+	lastState atomic.Int64
 }
 
 func New(conn *ipc.Connection, engine *rules.Engine, strategist *Strategist, store *store.Store, ctx context.Context) *Agent {
@@ -45,6 +50,8 @@ func (a *Agent) HandleHello(env ipc.Envelope) (*ipc.Envelope, error) {
 		"player", a.Player,
 		"faction", a.Faction,
 		"opponents", opponentSummary)
+	a.lastState.Store(time.Now().UnixNano())
+	go a.watchForStall(stallAfter/3, stallAfter)
 
 	if hello.Terrain != nil {
 		grid := &model.TerrainGrid{
@@ -151,6 +158,8 @@ func (a *Agent) HandleGameState(env ipc.Envelope) (*ipc.Envelope, error) {
 		"queues", len(gs.ProductionQueues),
 	)
 
+	a.lastState.Store(time.Now().UnixNano())
+
 	if err := a.Engine.Evaluate(gs, a.Faction, a.Conn); err != nil {
 		slog.Error("rule engine error", "error", err)
 	}
@@ -164,4 +173,50 @@ func (a *Agent) HandleGameState(env ipc.Envelope) (*ipc.Envelope, error) {
 		return nil, err
 	}
 	return &ack, nil
+}
+
+// stallAfter is how long a handshaken connection may go without a game state
+// before the watchdog says so.
+//
+// Generous: a paused game or a slow frame must not cry wolf. The failure this
+// exists for lasted eleven minutes.
+const stallAfter = 30 * time.Second
+
+// watchForStall complains when the handshake succeeded and then no game state
+// was ever processed.
+//
+// Game 89 (2026-09-08): the previous match ended, OpenRA reconnected, `player
+// identified` and `terrain grid set` both arrived, and then nothing — no
+// doctrine, no rule set, no diagnostics — for eleven minutes, while the process
+// sat alive at 1.8% CPU with the socket open and the dashboard still serving
+// the previous game's numbers. Silence was the whole failure mode, so it read
+// as the AI playing badly, and two people spent twenty minutes analysing a
+// game that was not running (vimy-wma).
+//
+// This does not fix the stall. It makes the stall announce itself.
+func (a *Agent) watchForStall(poll, after time.Duration) {
+	t := time.NewTicker(poll)
+	defer t.Stop()
+	warned := false
+	for {
+		select {
+		case <-a.ctx.Done():
+			return
+		case <-t.C:
+			last := a.lastState.Load()
+			if last == 0 {
+				continue
+			}
+			idle := time.Since(time.Unix(0, last))
+			if idle < after {
+				warned = false
+				continue
+			}
+			if !warned {
+				slog.Error("no game state processed since the handshake — the sidecar is not driving this game",
+					"player", a.Player, "idle", idle.Round(time.Second))
+				warned = true
+			}
+		}
+	}
 }

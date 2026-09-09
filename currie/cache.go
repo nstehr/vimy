@@ -21,33 +21,28 @@ import (
 
 // Keeping the model's reading between runs.
 //
-// An archived game does not change, so its reading is valid forever — but only
-// against the rules it was read from. Edit a `.vy` file and the replay changes,
-// which changes every number the model was shown, which makes the prose it
-// wrote about them wrong. So the key is the game *and* a fingerprint of the
-// sources: change the rules and the old answer is simply not found, rather than
-// served as though it still applied.
+// An archived game never changes, so a reading of it holds forever — but only
+// against the rules it was read from. Editing a `.vy` file changes the replay,
+// changes every number the model saw, and makes its prose wrong. So the key is
+// the game plus a fingerprint of the sources: edited rules simply miss, rather
+// than serving a stale answer as current.
 //
-// Only the model's output is kept. A replay costs half a second and a sweep a
-// few, which is cheaper than being careful about staleness; a reading costs
-// thirty seconds and a paid call.
+// Only the model's output is cached. A replay costs half a second and a sweep a
+// few, cheaper than reasoning about their staleness; a reading costs thirty
+// seconds and a paid call.
 //
-// Its own database rather than a table in the archive. Two reasons, and the
-// first is not aesthetic: `vimy.db` runs in `journal_mode=delete` with no busy
-// timeout, so writing to it from here while a game is being recorded would take
-// a lock the sidecar needs. The second is that this is derived data — it can be
-// deleted wholesale and rebuilt, and it should not sit in the system of record
-// where a `DROP` would be frightening.
+// Its own database, not a table in the archive. `vimy.db` runs journal_mode=
+// delete with no busy timeout, so writing there would take a lock the sidecar
+// needs — and this is derived data that should be droppable without alarm.
 type cache struct {
 	db      *sql.DB
 	queries *db.Queries
 	rules   string // fingerprint of the .vy sources
 }
 
-// The schema is applied rather than migrated. A cache that can be rebuilt from
-// its inputs has no history worth preserving, so a change here is a `DROP` and
-// a rebuild rather than a migration to get right — which is why `sqlc` reads a
-// plain `schema.sql` here and a migrations directory in vimy-core.
+// Applied rather than migrated: a cache rebuildable from its inputs has no
+// history worth preserving, so a schema change is a DROP. Hence a plain
+// schema.sql here where vimy-core has a migrations directory.
 //
 //go:embed store/schema.sql
 var cacheSchema string
@@ -61,8 +56,7 @@ func newCache(stateDir, rulesDir string) (*cache, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("cache dir: %w", err)
 	}
-	// WAL and a busy timeout: the mistake this file exists to avoid is worth
-	// not repeating in its own database.
+	// WAL and a busy timeout — the lock problem above, not repeated here.
 	path := filepath.Join(dir, "currie.db")
 	sqlDB, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
@@ -82,18 +76,13 @@ func (c *cache) Close() error {
 	return c.db.Close()
 }
 
-// analysisVersion invalidates stored readings when what the model is SHOWN
-// changes, as opposed to what the game did.
-//
-// The key was the game plus a fingerprint of the .vy sources, which catches a
-// rule edit but not a change to the analysis itself. Currie stopped feeding the
-// model completion guards on 2026-09-08; without this, every game already read
-// would keep serving prose written from the old, noisier input. Bump on any
-// change to what goes into Insight.
+// analysisVersion invalidates readings when what the model is shown changes, as
+// opposed to what the game did. The source fingerprint catches a rule edit but
+// not a change to the analysis itself. Bump it on any change to Insight's input.
 const analysisVersion = 2
 
-// fingerprint hashes the rule sources, sorted so a directory listing's order
-// cannot change the answer.
+// fingerprint hashes the rule sources, sorted so listing order can't change the
+// answer.
 func fingerprint(rulesDir string) (string, error) {
 	paths, err := ruleArgs(rulesDir)
 	if err != nil {
@@ -126,8 +115,7 @@ func (c *cache) read(game int64) *Insight {
 	}
 	var ins Insight
 	if err := json.Unmarshal([]byte(blob), &ins); err != nil {
-		// A corrupt row is not worth reporting to the reader: the cost of
-		// missing it is one regenerated reading.
+		// A corrupt row costs one regenerated reading; not worth surfacing.
 		slog.Warn("discarding unreadable cache entry", "game", game, "error", err)
 		_ = c.queries.DropInsight(ctx, db.DropInsightParams{GameID: game, Rules: c.rules})
 		return nil
@@ -153,10 +141,9 @@ func (c *cache) write(game int64, ins *Insight) {
 	}
 }
 
-// Readings is every stored reading for the current rules, newest first.
-//
-// Not used by a page yet; it is what the cross-game work will read, and the
-// reason this is a table rather than a directory of files.
+// Readings is every stored reading for the current rules, newest first. No page
+// uses it yet — it is what the cross-game work will read, and the reason this is
+// a table rather than a directory of files.
 func (c *cache) Readings(ctx context.Context) (map[int64]string, error) {
 	rows, err := c.queries.ListInsights(ctx, c.rules)
 	if err != nil {

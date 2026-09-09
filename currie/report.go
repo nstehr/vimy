@@ -11,10 +11,9 @@ import (
 
 // A source line, and every rule it stops.
 //
-// The most useful axis in the whole report: a `require` written once inside a
-// def — `reserves(cost)`, `affordable(cost)` — is inlined into dozens of rules,
-// so one line can be the single thing standing between the AI and a third of
-// its behaviour. Per-rule counts never show that; this does.
+// The most useful axis in the report. A `require` written once inside a def is
+// inlined into dozens of rules, so one line can stand between the AI and a third
+// of its behaviour — which per-rule counts never show.
 type site struct {
 	File    string
 	Line    int
@@ -23,33 +22,27 @@ type site struct {
 	Blocked int
 	Rules   []string
 	SolePct float64
-	// Sole as a share of the states replayed. The count alone is not comparable
-	// across games — a game a third shorter yields a third fewer of everything,
-	// and reading two raw counts side by side reports the length difference as
-	// a finding.
+	// Sole as a share of states replayed. Raw counts aren't comparable across
+	// games: a shorter game yields fewer of everything, and the length difference
+	// then reads as a finding.
 	SoleRate float64
-	// What this line asks for that the faction can never have, empty when the
-	// clause is satisfiable in principle. Such a line is correct and inert, and
-	// ranking it as a top blocker is noise.
+	// What this line asks for that the faction can never have; empty when the
+	// clause is satisfiable in principle. Such a line is correct and inert.
 	Impossible string
-	// How many of the rules this line blocks already fire and do something in
-	// the real game. A line whose rules all already work is not where a problem
-	// is, however often the sample saw it block — the sample simply missed the
-	// moments they fired.
+	// How many of the blocked rules already act in the real game. If they all do,
+	// this line is not the problem — the sample simply missed them firing.
 	Working int
 }
 
 // Live reports whether every rule this line blocks already works.
 func (s site) Live() bool { return s.Working > 0 && s.Working == len(s.Rules) }
 
-// Guard reports whether the line is a completion guard — a clause satisfied by
-// the thing existing, which a producing rule carries so it stops once it has
-// succeeded. Being blocked by one is success, not failure.
+// Guard reports a completion guard — the clause a producing rule carries so it
+// stops once it has succeeded. Being blocked by one is success.
 //
-// Separate from Live because Live asks whether the blocked rules acted IN THIS
-// GAME's counters, and a squad formed in an earlier doctrine window leaves its
-// forming rule with no acts here while the guard still reads as a top blocker.
-// That is how `not squad-exists(air-attack)` reached the model in game 86.
+// Separate from Live, which asks whether the blocked rules acted in this game's
+// counters: a squad formed in an earlier doctrine window leaves its forming rule
+// with no acts here while its guard still ranks as a top blocker.
 func (s site) Guard() bool { return satisfiedByCompletion(s.Source) }
 
 type clauseBar struct {
@@ -64,7 +57,7 @@ type clauseBar struct {
 type deadRule struct {
 	Name     string
 	Category string
-	// What the rule did in the real game. `Acted` is -1 when unmeasured.
+	// What the rule did in the real game; Acted is -1 when unmeasured.
 	Matched, Acted int
 	Seen           int
 	Blocked        int
@@ -76,10 +69,10 @@ type deadRule struct {
 
 // LateStart is a rule that worked, but not until late.
 //
-// The replay can say what blocked a rule; it cannot say when a rule that
-// worked did its work, because a blame count has no clock. That gap made a
-// scouting rule which fired seven times look identical to one that was broken,
-// when the finding was that nothing scouted until the game was half over.
+// A blame count has no clock, so the replay can say what blocked a rule but not
+// when a working one did its work. That gap made a scouting rule which fired
+// seven times indistinguishable from a broken one, when the real finding was
+// that nothing scouted until the game was half over.
 type LateStart struct {
 	Name     string
 	Category string
@@ -88,22 +81,20 @@ type LateStart struct {
 	// Ticks, and how far into the game that is.
 	FirstTick, LastTick int
 	Pct                 float64
-	// Whether onset counts as late. Reactive rules are legitimately late, so
-	// this marks rather than filters.
+	// Marks rather than filters — a reactive rule is legitimately late.
 	Late bool
-	// Span between first and last action, as a share of the game. A rule that
-	// acts once is a different thing from one that acts throughout.
+	// First to last action as a share of the game: acting once is a different
+	// thing from acting throughout.
 	SpanPct float64
 }
 
-// finding is one fact worth reading first. The report grew seven headline
-// numbers and nine sections, all weighted equally, and the reader (me, all day)
-// had to reconstruct the same three questions each time: what blocked the most,
-// what fired and achieved nothing, and what arrived too late. Those are
-// computed here so the page can lead with them.
+// finding is one fact worth reading first. With nine equally-weighted sections
+// the reader reconstructs the same three questions every time — what blocked the
+// most, what fired and achieved nothing, what arrived too late — so those are
+// computed here and the page leads with them.
 //
-// Facts, not conclusions. "build-war-factory first acted at 57%" is something
-// the data says; "the war factory was too late" is a judgement the reader makes.
+// Facts, not conclusions: "build-war-factory first acted at 57%" is what the
+// data says; that this was too late is the reader's judgement.
 type finding struct {
 	Headline string
 	Detail   string
@@ -119,19 +110,18 @@ type view struct {
 	SampleMissed int
 	// Rules that worked, but did not start until late.
 	Late []LateStart
-	// How far into the game the game's own duration was, for the axis.
+	// Game duration, for the timeline axis.
 	DurationTicks int
 	// Who we played, so a clause can say which faction can never satisfy it.
 	Faction string
 	// The two or three facts worth reading before anything else.
 	Findings []finding
-	// Working rules whose onset the timeline did not have room for. Counted,
-	// because a silent cap reads as "this is all of them".
+	// Working rules the timeline had no room for. Counted, because a silent cap
+	// reads as "this is all of them".
 	LateOmitted int
-	// Blame sites ranked below the cut because they are correct: their rules
-	// already work, or the faction can never satisfy them. Counted rather than
-	// silently dropped — a report that hides what it excluded is how a reader
-	// comes to trust a ranking more than it deserves.
+	// Blame sites cut for being correct — their rules already work, or the
+	// faction can never satisfy them. Counted rather than dropped: a report that
+	// hides its exclusions earns more trust than it deserves.
 	InertSites int
 	Preempted  int
 	Sites      []site
@@ -143,8 +133,8 @@ type view struct {
 	Gates []Gate
 	// Missing things followed back to whatever was supposed to make them.
 	Chains []Chain
-	// Rules the replay never saw satisfiable that the game says fired anyway.
-	// The sample missed them, and calling them dead would be wrong.
+	// Rules the replay never saw satisfiable that the game says fired. The sample
+	// missed them; calling them dead would be wrong.
 	FiredAnyway []deadRule
 
 	Home        string
@@ -152,8 +142,8 @@ type view struct {
 	Orphaned    int
 	Approximate bool
 
-	// Where the page fetches the model's reading from once it has loaded. Empty
-	// when no model is configured.
+	// Where the page fetches the model's reading once loaded; empty when no model
+	// is configured.
 	InsightURL string
 	SweepURL   string
 }
@@ -180,8 +170,8 @@ func buildWith(title string, rep report, windows []windowStats, firings map[stri
 	return v
 }
 
-// Rules the replay never saw fire but the game says did. The gap is the
-// sampling rate, and saying "never satisfiable" about them would be wrong.
+// Rules the replay never saw fire but the game says did — a sampling artifact,
+// not evidence they are unsatisfiable.
 func reconcile(v *view, firings map[string]store.Firing) {
 	for _, d := range v.Dead {
 		if d.Acted > 0 {
@@ -190,9 +180,8 @@ func reconcile(v *view, firings map[string]store.Firing) {
 	}
 }
 
-// A rule whose first action lands after this share of the game is worth
-// looking at. A quarter is early enough to catch an opener that never happened
-// and late enough not to list every rule that needs a building first.
+// Where a first action counts as late: early enough to catch an opener that
+// never happened, late enough not to list every rule that needs a building.
 const lateStartPct = 25.0
 
 func plural(n int) string {
@@ -205,17 +194,14 @@ func plural(n int) string {
 func build(title string, rep report, firings map[string]store.Firing, durationTicks int, faction string) view {
 	v := view{Title: title, States: rep.States, RuleCount: len(rep.Rules)}
 
-	// Aggregate by the line that wrote the requirement, across every rule it
-	// appears in. Keyed on the text as well as the position so an inlined def
-	// reads as one site rather than one per caller.
+	// Keyed on text as well as position, so an inlined def reads as one site
+	// rather than one per caller.
 	byLine := map[string]*site{}
 	for _, r := range rep.Rules {
 		if r.Held == 0 {
-			// A rule the sample never caught firing is not a rule that never
-			// fired. The engine's own counters outrank the replay here: every
-			// 15th evaluation is a thin sample, and counting a rule that
-			// demonstrably worked as "never satisfiable" is how a reader is led
-			// to go fix something that is not broken.
+			// The engine's counters outrank the replay: every 15th evaluation is a
+			// thin sample, and calling a rule that demonstrably worked "never
+			// satisfiable" sends the reader to fix something that isn't broken.
 			if f, ok := firings[r.Rule]; ok && f.Acted > 0 {
 				v.SampleMissed++
 			} else {
@@ -252,12 +238,11 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 		}
 		v.Sites = append(v.Sites, *s)
 	}
-	// A line whose every rule already works is not a reason anything failed —
-	// `not squad-exists(ground-attack)` scoring 98 per 100 states means the
-	// squad EXISTS and the rule that forms it correctly declined to run twice.
-	// Ranked purely by blame these fill the whole first page, which is how a
-	// scouting bug that was really a war-factory bug survived two readings.
-	// They stay in the report, below the lines that actually stopped something.
+	// A line whose rules all already work explains nothing: `not
+	// squad-exists(ground-attack)` blocking almost every state means the squad
+	// exists and its forming rule correctly declined to run twice. Ranked by
+	// blame alone these fill the first page. They stay, below the lines that
+	// actually stopped something.
 	for i := range v.Sites {
 		v.Sites[i].Impossible = impossibleFor(v.Sites[i].Source, faction)
 	}
@@ -286,10 +271,8 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 	for i := range v.Sites {
 		v.Sites[i].SolePct = 100 * float64(v.Sites[i].Sole) / float64(maxSite)
 		if rep.States > 0 {
-			// Per rule, not per state. `Sole` is summed over every rule the
-			// line blocks, so dividing by states alone produced "165 of every
-			// 100 states" for a line inlined into seven rules. The denominator
-			// is the chances it had: one per rule per state.
+			// Sole sums over every rule the line blocks, so the denominator is
+			// the chances it had — one per rule per state, not one per state.
 			chances := rep.States * max(len(v.Sites[i].Rules), 1)
 			v.Sites[i].SoleRate = 100 * float64(v.Sites[i].Sole) / float64(chances)
 		}
@@ -302,9 +285,8 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 		if r.Held > 0 || r.Culprit == nil {
 			continue
 		}
-		// A rule the engine recorded acting is not a rule that never fired. It
-		// has its own section; listing it here too produced rows reading
-		// "fired 5x" under the heading "Rules that never fired".
+		// A rule the engine recorded acting has its own section; listing it here
+		// too yields rows reading "fired 5x" under "Rules that never fired".
 		if f, ok := firings[r.Rule]; ok && f.Acted > 0 {
 			continue
 		}
@@ -334,8 +316,6 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 	if len(v.Dead) > 24 {
 		v.Dead = v.Dead[:24]
 	}
-	// When each working rule first did something. Ranked latest-first, because
-	// the interesting ones are the rules whose onset is the finding.
 	v.DurationTicks = durationTicks
 	v.Faction = faction
 	if v.DurationTicks > 0 {
@@ -357,11 +337,9 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 			}
 			v.Late = append(v.Late, l)
 		}
-		// Ascending, so it reads as the game's own order: what opened, what
-		// followed, and where the gaps are. Ranking by lateness instead puts
-		// the reactive rules on top — flee-harvesters cannot fire before a
-		// harvester is attacked — and buries the proactive rule that should
-		// have gone first and did not.
+		// Ascending, so it reads as the game's own order — what opened, what
+		// followed, where the gaps are. Ranking by lateness floats the reactive
+		// rules, which are legitimately late, above the proactive one that isn't.
 		sort.Slice(v.Late, func(i, j int) bool {
 			if v.Late[i].Pct != v.Late[j].Pct {
 				return v.Late[i].Pct < v.Late[j].Pct
@@ -370,8 +348,8 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 		})
 	}
 
-	// Lead with the shapes that produced every real finding this tool has had:
-	// the line that blocked most, the rule that fired and did nothing, and the
+	// The three shapes that have produced every real finding so far: the line
+	// that blocked most, the rule that fired and achieved nothing, and the
 	// building that arrived latest.
 	for _, st := range v.Sites {
 		if st.Live() || st.Guard() || st.Impossible != "" {

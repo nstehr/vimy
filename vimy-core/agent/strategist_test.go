@@ -22,9 +22,8 @@ func TestComputePressureFlags_Rush(t *testing.T) {
 }
 
 func TestComputePressureFlags_SlowRushTriggers(t *testing.T) {
-	// Game 33: first harvester attack at tick 9980 against a small base (5
-	// buildings). The widened rush window (10500) catches this slow tempo
-	// rush rather than mis-classifying it as mid-game harassment.
+	// A first harvester attack near tick 10000 against a still-small base is a
+	// slow-tempo rush, not mid-game harassment.
 	gs := &model.GameState{Buildings: make([]model.Building, 5)}
 	stress := []Event{{Kind: EventHarvesterUnderAttack, Tick: 9980}}
 	rushed, _ := computePressureFlags(10000, gs, stress)
