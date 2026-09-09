@@ -433,3 +433,32 @@ func SupportPowerReachable(power, faction string) bool {
 	}
 	return allowed[strings.ToLower(strings.TrimSpace(faction))]
 }
+
+// IsUnarmedStructure reports whether an enemy actor type is a building that
+// cannot shoot back — a refinery, a power plant, a war factory.
+//
+// It exists because SquadThreatRatio sums the HP of everything the enemy owns
+// within a radius, and the mod deliberately includes structures in the enemy
+// list ("IOccupySpace covers both buildings and mobile units"). So a squad sent
+// to attack a base found the base itself counted as the threat: game 94's
+// ground-attack squad read a median threat ratio of 7.96 and a p90 of 21 while
+// engaged, and squad-disengage — which fires above about 2.5 — decided to
+// withdraw 31 times against 15 attacks. It was retreating from its own
+// objective.
+//
+// Defensive structures are NOT unarmed and still count: a pillbox is a real
+// reason for a squad to leave. The distinction is whether the thing shoots
+// back, which the queue already encodes.
+func IsUnarmedStructure(actorType string) bool {
+	for _, spec := range roles {
+		if spec.queue != QueueBuilding {
+			continue
+		}
+		for _, t := range spec.types {
+			if matchesType(actorType, t) {
+				return true
+			}
+		}
+	}
+	return false
+}

@@ -552,6 +552,17 @@ func (e RuleEnv) SquadThreatRatio(name string, radiusPct float64) float64 {
 
 	enemyHP := 0
 	for _, en := range e.State.Enemies {
+		// Unarmed structures are the squad's OBJECTIVE, not its danger. The mod
+		// includes buildings in the enemy list on purpose, so a squad sent to
+		// attack a base counted the base as the force opposing it: game 94 read
+		// a median threat ratio of 7.96 and a p90 of 21 while engaged, and
+		// squad-disengage — which fires above about 2.5 — decided to withdraw
+		// 31 times against 15 attacks. It was retreating from what it came to
+		// destroy. Defensive structures still count; a pillbox is a real reason
+		// to leave.
+		if IsUnarmedStructure(en.Type) {
+			continue
+		}
 		dx := float64(en.X - cx)
 		dy := float64(en.Y - cy)
 		if dx*dx+dy*dy <= radiusSq {

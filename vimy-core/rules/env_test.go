@@ -1526,3 +1526,42 @@ func TestHarvestersInDangerWeighsTheThreat(t *testing.T) {
 		t.Errorf("a damaged harvester fled from a rifleman: %+v", got)
 	}
 }
+
+// A squad attacking a base must not read the base as the force opposing it.
+// The mod includes structures in the enemy list, so before this the threat
+// ratio was dominated by whatever the squad had come to destroy: game 94 sat at
+// a median of 7.96 while engaged and squad-disengage, which fires above ~2.5,
+// ordered 31 withdrawals against 15 attacks.
+func TestSquadThreatRatioIgnoresUnarmedStructures(t *testing.T) {
+	mem := map[string]any{
+		"squads": map[string]*Squad{"ground-attack": {Name: "ground-attack", UnitIDs: []int{1}}},
+	}
+	base := func(enemies []model.Enemy) RuleEnv {
+		return RuleEnv{
+			Memory: mem,
+			State: model.GameState{
+				MapWidth: 1000, MapHeight: 1000,
+				Units:   []model.Unit{{ID: 1, X: 500, Y: 500, HP: 100}},
+				Enemies: enemies,
+			},
+		}
+	}
+	// A refinery and a war factory sitting on the squad: not a threat.
+	quiet := base([]model.Enemy{
+		{ID: 10, Type: "proc", X: 500, Y: 500, HP: 2000},
+		{ID: 11, Type: "weap", X: 505, Y: 500, HP: 2000},
+	})
+	if got := quiet.SquadThreatRatio("ground-attack", 0.1); got != 0 {
+		t.Errorf("threat ratio = %.2f with only unarmed buildings nearby, want 0", got)
+	}
+	// A pillbox is: it shoots back.
+	armed := base([]model.Enemy{{ID: 12, Type: "pbox", X: 500, Y: 500, HP: 400}})
+	if got := armed.SquadThreatRatio("ground-attack", 0.1); got != 4 {
+		t.Errorf("threat ratio = %.2f with a pillbox on the squad, want 4", got)
+	}
+	// So do tanks.
+	units := base([]model.Enemy{{ID: 13, Type: "3tnk", X: 500, Y: 500, HP: 300}})
+	if got := units.SquadThreatRatio("ground-attack", 0.1); got != 3 {
+		t.Errorf("threat ratio = %.2f with a heavy tank on the squad, want 3", got)
+	}
+}
