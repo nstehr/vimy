@@ -119,6 +119,7 @@ rule build-airfield {
   require not queue-busy(Building)
   require can-build-role(airfield)
   require not has-role(airfield)
+  require not queue-producing-role(airfield)
   require power-excess >= 0
   require cash >= 500
   require has-role(war-factory)
@@ -291,6 +292,7 @@ rule build-extra-airfield {
   require not is-rushed()
   require not queue-busy(Building)
   require can-build-role(airfield)
+  require not queue-producing-role(airfield)
   require aircraft-capacity < lerp(2, 8, air-weight)
   require combat-aircraft-count >= aircraft-capacity - 1
   require power-excess >= 0
