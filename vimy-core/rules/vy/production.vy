@@ -310,7 +310,7 @@ rule produce-scout-vehicle {
 }
 
 rule produce-siege-vehicle {
-  priority trunc(select(prefers-v2-launcher > 0 or prefers-artillery > 0, 485.0, 460.0))
+  priority trunc(select(siege-vehicle-first > 0, 485.0, 460.0))
   category produce-vehicle exclusive
   because "when stand-off is the plan, siege has to beat generic vehicles to the queue"
   do produce-siege-vehicle

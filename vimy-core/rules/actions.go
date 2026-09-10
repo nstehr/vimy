@@ -35,7 +35,11 @@ type mcvDeployState struct {
 const (
 	mcvDeployCooldownTicks = 50
 	mcvMaxDeployAttempts   = 3
-	guardResendTicks       = 100
+	// How long a harvester is left to the engine's own ore search before the
+	// rule steps in. Long enough that a normal unload-and-return cycle is never
+	// interrupted.
+	harvesterIdleGrace = 250
+	guardResendTicks   = 100
 	// How long a squad that has withdrawn is left alone by the attacking rules.
 	// squad-reengage sends any idle squad member at the enemy the moment it
 	// stops moving, so without this a withdrawal walks home, arrives, goes idle
@@ -1344,8 +1348,37 @@ func ActionSendIdleHarvesters(env RuleEnv, conn *ipc.Connection) error {
 	// contents froze every harvester that had ever fled.
 	fleeing := getHarvesterFleeState(env.Memory)
 
+	// Only rescue harvesters that have been idle a while.
+	//
+	// This sends a Harvest order at a REFINERY's position, because ore is not
+	// in the game state at all — the sidecar is observation-only and ore must
+	// be scouted. So the order means "mine near this refinery", and when that
+	// patch is exhausted the harvester finds nothing, goes idle, and is ordered
+	// there again. Game 96: return-idle-harvesters matched 746 times, and the
+	// harvesters sat in a heap beside the refineries while ore lay elsewhere.
+	//
+	// The engine knows where ore is and we do not, so it gets first refusal.
+	// An order issued the moment a harvester goes idle interrupts that search;
+	// one issued after it has been idle for a while is a genuine rescue.
+	idleSince := memoryMap[int, int](env.Memory, "harvesterIdleSince")
+	stillIdle := map[int]bool{}
+	for _, u := range env.IdleHarvesters() {
+		stillIdle[u.ID] = true
+		if _, seen := idleSince[u.ID]; !seen {
+			idleSince[u.ID] = env.State.Tick
+		}
+	}
+	for id := range idleSince {
+		if !stillIdle[id] {
+			delete(idleSince, id)
+		}
+	}
+
 	state := memoryMap[int, harvestEntry](env.Memory, "harvestSent")
 	for i, u := range env.IdleHarvesters() {
+		if since, ok := idleSince[u.ID]; ok && env.State.Tick-since < harvesterIdleGrace {
+			continue
+		}
 		if prev, ok := fleeing[u.ID]; ok && env.State.Tick-prev.Tick < harvesterFleeResend {
 			continue
 		}

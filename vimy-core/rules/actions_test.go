@@ -1245,6 +1245,16 @@ func TestActionCaptureBuilding_ThrottlesOrderSpam(t *testing.T) {
 //
 // Asserted on the `harvestSent` entries rather than the wire: they are what the
 // resend guard itself reads.
+// longIdle marks every harvester as having been idle past the grace period, so
+// a test about the flee interaction is not also testing the grace period. The
+// rule leaves a freshly idle harvester to the engine's own ore search.
+func longIdle(env RuleEnv) {
+	since := memoryMap[int, int](env.Memory, "harvesterIdleSince")
+	for _, u := range env.State.Units {
+		since[u.ID] = env.State.Tick - harvesterIdleGrace - 1
+	}
+}
+
 func TestSendIdleHarvestersSkipsFleeingOnes(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
@@ -1261,6 +1271,7 @@ func TestSendIdleHarvestersSkipsFleeingOnes(t *testing.T) {
 	}
 
 	env := newEnv()
+	longIdle(env)
 	if err := ActionSendIdleHarvesters(env, conn); err != nil {
 		t.Fatal(err)
 	}
@@ -1271,6 +1282,7 @@ func TestSendIdleHarvestersSkipsFleeingOnes(t *testing.T) {
 
 	// Now one of them is mid-flee. It must be left alone; the other still goes.
 	env = newEnv()
+	longIdle(env)
 	getHarvesterFleeState(env.Memory)[1] = harvesterFleeEntry{Tick: 4990, X: 20, Y: 20}
 	if err := ActionSendIdleHarvesters(env, conn); err != nil {
 		t.Fatal(err)
@@ -1286,6 +1298,7 @@ func TestSendIdleHarvestersSkipsFleeingOnes(t *testing.T) {
 	// The map is pruned only while something is in danger, so a stale entry can
 	// sit untouched — and must not hold the harvester forever.
 	env = newEnv()
+	longIdle(env)
 	getHarvesterFleeState(env.Memory)[1] = harvesterFleeEntry{
 		Tick: env.State.Tick - harvesterFleeResend - 1, X: 20, Y: 20,
 	}
@@ -1366,5 +1379,42 @@ func TestMCVFallbackIgnoresTheShrinkingBase(t *testing.T) {
 	x, y := mcvFallbackLocation(env, far, 0)
 	if x < 300 || y < 300 {
 		t.Errorf("fallback (%d,%d) drifted toward the building at (50,50); it should stay near the MCV at (700,700)", x, y)
+	}
+}
+
+// Ore is not in the game state, so this rule can only say "mine near a
+// refinery". When that patch is exhausted the harvester finds nothing, goes
+// idle, and is ordered back — game 96 matched 746 times while the harvesters
+// sat in a heap beside the refineries. The engine knows where ore is and we do
+// not, so it gets first refusal: an order issued the instant a harvester goes
+// idle interrupts its own search.
+func TestIdleHarvestersAreLeftToTheEngineBriefly(t *testing.T) {
+	memory := map[string]any{}
+	env := func(tick int) RuleEnv {
+		return RuleEnv{
+			Memory: memory,
+			State: model.GameState{
+				Tick:      tick,
+				Units:     []model.Unit{{ID: 1, Type: "harv", X: 500, Y: 500, Idle: true}},
+				Buildings: []model.Building{{ID: 9, Type: "proc", X: 400, Y: 400}},
+			},
+		}
+	}
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	before := conn.Sent()
+	if err := ActionSendIdleHarvesters(env(1000), conn); err != nil {
+		t.Fatal(err)
+	}
+	if conn.Sent() != before {
+		t.Error("ordered a harvester the moment it went idle, interrupting the engine's ore search")
+	}
+	// Still idle much later: now it is genuinely stuck and worth a nudge.
+	if err := ActionSendIdleHarvesters(env(1000+harvesterIdleGrace+1), conn); err != nil {
+		t.Fatal(err)
+	}
+	if conn.Sent() == before {
+		t.Error("a harvester idle well past the grace period was never rescued")
 	}
 }
