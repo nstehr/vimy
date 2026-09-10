@@ -73,6 +73,7 @@ rule build-barracks {
   require not has-role(barracks)
   require power-excess >= 0
   require cash >= 300
+  require not queue-producing-role(barracks)
 }
 
 rule build-war-factory {
@@ -92,6 +93,7 @@ rule build-war-factory {
   require not has-role(war-factory)
   require power-excess >= 0
   require cash >= war-factory-cash()
+  require not queue-producing-role(war-factory)
 }
 
 rule build-barracks-prereq {
@@ -107,6 +109,7 @@ rule build-barracks-prereq {
   require not has-role(barracks)
   require power-excess >= 0
   require cash >= 300
+  require not queue-producing-role(barracks)
 }
 
 rule build-airfield {
@@ -143,6 +146,7 @@ rule build-service-depot {
   require has-role(war-factory)
   require power-excess >= 0
   require cash >= service-depot-cash()
+  require not queue-producing-role(service-depot)
 }
 
 rule build-naval-yard {
@@ -158,6 +162,7 @@ rule build-naval-yard {
   require not has-role(naval-yard)
   require power-excess >= 0
   require cash >= 500
+  require not queue-producing-role(naval-yard)
 }
 
 rule build-base-defense {
@@ -197,6 +202,7 @@ rule build-aa-defense {
   require can-build-role(aa-defense)
   require role-count(aa-defense) < lerp(2, 5, air-defense-priority)
   require affordable(lerp(1200, 500, air-defense-priority))
+  require not queue-producing-role(aa-defense)
 }
 
 rule build-gap-generator {
@@ -213,6 +219,7 @@ rule build-gap-generator {
   require has-role(tech-center)
   require role-count(gap-generator) < lerp(1, 2, ground-defense-priority)
   require affordable(800)
+  require not queue-producing-role(gap-generator)
 }
 
 rule build-tech-center {
@@ -227,6 +234,7 @@ rule build-tech-center {
   require has-role(radar)
   require power-excess >= 0
   require cash >= 1500
+  require not queue-producing-role(tech-center)
 }
 
 rule build-missile-silo {
@@ -241,6 +249,7 @@ rule build-missile-silo {
   require has-role(tech-center)
   require power-excess >= 0
   require cash >= 2500
+  require not queue-producing-role(missile-silo)
 }
 
 rule build-iron-curtain {
@@ -255,6 +264,7 @@ rule build-iron-curtain {
   require has-role(tech-center)
   require power-excess >= 0
   require cash >= 2500
+  require not queue-producing-role(iron-curtain)
 }
 
 rule build-extra-barracks {
@@ -268,6 +278,7 @@ rule build-extra-barracks {
   require role-count(barracks) < lerp(1, 3, infantry-weight)
   require power-excess >= 0
   require cash >= 300
+  require not queue-producing-role(barracks)
 }
 
 rule build-extra-war-factory {
@@ -281,6 +292,7 @@ rule build-extra-war-factory {
   require role-count(war-factory) < lerp(1, 2, vehicle-weight)
   require power-excess >= 0
   require cash >= 2000
+  require not queue-producing-role(war-factory)
 }
 
 rule build-extra-airfield {
@@ -312,4 +324,5 @@ rule build-extra-naval-yard {
   require role-count(submarine) + role-count(destroyer) >= lerp(3, 8, naval-weight) - 1
   require power-excess >= 0
   require cash >= 500
+  require not queue-producing-role(naval-yard)
 }

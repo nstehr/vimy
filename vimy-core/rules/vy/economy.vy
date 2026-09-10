@@ -20,6 +20,7 @@ rule build-refinery {
   require can-build-role(refinery)
   require role-count(refinery) < 1
   require cash >= lerp(2000, 800, economy-priority)
+  require not queue-producing-role(refinery)
 }
 
 rule build-second-refinery {
@@ -34,6 +35,7 @@ rule build-second-refinery {
   require role-count(refinery) == 1
   require has-role(barracks) or has-role(war-factory)
   require cash >= lerp(1500, 500, economy-priority)
+  require not queue-producing-role(refinery)
 }
 
 rule build-extra-refinery {
@@ -50,6 +52,7 @@ rule build-extra-refinery {
   require role-count(refinery) < lerp(1, 5, economy-priority)
   require has-role(barracks) or has-role(war-factory)
   require cash >= lerp(2000, 800, economy-priority)
+  require not queue-producing-role(refinery)
 }
 
 rule build-advanced-power {
@@ -75,6 +78,7 @@ rule build-ore-silo {
   require resources-near-cap()
   require role-count(ore-silo) < lerp(0, 2, economy-priority)
   require cash >= 150
+  require not queue-producing-role(ore-silo)
 }
 
 rule produce-extra-harvester {
