@@ -1418,3 +1418,32 @@ func TestIdleHarvestersAreLeftToTheEngineBriefly(t *testing.T) {
 		t.Error("a harvester idle well past the grace period was never rescued")
 	}
 }
+
+// The grace period exists for a harvester whose idleness we cannot explain, so
+// the engine gets first go at finding ore. One that has just fled is idle for a
+// reason we already know — it ran to a refinery and stopped — and making it
+// wait is lost mining. Game 97 fled 116 times.
+func TestFledHarvestersSkipTheGracePeriod(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	env := RuleEnv{
+		Memory: map[string]any{},
+		State: model.GameState{
+			Tick:      5000,
+			Units:     []model.Unit{{ID: 1, Type: "harv", Idle: true}},
+			Buildings: []model.Building{{ID: 10, Type: "proc", X: 20, Y: 20}},
+		},
+	}
+	// It fled a while ago — past the flee-resend window, so it is no longer
+	// mid-move, just sitting there.
+	getHarvesterFleeState(env.Memory)[1] = harvesterFleeEntry{
+		Tick: env.State.Tick - harvesterFleeResend - 1, X: 20, Y: 20,
+	}
+	if err := ActionSendIdleHarvesters(env, conn); err != nil {
+		t.Fatal(err)
+	}
+	if sent := memoryMap[int, harvestEntry](env.Memory, "harvestSent"); len(sent) != 1 {
+		t.Errorf("a harvester that fled and stopped was left idle for the grace period: %+v", sent)
+	}
+}

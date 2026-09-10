@@ -1376,7 +1376,13 @@ func ActionSendIdleHarvesters(env RuleEnv, conn *ipc.Connection) error {
 
 	state := memoryMap[int, harvestEntry](env.Memory, "harvestSent")
 	for i, u := range env.IdleHarvesters() {
-		if since, ok := idleSince[u.ID]; ok && env.State.Tick-since < harvesterIdleGrace {
+		// The grace period is for a harvester whose idleness we cannot explain,
+		// so the engine gets a chance to sort it out. One that has just fled is
+		// idle for a reason we know: it ran to a refinery and stopped. Making it
+		// wait is pure lost mining — game 97 fled 116 times, and at 250 ticks
+		// each that is a large share of a 27,000-tick game's harvesting.
+		_, justFled := fleeing[u.ID]
+		if since, ok := idleSince[u.ID]; ok && !justFled && env.State.Tick-since < harvesterIdleGrace {
 			continue
 		}
 		if prev, ok := fleeing[u.ID]; ok && env.State.Tick-prev.Tick < harvesterFleeResend {
