@@ -1127,7 +1127,7 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 				harv++
 			}
 		}
-		sit.Harvester_share = float64(harv) / float64(n)
+		sit.Harvester_percent = int64(100 * harv / n)
 	}
 
 	for _, pq := range gs.ProductionQueues {

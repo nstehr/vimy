@@ -767,8 +767,8 @@ func (t *GameSituationClassView) PropertyUnbuildable_roles() (ClassPropertyView,
 	return t.inner.Property("unbuildable_roles")
 }
 
-func (t *GameSituationClassView) PropertyHarvester_share() (ClassPropertyView, error) {
-	return t.inner.Property("harvester_share")
+func (t *GameSituationClassView) PropertyHarvester_percent() (ClassPropertyView, error) {
+	return t.inner.Property("harvester_percent")
 }
 
 func (t *GameSituationClassView) PropertyOur_combat_units() (ClassPropertyView, error) {
