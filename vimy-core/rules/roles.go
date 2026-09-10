@@ -462,3 +462,30 @@ func IsUnarmedStructure(actorType string) bool {
 	}
 	return false
 }
+
+// nonCombatUnits are the units that do not fight: they mine, build, carry or
+// scout. Transports are here because an APC or a Ranger contributes nothing to
+// a fight by itself, and a spy less than nothing.
+var nonCombatUnits = map[string]bool{
+	Harvester: true, MCV: true, Engineer: true, Spy: true,
+	APC: true, Ranger: true, "truk": true, "mnly": true,
+}
+
+// IsHarvester reports whether an actor type is an ore harvester, allowing for
+// OpenRA's faction variant naming.
+func IsHarvester(actorType string) bool { return matchesType(actorType, Harvester) }
+
+// IsCombatUnit reports whether an actor type is something that fights.
+//
+// Used to tell the strategist what share of its force is ore trucks. It was
+// shown both force lists every window and never asked to compare them, and
+// chose economy_priority 0.9 with vehicle_weight 0.25 while fielding nine
+// harvesters against five soldiers.
+func IsCombatUnit(actorType string) bool {
+	for t := range nonCombatUnits {
+		if matchesType(actorType, t) {
+			return false
+		}
+	}
+	return true
+}

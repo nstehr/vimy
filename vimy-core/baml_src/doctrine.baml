@@ -91,6 +91,9 @@ class GameSituation {
   cash_burn_rate int @description("Net cash change over the last evaluation interval (positive = income exceeds spending, negative = losing cash). Signals whether current build order is sustainable. If negative and persistent, either economy is under attack, repair_budget_ratio is too high, or production caps are exceeded — respond by tightening repair or throttling production.")
   faction_side string @description("Which side your faction fights for: \"allied\" or \"soviet\". Read this rather than inferring it from the faction name — the roster lists below are keyed by side, not by country.")
   unbuildable_roles string[] @description("Roles your faction CANNOT build. Naming any of these is a wasted slot: it is dropped before production sees it, while still moving rule priorities on the strength of the name. Pick the equivalent from your own side instead — e.g. an Allied army wanting long-range ground fire takes artillery, not v2_launcher.")
+  harvester_share float @description("Fraction of YOUR units that are harvesters, 0.0-1.0. Counting items in the lists above is unreliable, so it is computed here. A force that is mostly ore trucks is an economy you cannot defend: every harvester is roughly 1400 credits that did not buy a tank or a pillbox, and a raided harvester is that spent twice.")
+  our_combat_units int @description("YOUR combat units: everything that is not a harvester, engineer, transport or spy.")
+  enemy_combat_units_seen int @description("Enemy combat units observed so far, on the same basis. Cumulative, so it counts things already destroyed — an upper bound on what they have, and a fair measure of what they have been willing to build.")
   time_to_reach_enemy_estimate int @description("Rough tick-count estimate for a ground unit to walk from our base centroid to a known enemy base position. Positive when enemy_base_discovered has fired. -1 when no intel exists. Useful for planning commit_tick decisions: 'if reach estimate is 4000 and I want to attack by tick 8000, I should deploy by tick 4000.'")
 }
 
@@ -197,6 +200,8 @@ function GenerateDoctrine(directive: string, situation: GameSituation, faction: 
     {% endif %}
     {% if situation.enemy_units_seen %}
     Enemy units (all observed):{% for u in situation.enemy_units_seen %} {{ u.count }}x {{ u.type }}{% endfor %}
+    FORCE COMPARISON: {{ situation.our_combat_units }} combat units of yours against {{ situation.enemy_combat_units_seen }} of theirs observed, and {{ situation.harvester_share }} of your units are harvesters.
+    If your economy is larger than theirs and your army smaller, that is a choice you are making with these weights. Either justify it in the rationale — a build-up you intend to cash in, an economy you can actually defend — or move economy_priority down and vehicle_weight or infantry_weight up. Ore trucks do not hold ground, and one that is raided is paid for twice.
     {% endif %}
     {% if situation.enemy_buildings %}
     Enemy buildings (visible now):{% for b in situation.enemy_buildings %} {{ b.count }}x {{ b.type }}{% endfor %}

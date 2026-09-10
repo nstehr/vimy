@@ -118,3 +118,25 @@ func TestSupportPowerReachableIsPerCountry(t *testing.T) {
 		}
 	}
 }
+
+// The strategist is told what share of its force is ore trucks, so the line
+// between fighting and not fighting has to be right. Transports count as
+// non-combat: an APC or a Ranger contributes nothing to a fight by itself.
+func TestIsCombatUnitDrawsTheLineAtFighting(t *testing.T) {
+	fights := []string{"e1", "e3", "2tnk", "1tnk", "3tnk", "arty", "v2rl", "ftrk", "shok", "dog"}
+	for _, u := range fights {
+		if !IsCombatUnit(u) {
+			t.Errorf("%s should count as a combat unit", u)
+		}
+	}
+	doesNot := []string{"harv", "mcv", "e6", "spy", "apc", "jeep", "truk", "mnly"}
+	for _, u := range doesNot {
+		if IsCombatUnit(u) {
+			t.Errorf("%s should not count as a combat unit", u)
+		}
+	}
+	// Faction variants must resolve too, or a Ukrainian harvester reads as a tank.
+	if !IsHarvester("harv.ukraine") || IsCombatUnit("harv.ukraine") {
+		t.Error("a faction-variant harvester was misread")
+	}
+}

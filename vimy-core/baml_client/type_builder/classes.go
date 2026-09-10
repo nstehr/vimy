@@ -767,6 +767,18 @@ func (t *GameSituationClassView) PropertyUnbuildable_roles() (ClassPropertyView,
 	return t.inner.Property("unbuildable_roles")
 }
 
+func (t *GameSituationClassView) PropertyHarvester_share() (ClassPropertyView, error) {
+	return t.inner.Property("harvester_share")
+}
+
+func (t *GameSituationClassView) PropertyOur_combat_units() (ClassPropertyView, error) {
+	return t.inner.Property("our_combat_units")
+}
+
+func (t *GameSituationClassView) PropertyEnemy_combat_units_seen() (ClassPropertyView, error) {
+	return t.inner.Property("enemy_combat_units_seen")
+}
+
 func (t *GameSituationClassView) PropertyTime_to_reach_enemy_estimate() (ClassPropertyView, error) {
 	return t.inner.Property("time_to_reach_enemy_estimate")
 }

@@ -1108,6 +1108,28 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 	}
 	sit.Idle_unit_count = int64(idleCount)
 
+	// The strategist is shown both force lists and, until 2026-09-10, was never
+	// asked to compare them. It picked economy_priority 0.9 with vehicle_weight
+	// 0.25 while fielding nine harvesters against five soldiers, game after
+	// game. Counting items in a rendered list is exactly what a model does
+	// badly, so the ratio is computed here.
+	ours := 0
+	for _, u := range gs.Units {
+		if rules.IsCombatUnit(u.Type) {
+			ours++
+		}
+	}
+	sit.Our_combat_units = int64(ours)
+	if n := len(gs.Units); n > 0 {
+		harv := 0
+		for _, u := range gs.Units {
+			if rules.IsHarvester(u.Type) {
+				harv++
+			}
+		}
+		sit.Harvester_share = float64(harv) / float64(n)
+	}
+
 	for _, pq := range gs.ProductionQueues {
 		if pq.CurrentItem != "" {
 			sit.Active_production = append(sit.Active_production, types.ActiveProduction{
@@ -1144,9 +1166,17 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 		}
 	}
 
+	enemyCombat := 0
 	for t, c := range rules.GetEnemyUnitsSeen(memory) {
 		sit.Enemy_units_seen = append(sit.Enemy_units_seen, types.TypeCount{Type: t, Count: int64(c)})
+		// Cumulative, so this counts units already destroyed. That is the right
+		// measure for the comparison: it says what the opponent has been
+		// willing to build, not what happens to be alive this second.
+		if rules.IsCombatUnit(t) {
+			enemyCombat += c
+		}
 	}
+	sit.Enemy_combat_units_seen = int64(enemyCombat)
 	for t, c := range rules.GetEnemyBuildingsSeen(memory) {
 		sit.Enemy_buildings_seen = append(sit.Enemy_buildings_seen, types.TypeCount{Type: t, Count: int64(c)})
 	}

@@ -893,6 +893,9 @@ type GameSituation struct {
 	Cash_burn_rate               *int64               `json:"cash_burn_rate"`
 	Faction_side                 *string              `json:"faction_side"`
 	Unbuildable_roles            []string             `json:"unbuildable_roles"`
+	Harvester_share              *float64             `json:"harvester_share"`
+	Our_combat_units             *int64               `json:"our_combat_units"`
+	Enemy_combat_units_seen      *int64               `json:"enemy_combat_units_seen"`
 	Time_to_reach_enemy_estimate *int64               `json:"time_to_reach_enemy_estimate"`
 }
 
@@ -1006,6 +1009,15 @@ func (c *GameSituation) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap
 		case "unbuildable_roles":
 			c.Unbuildable_roles = baml.Decode(valueHolder).Interface().([]string)
 
+		case "harvester_share":
+			c.Harvester_share = baml.Decode(valueHolder).Interface().(*float64)
+
+		case "our_combat_units":
+			c.Our_combat_units = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "enemy_combat_units_seen":
+			c.Enemy_combat_units_seen = baml.Decode(valueHolder).Interface().(*int64)
+
 		case "time_to_reach_enemy_estimate":
 			c.Time_to_reach_enemy_estimate = baml.Decode(valueHolder).Interface().(*int64)
 
@@ -1084,6 +1096,12 @@ func (c GameSituation) Encode() (*cffi.HostValue, error) {
 	fields["faction_side"] = c.Faction_side
 
 	fields["unbuildable_roles"] = c.Unbuildable_roles
+
+	fields["harvester_share"] = c.Harvester_share
+
+	fields["our_combat_units"] = c.Our_combat_units
+
+	fields["enemy_combat_units_seen"] = c.Enemy_combat_units_seen
 
 	fields["time_to_reach_enemy_estimate"] = c.Time_to_reach_enemy_estimate
 
