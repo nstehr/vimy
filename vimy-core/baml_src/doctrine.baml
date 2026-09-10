@@ -170,6 +170,9 @@ function GenerateDoctrine(directive: string, situation: GameSituation, faction: 
     Cash: {{ situation.cash }} | Resources: {{ situation.resources }}/{{ situation.resource_capacity }}
     Power: {{ situation.power.drained }}/{{ situation.power.provided }} ({{ situation.power.state }})
 
+    FORCE COMPARISON: {{ situation.our_combat_units }} combat units of yours, {{ situation.enemy_combat_units_seen }} of theirs observed so far, and {{ situation.harvester_share }} of your units are harvesters.
+    If your economy is larger than theirs and your army smaller, that is a choice you are making with these weights. Either justify it in the rationale — a build-up you intend to cash in, an economy you can actually defend — or move economy_priority down and vehicle_weight or infantry_weight up. Ore trucks do not hold ground, and one that is raided is paid for twice. Before contact the enemy count is zero and tells you nothing; the share of your own force that mines is knowable from the first minute and is the half that matters early.
+
     {% if situation.buildings %}
     Buildings:{% for b in situation.buildings %} {{ b.count }}x {{ b.type }}{% endfor %}
     {% endif %}
@@ -200,8 +203,6 @@ function GenerateDoctrine(directive: string, situation: GameSituation, faction: 
     {% endif %}
     {% if situation.enemy_units_seen %}
     Enemy units (all observed):{% for u in situation.enemy_units_seen %} {{ u.count }}x {{ u.type }}{% endfor %}
-    FORCE COMPARISON: {{ situation.our_combat_units }} combat units of yours against {{ situation.enemy_combat_units_seen }} of theirs observed, and {{ situation.harvester_share }} of your units are harvesters.
-    If your economy is larger than theirs and your army smaller, that is a choice you are making with these weights. Either justify it in the rationale — a build-up you intend to cash in, an economy you can actually defend — or move economy_priority down and vehicle_weight or infantry_weight up. Ore trucks do not hold ground, and one that is raided is paid for twice.
     {% endif %}
     {% if situation.enemy_buildings %}
     Enemy buildings (visible now):{% for b in situation.enemy_buildings %} {{ b.count }}x {{ b.type }}{% endfor %}
