@@ -1075,14 +1075,35 @@ func ActionScoutWithIdleUnits(env RuleEnv, conn *ipc.Connection) error {
 		return nil
 	}
 	idle := env.IdleGroundUnits()
-	n := min(2, len(idle))
-	if n == 0 {
+	if len(idle) == 0 {
 		return nil
 	}
 	state := memoryMap[int, scoutMoveEntry](env.Memory, "idleScoutMoveSent")
 
-	for i := 0; i < n; i++ {
-		u := idle[i]
+	// Keep the same two units on the job. IdleGroundUnits lists whatever is
+	// idle in state order, so taking the first two each time lets a freshly
+	// built rifle displace a scout mid-patrol — and the displaced one is left
+	// standing on its last waypoint, because only this action advances it. Six
+	// firings early in game 105 left units parked in corners across the map.
+	party := make([]model.Unit, 0, scoutPartySize)
+	for _, u := range idle {
+		if _, carrying := state[u.ID]; carrying {
+			party = append(party, u)
+			if len(party) == scoutPartySize {
+				break
+			}
+		}
+	}
+	for _, u := range idle {
+		if len(party) == scoutPartySize {
+			break
+		}
+		if _, carrying := state[u.ID]; !carrying {
+			party = append(party, u)
+		}
+	}
+
+	for _, u := range party {
 		prev, assigned := state[u.ID]
 
 		forceAdvance := false
@@ -1253,6 +1274,11 @@ type scoutMoveEntry struct {
 // scoutMoveResend is shorter than the APC window — scouts must keep moving, and
 // a scout that arrives rotates to a different destination anyway, which bypasses
 // the throttle.
+// scoutPartySize is how many units go out on idle-unit recon. They are the
+// same units each firing: a scout only advances to its next waypoint when this
+// action runs for it, so a unit that loses its place is a unit left standing.
+const scoutPartySize = 2
+
 const scoutMoveResend = 40
 const scoutArriveRadius = 6.0
 

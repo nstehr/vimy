@@ -1515,3 +1515,56 @@ func abs(v int) int {
 	}
 	return v
 }
+
+// The scout party has to be the SAME two units each firing. A scout only
+// advances to its next waypoint when this action runs for it, so a unit that
+// loses its place is a unit left standing wherever it happened to be — six
+// firings early in game 105 parked units in corners across the map.
+func TestScoutWithIdleUnitsKeepsTheSameParty(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	grid := &model.TerrainGrid{Cols: 4, Rows: 4, CellW: 100, CellH: 100, Grid: make([]model.TerrainType, 16)}
+	for i := range grid.Grid {
+		grid.Grid[i] = model.Land
+	}
+
+	mem := map[string]any{}
+	env := func(units []model.Unit, tick int) RuleEnv {
+		return RuleEnv{
+			State:   model.GameState{Tick: tick, MapWidth: 400, MapHeight: 400, Units: units},
+			Memory:  mem,
+			Terrain: grid,
+		}
+	}
+
+	first := []model.Unit{{ID: 1, Type: "e1", Idle: true}, {ID: 2, Type: "e1", Idle: true}}
+	if err := ActionScoutWithIdleUnits(env(first, 100), conn); err != nil {
+		t.Fatalf("first dispatch: %v", err)
+	}
+	sent := memoryMap[int, scoutMoveEntry](mem, "idleScoutMoveSent")
+	if len(sent) != scoutPartySize {
+		t.Fatalf("expected %d scouts assigned, got %d", scoutPartySize, len(sent))
+	}
+
+	// Newly built rifles arrive ahead of the scouts in State.Units order.
+	withNew := []model.Unit{
+		{ID: 3, Type: "e1", Idle: true},
+		{ID: 4, Type: "e1", Idle: true},
+		{ID: 1, Type: "e1", Idle: true},
+		{ID: 2, Type: "e1", Idle: true},
+	}
+	if err := ActionScoutWithIdleUnits(env(withNew, 1000), conn); err != nil {
+		t.Fatalf("second dispatch: %v", err)
+	}
+
+	sent = memoryMap[int, scoutMoveEntry](mem, "idleScoutMoveSent")
+	if len(sent) != scoutPartySize {
+		t.Errorf("party grew to %d units; the displaced ones strand where they stand", len(sent))
+	}
+	for _, id := range []int{1, 2} {
+		if _, ok := sent[id]; !ok {
+			t.Errorf("unit %d lost its place to a newly built unit", id)
+		}
+	}
+}
