@@ -1604,3 +1604,42 @@ func TestRepairSpendsAgainstTotalCash(t *testing.T) {
 		t.Error("cash 100 + resources 100 is below the floor, but repair started anyway")
 	}
 }
+
+// Units stranded on scouting waypoints have to be fetched home. Nothing else
+// collects them: recall-overextended knows about squads, and squads absorb
+// loose units only while under strength.
+func TestRecallStrayUnitsFetchesTheFarOnesOnly(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	// Base at (500,500) on a 1000x1000 map: the recall threshold is 35% of the
+	// diagonal, about 495.
+	env := RuleEnv{
+		State: model.GameState{
+			Tick:      5000,
+			MapWidth:  1000,
+			MapHeight: 1000,
+			Buildings: []model.Building{{ID: 1, Type: "fact", X: 500, Y: 500}},
+			Units: []model.Unit{
+				{ID: 10, Type: "e1", Idle: true, X: 520, Y: 520}, // at home
+				{ID: 11, Type: "e1", Idle: true, X: 50, Y: 50},   // stranded corner
+				{ID: 12, Type: "e1", Idle: false, X: 60, Y: 60},  // far but busy
+			},
+		},
+		Memory: map[string]any{},
+	}
+	if err := ActionRecallStrayUnits(env, conn); err != nil {
+		t.Fatalf("recall: %v", err)
+	}
+
+	sent := memoryMap[int, scoutMoveEntry](env.Memory, "strayRecallSent")
+	if _, ok := sent[11]; !ok {
+		t.Error("the unit stranded in the corner was not recalled")
+	}
+	if _, ok := sent[10]; ok {
+		t.Error("a unit already at the base was recalled")
+	}
+	if _, ok := sent[12]; ok {
+		t.Error("a busy unit was recalled; only idle unassigned units are strays")
+	}
+}

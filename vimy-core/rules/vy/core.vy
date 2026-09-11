@@ -367,6 +367,15 @@ rule repair-buildings {
   require count(damaged-buildings) > 0
 }
 
+rule recall-stray-units {
+  priority 190
+  category maintenance
+  because "scouting walks combat units to map waypoints and then stops firing on first contact, and only the scouting action advances them — so whoever is out when the guards flip stands there for the rest of the match. Game 106 left rifles in the corners and the centre of the map. Squads collect loose units only while under strength, and recall-overextended knows about squads, not strays"
+  do recall-stray-units
+  require has-enemy-intel()
+  require count(unassigned-idle-ground) > 0
+}
+
 rule return-idle-harvesters {
   priority 100
   category harvester

@@ -35,6 +35,7 @@ var ActionRegistry = map[string]ActionFunc{
 	"emergency-defend-base":       ActionEmergencyDefendBase,
 	"air-defend-base":             ActionAirDefendBase,
 	"repair-buildings":            ActionRepairDamagedBuildings,
+	"recall-stray-units":         ActionRecallStrayUnits,
 	"scout":                       ActionScoutWithIdleUnits,
 	"send-harvesters":             ActionSendIdleHarvesters,
 	"produce-engineer":            ActionProduceEngineer,

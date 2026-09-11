@@ -2975,6 +2975,60 @@ func RecallOverextended(name string, leashPct float64) ActionFunc {
 	}
 }
 
+// strayRecallFraction is how far from the base an unassigned idle unit has to
+// be before it is fetched home, as a fraction of the map diagonal. Wider than
+// the 20% NearBaseGroundUnits uses for "at home", so a unit loitering just
+// outside the perimeter is left alone rather than shuttled back and forth.
+const strayRecallFraction = 0.35
+
+// strayRecallTicks throttles re-issuing a walk home that is already underway.
+const strayRecallTicks = 300
+
+// ActionRecallStrayUnits walks unassigned idle ground units back to the base.
+//
+// Scouting dispatches combat units to map waypoints and then stops firing on
+// first contact — enemies-visible and has-enemy-intel both flip early — so
+// whoever is out at that moment is never advanced again, because only the
+// scouting action advances them. Nothing else collects them either:
+// recall-overextended knows about squads, and squads only absorb loose units
+// while under strength. Game 106 left rifles standing in the corners and the
+// centre of the map for the rest of the match.
+func ActionRecallStrayUnits(env RuleEnv, conn *ipc.Connection) error {
+	if len(env.State.Buildings) == 0 {
+		return nil
+	}
+	centX, centY := env.BuildingCentroid()
+	mw, mh := float64(env.State.MapWidth), float64(env.State.MapHeight)
+	threshold := math.Sqrt(mw*mw+mh*mh) * strayRecallFraction
+	threshSq := threshold * threshold
+
+	// The designated scout is doing this on purpose.
+	scoutID := getScoutID(env.Memory)
+	sent := memoryMap[int, scoutMoveEntry](env.Memory, "strayRecallSent")
+
+	for _, u := range env.UnassignedIdleGround() {
+		if scoutID != 0 && u.ID == scoutID {
+			continue
+		}
+		dx, dy := float64(u.X-centX), float64(u.Y-centY)
+		if dx*dx+dy*dy < threshSq {
+			continue
+		}
+		if prev, ok := sent[u.ID]; ok && env.State.Tick-prev.Tick < strayRecallTicks {
+			continue
+		}
+		sent[u.ID] = scoutMoveEntry{Tick: env.State.Tick, X: centX, Y: centY}
+		slog.Debug("recalling stray unit", "id", u.ID, "type", u.Type, "dest_x", centX, "dest_y", centY)
+		if err := conn.Send(ipc.TypeMove, ipc.MoveCommand{
+			ActorID: uint32(u.ID), X: centX, Y: centY,
+		}); err != nil {
+			return err
+		}
+		markEffect(env)
+	}
+	return nil
+}
+
 // SquadDisengage moves idle squad members back toward base centroid when
 // the local threat ratio is too high (outmatched).
 func SquadDisengage(name string) ActionFunc {
