@@ -1472,3 +1472,46 @@ func TestFledHarvestersSkipTheGracePeriod(t *testing.T) {
 		t.Errorf("a harvester that fled and stopped was left idle for the grace period: %+v", sent)
 	}
 }
+
+// The base hunt has to be able to reach a building that outlived the base it
+// was part of. Game 105 reduced the enemy to one outlying barracks and then
+// circled the empty base site: two rings at four cells could not span a 128
+// cell map, and the squad wandered until it happened to see the building.
+func TestHuntReachesAcrossTheMap(t *testing.T) {
+	const mapDim = 128
+
+	for _, tc := range []struct {
+		name       string
+		aggression float64
+	}{
+		{"cautious", 0.25},
+		{"aggressive", 0.8},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			radius := int(float64(mapDim/16) * (0.25 + tc.aggression*1.25))
+			if radius < 1 {
+				radius = 1
+			}
+			maxStep := huntMaxStep(mapDim, radius)
+
+			var reach int
+			for step := 1; step <= maxStep; step++ {
+				dx, dy := huntOffset(step, radius)
+				if d := max(abs(dx), abs(dy)); d > reach {
+					reach = d
+				}
+			}
+			// Half the map: the enemy start is across it, not beside us.
+			if want := mapDim / 2; reach < want {
+				t.Errorf("aggression %.2f: hunt reaches %d cells, want at least %d", tc.aggression, reach, want)
+			}
+		})
+	}
+}
+
+func abs(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}

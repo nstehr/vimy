@@ -2370,6 +2370,25 @@ type huntBaseState struct {
 // huntOffset maps a hunt step to an offset from the base centroid: step 0 is
 // the centroid, then two rings of 8 compass points at radius R and 2R. Sweeping
 // inward-first catches buildings just inside fog before widening to outliers.
+// huntMaxStep is where the hunt wraps back to its first ring.
+//
+// The rings have to be able to span the map. A razed base leaves its last
+// building wherever it stood, which is not necessarily beside the centroid its
+// sightings averaged out to — game 105 reduced the enemy to one outlying
+// barracks and then circled the empty base site, because two rings of four
+// cells could not reach it. Widening is safe: squad-attack outranks the base
+// attack the moment anything is visible, so a growing search only runs while
+// there is nothing in sight, and finding something ends it.
+func huntMaxStep(mapDim, radius int) int {
+	if radius < 1 {
+		radius = 1
+	}
+	// Round the ring count up: truncating leaves the outermost ring short of
+	// the half-map it is meant to cover.
+	rings := (mapDim/2 + radius - 1) / radius
+	return 8 * max(2, rings)
+}
+
 func huntOffset(step, radius int) (int, int) {
 	if step <= 0 {
 		return 0, 0
@@ -2594,15 +2613,16 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 			}
 		}
 
-		if state.Step > 0 {
-			mapDim := max(env.State.MapWidth, env.State.MapHeight)
-			baseRadius := mapDim / 16
-			scale := 0.25 + aggression*1.25
-			radius := int(float64(baseRadius) * scale)
-			if radius < 1 {
-				radius = 1
-			}
+		mapDim := max(env.State.MapWidth, env.State.MapHeight)
+		baseRadius := mapDim / 16
+		scale := 0.25 + aggression*1.25
+		radius := int(float64(baseRadius) * scale)
+		if radius < 1 {
+			radius = 1
+		}
+		maxStep := huntMaxStep(mapDim, radius)
 
+		if state.Step > 0 {
 			dx, dy := huntOffset(state.Step, radius)
 			tx = base.X + dx
 			ty = base.Y + dy
@@ -2631,7 +2651,7 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 			"owner", base.Owner, "step", state.Step, "x", tx, "y", ty)
 
 		// Wraps to 1, not 0 — the centroid is only worth the initial approach.
-		if state.Step >= 16 {
+		if state.Step >= maxStep {
 			state.Step = 1
 		} else {
 			state.Step++
