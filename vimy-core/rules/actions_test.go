@@ -760,7 +760,7 @@ func TestDesignateScout_FallsBackToAttackDog(t *testing.T) {
 	}
 }
 
-func TestDesignateScout_PrefersLightTankOverDog(t *testing.T) {
+func TestDesignateScout_PrefersDogOverLightTank(t *testing.T) {
 	env := RuleEnv{
 		State: model.GameState{
 			Units: []model.Unit{
@@ -771,8 +771,33 @@ func TestDesignateScout_PrefersLightTankOverDog(t *testing.T) {
 		Memory: make(map[string]any),
 	}
 	designateScout(env)
-	if getScoutID(env.Memory) != 21 {
-		t.Errorf("expected light tank (id=21) designated as scout, got %d", getScoutID(env.Memory))
+	if getScoutID(env.Memory) != 20 {
+		t.Errorf("expected attack dog (id=20) designated as scout, got %d", getScoutID(env.Memory))
+	}
+}
+
+// With no dog, a light tank is worth scouting with only once the armour can
+// spare it. Game 102 peaked at three combat vehicles and put its only light
+// tank on patrol, where it drove into the enemy base and died.
+func TestDesignateScout_LightTankOnlyWhenArmourCanSpareIt(t *testing.T) {
+	lightTankScout := func(units []model.Unit) int {
+		env := RuleEnv{State: model.GameState{Units: units}, Memory: make(map[string]any)}
+		designateScout(env)
+		return getScoutID(env.Memory)
+	}
+
+	scarce := []model.Unit{
+		{ID: 21, Type: "1tnk", Idle: true},
+		{ID: 22, Type: "2tnk", Idle: true},
+		{ID: 23, Type: "arty", Idle: true},
+	}
+	if got := lightTankScout(scarce); got != 0 {
+		t.Errorf("three combat vehicles: expected no scout designated, got %d", got)
+	}
+
+	spare := append(append([]model.Unit{}, scarce...), model.Unit{ID: 24, Type: "2tnk", Idle: true})
+	if got := lightTankScout(spare); got != 21 {
+		t.Errorf("four combat vehicles: expected light tank (id=21) designated, got %d", got)
 	}
 }
 

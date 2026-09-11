@@ -1168,9 +1168,13 @@ func ActionScoutPatrol(env RuleEnv, conn *ipc.Connection) error {
 	state := getScoutMoveState(env.Memory)
 
 	// A rush needs the enemy base found fast; once we know where it is, the
-	// perimeter rotation is spent on corners that no longer matter.
+	// perimeter rotation is spent on corners that no longer matter. But the
+	// waypoint is the base CENTRE, so this has to end when the search does:
+	// HasEnemyIntel means we have actually seen the buildings, and driving at
+	// them again only feeds the defenses. Game 102 held scout-reach above 0.5
+	// in all thirty windows and sent its one light tank in until it died.
 	scoutReach, _ := env.Memory["scoutReachPriority"].(float64)
-	targetKnownBase := scoutReach > 0.5 && env.NearestEnemyBase() != nil
+	targetKnownBase := scoutReach > 0.5 && !env.HasEnemyIntel() && env.NearestEnemyBase() != nil
 
 	for _, s := range scouts {
 		prev, assigned := state[s.ID]
@@ -1251,6 +1255,10 @@ type scoutMoveEntry struct {
 // the throttle.
 const scoutMoveResend = 40
 const scoutArriveRadius = 6.0
+
+// lightTankScoutMinVehicles is the armour that must remain before a light tank
+// is worth spending on patrol.
+const lightTankScoutMinVehicles = 3
 
 func getScoutMoveState(memory map[string]any) map[int]scoutMoveEntry {
 	return memoryMap[int, scoutMoveEntry](memory, "scoutMoveSent")

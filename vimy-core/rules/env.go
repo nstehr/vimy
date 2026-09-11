@@ -964,18 +964,25 @@ func designateScout(env RuleEnv) {
 		}
 	}
 	assigned := squadUnitIDSet(env.Memory)
-	for _, u := range env.State.Units {
-		if u.Idle && matchesType(u.Type, LightTank) && !assigned[u.ID] {
-			env.Memory["scoutUnitID"] = u.ID
-			slog.Debug("designated scout light tank", "id", u.ID)
-			return
-		}
-	}
-	// Soviet fallback: the first dog patrols, later ones guard base.
+	// The dog goes first: it is the disposable one, and a scout is spent
+	// sooner or later. The first dog patrols, later ones guard base.
 	for _, u := range env.State.Units {
 		if u.Idle && matchesType(u.Type, AttackDog) && !assigned[u.ID] {
 			env.Memory["scoutUnitID"] = u.ID
 			slog.Debug("designated scout attack dog", "id", u.ID)
+			return
+		}
+	}
+	// A light tank scouts only when the armour can spare one. Game 102 fielded
+	// a peak of three combat vehicles and put its only light tank on patrol,
+	// where it died; an army that small cannot pay for the vision.
+	if env.CombatVehicleCount() <= lightTankScoutMinVehicles {
+		return
+	}
+	for _, u := range env.State.Units {
+		if u.Idle && matchesType(u.Type, LightTank) && !assigned[u.ID] {
+			env.Memory["scoutUnitID"] = u.ID
+			slog.Debug("designated scout light tank", "id", u.ID)
 			return
 		}
 	}
