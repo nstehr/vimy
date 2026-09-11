@@ -994,6 +994,10 @@ func isCriticalRepairType(t string) bool {
 // repairCashFloor stops all repair spend below this cash level. Without it,
 // in-flight repairs consume income the instant ore converts and cash sits
 // pinned at zero for the whole mid-game.
+//
+// Measured against Cash(), the spendable total, as every other threshold in
+// the rule layer is. Read against Player.Cash alone it was unreachable, and
+// repair acted zero times in every recorded game.
 const repairCashFloor = 500
 
 // repairMaxConcurrent bounds cash drain: OpenRA charges per tick per active
@@ -1005,7 +1009,7 @@ const repairMaxConcurrent = 2
 // allowed to touch, the rest reserved for production.
 func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
 	// Below the floor, production and rebuild need what's left.
-	if env.State.Player.Cash < repairCashFloor {
+	if env.Cash() < repairCashFloor {
 		return nil
 	}
 
@@ -1020,7 +1024,7 @@ func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
 		damagedCount := len(env.DamagedBuildings())
 		perBuildingRepairAllowance := 100 // rough estimate per damaged building
 		neededHeadroom := int(float64(damagedCount*perBuildingRepairAllowance) / budgetRatio)
-		if env.State.Player.Cash < neededHeadroom {
+		if env.Cash() < neededHeadroom {
 			reserveOK = false
 		}
 	}

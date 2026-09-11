@@ -1568,3 +1568,39 @@ func TestScoutWithIdleUnitsKeepsTheSameParty(t *testing.T) {
 		}
 	}
 }
+
+// Repair is gated on the money the rules actually spend. Read against
+// Player.Cash alone the floor was unreachable — ore sits in Resources until it
+// converts — and repair acted zero times in every recorded game while
+// buildings burned.
+func TestRepairSpendsAgainstTotalCash(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	damaged := []model.Building{{ID: 1, Type: "proc", HP: 100, MaxHP: 1000, X: 10, Y: 10}}
+
+	repaired := func(cash, resources int) bool {
+		env := RuleEnv{
+			State: model.GameState{
+				Tick:      1000,
+				Buildings: damaged,
+				Player:    model.Player{Cash: cash, Resources: resources},
+			},
+			Memory: map[string]any{},
+		}
+		if err := ActionRepairDamagedBuildings(env, conn); err != nil {
+			t.Fatalf("repair: %v", err)
+		}
+		return len(memoryMap[int, repairToggleEntry](env.Memory, "repairToggleSent")) > 0
+	}
+
+	// The floor's worth, held mostly as unconverted ore. This is the ordinary
+	// case that never repaired.
+	if !repaired(100, 600) {
+		t.Error("cash 100 + resources 600 is above the floor, but nothing was repaired")
+	}
+	// Genuinely broke: production and rebuild need what is left.
+	if repaired(100, 100) {
+		t.Error("cash 100 + resources 100 is below the floor, but repair started anyway")
+	}
+}
