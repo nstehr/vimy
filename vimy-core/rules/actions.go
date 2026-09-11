@@ -2595,6 +2595,11 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 		prev, hasPrev := aState[name]
 		targetChanged := !hasPrev || prev.TargetX != base.X || prev.TargetY != base.Y
 		commitStale := hasPrev && env.State.Tick-prev.LastTick > squadAttackCommitTTL
+		// A squad walking in again picks its entry again. Not on commitStale:
+		// that fires every 2000 ticks of a fight already in progress, and the
+		// step counter it would reset is the outward ring search, which needs
+		// to keep growing to find what is left of a razed base.
+		reapproach := targetChanged || !prev.Attacking
 		if targetChanged || commitStale || !prev.Attacking {
 			if env.SquadClumped(name, squadRallyRadius) {
 				aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: true, LastTick: env.State.Tick}
@@ -2618,7 +2623,7 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 			state = &huntBaseState{}
 		}
 
-		if state.BaseX != base.X || state.BaseY != base.Y {
+		if state.BaseX != base.X || state.BaseY != base.Y || reapproach {
 			state.BaseX = base.X
 			state.BaseY = base.Y
 			state.Step = 0
