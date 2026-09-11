@@ -55,7 +55,7 @@ def infantry-reserves(cost: int) =
        or has-role(war-factory) or cash >= cost + 2000)
   and (vehicle-weight <= 0.2
        or trunc(800.0 * max(0.0, vehicle-weight - infantry-weight)) <= 0
-       or combat-vehicle-count >= lerp(3, 10, vehicle-weight)
+       or combat-vehicle-count >= army-cap(3.0, 18.0, vehicle-weight)
        or cash >= cost + trunc(800.0 * max(0.0, vehicle-weight - infantry-weight)))
 
 rule build-flame-tower-for-flamethrower {
@@ -110,7 +110,7 @@ rule produce-specialist-infantry {
   require has-role(barracks)
   require not queue-busy(Infantry)
   require can-build-any-specialist()
-  require specialist-infantry-count < lerp(1, 6, specialized-infantry-weight)
+  require specialist-infantry-count < army-cap(1.0, 8.0, specialized-infantry-weight)
   require infantry-reserves(300)
 }
 
@@ -123,7 +123,7 @@ rule produce-infantry {
   require has-role(barracks)
   require not queue-busy(Infantry)
   require can-build(Infantry, e1)
-  require count(e1) < lerp(8, 20, infantry-weight)
+  require count(e1) < army-cap(8.0, 30.0, infantry-weight)
   require infantry-reserves(100)
 }
 
@@ -138,7 +138,7 @@ rule produce-infantry-rush {
   require has-role(barracks)
   require not queue-busy(Infantry)
   require can-build(Infantry, e1)
-  require count(e1) < lerp(8, 20, infantry-weight) * 2
+  require count(e1) < army-cap(8.0, 30.0, infantry-weight) * 2
   require cash >= 50
 }
 
@@ -156,8 +156,8 @@ rule produce-bridge-infantry {
   require (air-weight > 0.1 and not has-role(airfield))
        or (naval-weight > 0.1 and not has-role(naval-yard))
        or (vehicle-weight > 0.2 and not has-role(war-factory))
-  require count(e1) >= lerp(8, 20, infantry-weight)
-  require count(e1) < lerp(8, 20, infantry-weight)
+  require count(e1) >= army-cap(8.0, 30.0, infantry-weight)
+  require count(e1) < army-cap(8.0, 30.0, infantry-weight)
         + select(air-weight > 0.1, lerp(2, 5, air-weight), 0.0)
         + select(naval-weight > 0.1, lerp(1, 4, naval-weight), 0.0)
         + select(vehicle-weight > 0.2, lerp(1, 3, vehicle-weight), 0.0)
@@ -225,7 +225,7 @@ rule produce-vehicle {
   require has-role(war-factory)
   require not queue-busy(Vehicle)
   require can-build-any-combat-vehicle()
-  require combat-vehicle-count < lerp(3, 10, vehicle-weight)
+  require combat-vehicle-count < army-cap(3.0, 18.0, vehicle-weight)
   require scaled-reserves(800)
 }
 
@@ -238,7 +238,7 @@ rule produce-aircraft {
   require has-role(airfield)
   require not queue-busy(Aircraft)
   require can-build-any-combat-aircraft()
-  require combat-aircraft-count < lerp(2, 8, air-weight)
+  require combat-aircraft-count < army-cap(2.0, 10.0, air-weight)
   require combat-aircraft-count < aircraft-capacity
   require reserves(800)
 }
@@ -280,7 +280,7 @@ rule produce-rocket-soldier {
   require has-role(barracks)
   require not queue-busy(Infantry)
   require can-build-role(rocket-soldier)
-  require role-count(rocket-soldier) < lerp(2, 8, tech-priority * infantry-weight)
+  require role-count(rocket-soldier) < army-cap(2.0, 10.0, max(tech-priority, infantry-weight))
   require infantry-reserves(300)
 }
 
@@ -294,7 +294,8 @@ rule produce-heavy-vehicle {
   require has-role(tech-center)
   require not queue-busy(Vehicle)
   require can-build-role(heavy-tank) or can-build-role(medium-tank)
-  require role-count(heavy-tank) + role-count(medium-tank) < lerp(1, 5, tech-priority * vehicle-weight)
+  require role-count(heavy-tank) + role-count(medium-tank)
+        < army-cap(1.0, 8.0, max(tech-priority, vehicle-weight))
   require reserves(1200)
 }
 
@@ -323,7 +324,7 @@ rule produce-siege-vehicle {
   require not queue-busy(Vehicle)
   require can-build-role(artillery) or can-build-role(v2-launcher)
   require role-count(artillery) + role-count(v2-launcher)
-        < select(siege-vehicle-first > 0, lerp(3, 8, vehicle-weight), lerp(1, 3, vehicle-weight))
+        < select(siege-vehicle-first > 0, army-cap(3.0, 12.0, vehicle-weight), army-cap(1.0, 5.0, vehicle-weight))
   require scaled-reserves(900)
 }
 
@@ -395,7 +396,7 @@ rule produce-attack-aircraft {
   require has-role(airfield)
   require not queue-busy(Aircraft)
   require can-build-role(advanced-aircraft)
-  require role-count(advanced-aircraft) < lerp(1, 4, tech-priority * air-weight)
+  require role-count(advanced-aircraft) < army-cap(1.0, 6.0, max(tech-priority, air-weight))
   require combat-aircraft-count < aircraft-capacity
   require reserves(1500)
 }
@@ -411,6 +412,7 @@ rule produce-advanced-ship {
   require not queue-busy(Ship)
   require can-build-role(cruiser) or can-build-role(destroyer) or can-build-role(missile-sub)
   require role-count(cruiser) + role-count(destroyer) + role-count(missile-sub)
-        < select(tech-naval-first > 0, lerp(3, 8, naval-weight), lerp(1, 3, tech-priority * naval-weight))
+        < select(tech-naval-first > 0, army-cap(3.0, 10.0, naval-weight),
+                 army-cap(1.0, 5.0, max(tech-priority, naval-weight)))
   require reserves(2000)
 }

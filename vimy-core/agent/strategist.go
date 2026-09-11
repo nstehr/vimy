@@ -640,6 +640,7 @@ func fromBAML(d types.Doctrine) rules.Doctrine {
 		BaseDefenseFloor:          int(d.Base_defense_floor),
 		RepairBudgetRatio:         d.Repair_budget_ratio,
 		ScoutReachPriority:        d.Scout_reach_priority,
+		ForceSize:                 d.Force_size,
 	}
 }
 

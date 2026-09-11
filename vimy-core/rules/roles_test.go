@@ -140,3 +140,19 @@ func TestIsCombatUnitDrawsTheLineAtFighting(t *testing.T) {
 		t.Error("a faction-variant harvester was misread")
 	}
 }
+
+// force_size is the knob that decides how large an army to keep, as opposed to
+// the weights that decide its mix. DoctrineParams renders numeric fields from
+// their JSON tags, so a new knob reaches a rule set without being listed
+// anywhere — this pins that, since a silently absent param compiles to a cap of
+// zero rather than failing.
+func TestDoctrineParamsCarriesForceSize(t *testing.T) {
+	if got := DoctrineParams(Doctrine{ForceSize: 0.8})["force-size"]; got != 0.8 {
+		t.Errorf("force-size = %v, want 0.8", got)
+	}
+	// Zero is the disabled value, and must still be present rather than missing.
+	params := DoctrineParams(Doctrine{})
+	if got, ok := params["force-size"]; !ok || got != 0 {
+		t.Errorf("force-size on a zero doctrine = (%v, present=%v), want (0, true)", got, ok)
+	}
+}

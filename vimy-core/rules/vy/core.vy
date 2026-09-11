@@ -6,6 +6,7 @@ param superweapon-priority: float
 param infantry-weight: float
 param aggression: float
 param commit-ratio: float
+param force-size: float
 
 def reserves(cost: int) =
   cash >= cost
@@ -22,6 +23,12 @@ def reserves(cost: int) =
 
 def activation() =
   select(commit-ratio > 0.0, commit-ratio, lerpf(0.6, 1.0, 1.0 - aggression))
+
+def force-scale() =
+  select(force-size > 0.0, lerpf(1.0, 2.5, force-size), 1.0)
+
+def army-cap(low: float, high: float, weight: float) =
+  trunc(lerpf(low, high, weight) * force-scale())
 
 rule deploy-mcv {
   priority 1000

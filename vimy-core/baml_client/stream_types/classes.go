@@ -398,6 +398,7 @@ type Doctrine struct {
 	Base_defense_floor             *int64   `json:"base_defense_floor"`
 	Repair_budget_ratio            *float64 `json:"repair_budget_ratio"`
 	Scout_reach_priority           *float64 `json:"scout_reach_priority"`
+	Force_size                     *float64 `json:"force_size"`
 }
 
 func (c *Doctrine) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -501,6 +502,9 @@ func (c *Doctrine) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		case "scout_reach_priority":
 			c.Scout_reach_priority = baml.Decode(valueHolder).Interface().(*float64)
 
+		case "force_size":
+			c.Force_size = baml.Decode(valueHolder).Interface().(*float64)
+
 		default:
 
 			panic(fmt.Sprintf("unexpected field: %s in class Doctrine", key))
@@ -570,6 +574,8 @@ func (c Doctrine) Encode() (*cffi.HostValue, error) {
 	fields["repair_budget_ratio"] = c.Repair_budget_ratio
 
 	fields["scout_reach_priority"] = c.Scout_reach_priority
+
+	fields["force_size"] = c.Force_size
 
 	return baml.EncodeClass("Doctrine", fields, nil)
 }

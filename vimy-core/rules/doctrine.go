@@ -36,6 +36,7 @@ type Doctrine struct {
 	BaseDefenseFloor   int     `json:"base_defense_floor"`   // 0-15, minimum base defenses before offensive squad rules fire.
 	RepairBudgetRatio  float64 `json:"repair_budget_ratio"`  // 0.0-1.0, 0=disabled → unlimited (current behavior). Cap on repair spending as a fraction of cash on hand.
 	ScoutReachPriority float64 `json:"scout_reach_priority"` // 0.0-1.0, 0=disabled → default perimeter patrol. Higher = probe toward last-known enemy direction.
+	ForceSize          float64 `json:"force_size"`           // 0.0-1.0, 0=disabled → historical unit caps. Scales every standing-army ceiling; the weights pick the mix, this picks the size.
 }
 
 // DefaultDoctrine is used when no LLM strategist is configured.
@@ -84,6 +85,7 @@ func (d *Doctrine) Validate() {
 	d.BaseDefenseFloor = clampInt(d.BaseDefenseFloor, 0, 15)
 	d.RepairBudgetRatio = clamp(d.RepairBudgetRatio, 0, 1)
 	d.ScoutReachPriority = clamp(d.ScoutReachPriority, 0, 1)
+	d.ForceSize = clamp(d.ForceSize, 0, 1)
 }
 
 func clampInt(v, min, max int) int {

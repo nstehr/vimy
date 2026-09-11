@@ -403,6 +403,10 @@ func (t *DoctrineClassView) PropertyScout_reach_priority() (ClassPropertyView, e
 	return t.inner.Property("scout_reach_priority")
 }
 
+func (t *DoctrineClassView) PropertyForce_size() (ClassPropertyView, error) {
+	return t.inner.Property("force_size")
+}
+
 func (t *TypeBuilder) Doctrine() (*DoctrineClassView, error) {
 	bld, err := t.inner.Class("Doctrine")
 	if err != nil {
