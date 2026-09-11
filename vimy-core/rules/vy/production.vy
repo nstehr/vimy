@@ -48,7 +48,7 @@ def infantry-reserves(cost: int) =
   reserves(cost)
   and (vehicle-weight <= 0.1
        or not has-role(war-factory)
-       or combat-vehicle-count >= army-cap(2.0, 9.0, vehicle-weight)
+       or combat-vehicle-count >= lerp(2, 5, vehicle-weight)
        or cash >= cost + 800)
   and (vehicle-weight <= 0.1 or aggression >= 0.3
        or has-role(war-factory) or cash >= cost + 2000)
