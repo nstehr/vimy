@@ -114,10 +114,19 @@ rule form-harvester-guard {
 
 rule guard-harvesters {
   priority lerp(360, 430, economy-priority)
-  category combat
+  category harvester-defense exclusive
   because "every other defensive rule is anchored at the base, so a harvester raided at an ore patch summoned nobody — and it no longer waits for the squad to be idle, because a guard already riding to one raid is not idle and harassment does not wait its turn: across games 84 and 85 this fired five times while the harvesters fled a thousand"
   do squad-guard-harvesters(harvester-guard, lerpf(0.05, 0.15, economy-priority))
   require economy-priority > 0.3
   require squad-exists(harvester-guard)
+  require count(harvesters-in-danger(round2(lerpf(0.05, 0.15, economy-priority)))) > 0
+}
+
+rule scramble-to-harvesters {
+  priority lerp(362, 432, economy-priority)
+  category harvester-defense exclusive
+  because "the built-in AI lists harvesters first in ProtectionTypes and answers a raid out of its general squad pool, paying nothing until something is attacked. Vimy reserved a four-unit guard squad instead, explicitly so the attack rules could not poach it back, and it covers six harvesters at separate ore patches: the one win saw 26 flee events against 97 and 126 in the losses either side. This pulls the NEAREST units, squad members included, and holds them only long enough to arrive and fight — the squad reclaims them when the hold lapses"
+  do scramble-to-harvesters(lerpf(0.05, 0.15, economy-priority), 6)
+  require economy-priority > 0.3
   require count(harvesters-in-danger(round2(lerpf(0.05, 0.15, economy-priority)))) > 0
 }

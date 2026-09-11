@@ -1643,3 +1643,50 @@ func TestRecallStrayUnitsFetchesTheFarOnesOnly(t *testing.T) {
 		t.Error("a busy unit was recalled; only idle unassigned units are strays")
 	}
 }
+
+// A raid is answered by whoever can get there, out of the whole army — the
+// model the built-in AI uses, where harvesters head a ProtectionTypes list and
+// the response comes from the general pool. Vimy's standing four-unit guard
+// covered six harvesters at separate patches.
+func TestScrambleToHarvestersTakesTheNearestAndHoldsThem(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	env := RuleEnv{
+		State: model.GameState{
+			Tick:      9000,
+			MapWidth:  1000,
+			MapHeight: 1000,
+			Units: []model.Unit{
+				{ID: 1, Type: "harv", X: 900, Y: 900},       // the one being raided
+				{ID: 2, Type: "2tnk", X: 880, Y: 880},       // nearest
+				{ID: 3, Type: "e1", X: 860, Y: 860},         // next
+				{ID: 4, Type: "e1", X: 100, Y: 100},         // far side of the map
+				{ID: 5, Type: "harv", X: 890, Y: 890},       // harvesters do not defend
+			},
+			Enemies: []model.Enemy{{ID: 90, Type: "3tnk", X: 905, Y: 905, HP: 400, MaxHP: 400}},
+		},
+		Memory: map[string]any{},
+	}
+
+	if err := ScrambleToHarvesters(0.15, 2)(env, conn); err != nil {
+		t.Fatalf("scramble: %v", err)
+	}
+
+	held := memoryMap[int, int](env.Memory, "disengagedUntil")
+	for _, id := range []int{2, 3} {
+		if _, ok := held[id]; !ok {
+			t.Errorf("unit %d was near the raid but was not scrambled", id)
+		}
+	}
+	if _, ok := held[4]; ok {
+		t.Error("a unit on the far side of the map was pulled; nearest should win")
+	}
+	if _, ok := held[5]; ok {
+		t.Error("a harvester was sent to defend a harvester")
+	}
+	// The hold has to lapse, or the squad it came from never gets it back.
+	if until := held[2]; until <= env.State.Tick {
+		t.Errorf("hold expires at %d, which is not after the current tick %d", until, env.State.Tick)
+	}
+}

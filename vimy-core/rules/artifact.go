@@ -151,6 +151,20 @@ var actionFactories = map[string]func([]string) (ActionFunc, error){
 	"squad-disengage":         squadAction(SquadDisengage),
 	"squad-defend":            squadAction(SquadDefend),
 	"squad-guard-harvesters":  squadFloatAction(SquadGuardHarvesters),
+	"scramble-to-harvesters": func(a []string) (ActionFunc, error) {
+		if err := arity(a, 2); err != nil {
+			return nil, err
+		}
+		danger, err := argFloat(a[0])
+		if err != nil {
+			return nil, err
+		}
+		maxDefenders, err := argInt(a[1])
+		if err != nil {
+			return nil, err
+		}
+		return ScrambleToHarvesters(danger, maxDefenders), nil
+	},
 	"squad-attack-known-base": squadFloatAction(SquadAttackKnownBase),
 	"recall-overextended":     squadFloatAction(RecallOverextended),
 	"retreat-damaged-units":   floatAction(RetreatDamagedUnits),

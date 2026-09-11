@@ -2864,6 +2864,77 @@ func squadIdleActorIDs(env RuleEnv, name string) []uint32 {
 	return ids
 }
 
+// harvesterScrambleHold is how long a unit pulled to a raided harvester stays
+// out of the attack rules' hands. Long enough to arrive and fight, short enough
+// that the push is not quietly disbanded.
+const harvesterScrambleHold = 400
+
+// harvesterScrambleResend throttles re-tasking the same defender.
+const harvesterScrambleResend = 150
+
+// ActionScrambleToHarvesters answers a raid from the whole army, not from a
+// standing detachment.
+//
+// The built-in AI lists harv first in ProtectionTypes and responds out of its
+// general squad pool, paying nothing until something is actually attacked.
+// Vimy pre-committed a four-unit harvester-guard squad — reserved so "the
+// attack rules cannot poach it back" — to cover six harvesters at separate ore
+// patches, and the flee counts say it is not enough: 26 flee events in the one
+// win against 97 and 126 in the two losses either side of it.
+//
+// Units are held briefly rather than reassigned, so the squad they came from
+// reclaims them when the hold lapses. That is the AI's "return to the pool"
+// without a second bookkeeping path.
+func ScrambleToHarvesters(dangerPct float64, maxDefenders int) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		danger := env.HarvestersInDanger(dangerPct)
+		if len(danger) == 0 {
+			return nil
+		}
+		held := memoryMap[int, int](env.Memory, "disengagedUntil")
+		sent := memoryMap[int, scoutMoveEntry](env.Memory, "harvesterScrambleSent")
+
+		// Nearest first, so a raid is answered by whoever can actually get
+		// there rather than by whoever happens to sort early.
+		target := danger[0]
+		var pool []model.Unit
+		for _, u := range env.State.Units {
+			if !IsCombatUnit(u.Type) || isAircraft(u) || isNaval(u) {
+				continue
+			}
+			pool = append(pool, u)
+		}
+		distSq := func(u model.Unit) int {
+			return (u.X-target.X)*(u.X-target.X) + (u.Y-target.Y)*(u.Y-target.Y)
+		}
+		slices.SortStableFunc(pool, func(a, b model.Unit) int { return distSq(a) - distSq(b) })
+		if len(pool) > maxDefenders {
+			pool = pool[:maxDefenders]
+		}
+		if len(pool) == 0 {
+			return nil
+		}
+
+		var ids []uint32
+		for _, u := range pool {
+			if prev, ok := sent[u.ID]; ok && env.State.Tick-prev.Tick < harvesterScrambleResend {
+				continue
+			}
+			sent[u.ID] = scoutMoveEntry{Tick: env.State.Tick, X: target.X, Y: target.Y}
+			held[u.ID] = env.State.Tick + harvesterScrambleHold
+			ids = append(ids, uint32(u.ID))
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		slog.Debug("scrambling to raided harvester", "count", len(ids), "harvester", target.ID, "x", target.X, "y", target.Y)
+		markEffect(env)
+		return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
+			ActorIDs: ids, X: target.X, Y: target.Y,
+		})
+	}
+}
+
 // --- Micro action factories ---
 
 // RetreatDamagedUnits uses Move, not AttackMove — a retreating unit that stops
