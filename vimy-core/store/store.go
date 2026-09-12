@@ -50,6 +50,14 @@ type GameContext struct {
 	// The directive the weights were chosen from — a post mortem that stops at
 	// the weights stops one step short.
 	Directive string
+	// Both halves of the ledger. Kills are inferred, so what was watched and
+	// what merely vanished are kept apart — see the killTracker in the agent
+	// package. Summing them would flatter every game.
+	EnemyUnitsKilled     int
+	EnemyBuildingsKilled int
+	EnemyUnitsPresumed   int
+	InfantryLost         int
+	VehiclesLost         int
 }
 
 // ArchivedDoctrine is one doctrine snapshot from a prior game, ready to be
@@ -267,6 +275,12 @@ func (s *Store) ArchiveGame(
 		Won:             boolToInt(gameCtx.Won),
 		QualityTag:      nullableString(qualityTag),
 		ReviewJson:      nullableString(reviewJSON),
+
+		EnemyUnitsKilled:     sql.NullInt64{Int64: int64(gameCtx.EnemyUnitsKilled), Valid: true},
+		EnemyBuildingsKilled: sql.NullInt64{Int64: int64(gameCtx.EnemyBuildingsKilled), Valid: true},
+		EnemyUnitsPresumed:   sql.NullInt64{Int64: int64(gameCtx.EnemyUnitsPresumed), Valid: true},
+		InfantryLost:         sql.NullInt64{Int64: int64(gameCtx.InfantryLost), Valid: true},
+		VehiclesLost:         sql.NullInt64{Int64: int64(gameCtx.VehiclesLost), Valid: true},
 	})
 	if err != nil {
 		return 0, fmt.Errorf("insert game: %w", err)

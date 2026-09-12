@@ -104,23 +104,30 @@ const insertGame = `-- name: InsertGame :one
 INSERT INTO games (
     played_at, our_faction, opponent_faction,
     map_width, map_height, duration_ticks,
-    won, quality_tag, review_json, export_path, directive
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    won, quality_tag, review_json, export_path, directive,
+    enemy_units_killed, enemy_buildings_killed, enemy_units_presumed,
+    infantry_lost, vehicles_lost
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id
 `
 
 type InsertGameParams struct {
-	PlayedAt        int64          `json:"played_at"`
-	OurFaction      string         `json:"our_faction"`
-	OpponentFaction sql.NullString `json:"opponent_faction"`
-	MapWidth        int64          `json:"map_width"`
-	MapHeight       int64          `json:"map_height"`
-	DurationTicks   int64          `json:"duration_ticks"`
-	Won             int64          `json:"won"`
-	QualityTag      sql.NullString `json:"quality_tag"`
-	ReviewJson      sql.NullString `json:"review_json"`
-	ExportPath      sql.NullString `json:"export_path"`
-	Directive       sql.NullString `json:"directive"`
+	PlayedAt             int64          `json:"played_at"`
+	OurFaction           string         `json:"our_faction"`
+	OpponentFaction      sql.NullString `json:"opponent_faction"`
+	MapWidth             int64          `json:"map_width"`
+	MapHeight            int64          `json:"map_height"`
+	DurationTicks        int64          `json:"duration_ticks"`
+	Won                  int64          `json:"won"`
+	QualityTag           sql.NullString `json:"quality_tag"`
+	ReviewJson           sql.NullString `json:"review_json"`
+	ExportPath           sql.NullString `json:"export_path"`
+	Directive            sql.NullString `json:"directive"`
+	EnemyUnitsKilled     sql.NullInt64  `json:"enemy_units_killed"`
+	EnemyBuildingsKilled sql.NullInt64  `json:"enemy_buildings_killed"`
+	EnemyUnitsPresumed   sql.NullInt64  `json:"enemy_units_presumed"`
+	InfantryLost         sql.NullInt64  `json:"infantry_lost"`
+	VehiclesLost         sql.NullInt64  `json:"vehicles_lost"`
 }
 
 func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (int64, error) {
@@ -136,6 +143,11 @@ func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (int64, 
 		arg.ReviewJson,
 		arg.ExportPath,
 		arg.Directive,
+		arg.EnemyUnitsKilled,
+		arg.EnemyBuildingsKilled,
+		arg.EnemyUnitsPresumed,
+		arg.InfantryLost,
+		arg.VehiclesLost,
 	)
 	var id int64
 	err := row.Scan(&id)

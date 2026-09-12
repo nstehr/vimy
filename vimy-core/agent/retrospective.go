@@ -175,6 +175,12 @@ func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveRev
 			Won:             snap.won,
 			ExportPath:      snap.exportPath,
 			Directive:       snap.directive,
+
+			EnemyUnitsKilled:     snap.kills.Units,
+			EnemyBuildingsKilled: snap.kills.Buildings,
+			EnemyUnitsPresumed:   snap.kills.PresumedUnits,
+			InfantryLost:         snap.totalLosses["infantry"],
+			VehiclesLost:         snap.totalLosses["vehicle"],
 		},
 	}
 

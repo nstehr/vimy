@@ -2,8 +2,10 @@
 INSERT INTO games (
     played_at, our_faction, opponent_faction,
     map_width, map_height, duration_ticks,
-    won, quality_tag, review_json, export_path, directive
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    won, quality_tag, review_json, export_path, directive,
+    enemy_units_killed, enemy_buildings_killed, enemy_units_presumed,
+    infantry_lost, vehicles_lost
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id;
 
 -- name: InsertDoctrine :one

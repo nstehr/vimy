@@ -366,3 +366,47 @@ func TestGameWithoutADirectiveReadsEmpty(t *testing.T) {
 		t.Errorf("directive = %q, want empty", games[0].Directive)
 	}
 }
+
+// A game's row has to carry both halves of the ledger. Game 110 collected kill
+// counts and dropped them on the floor: the tracker lives in the strategist and
+// resets between games, so a figure that is not written down is a figure nobody
+// can ever ask about again.
+func TestArchiveGameRecordsKillsAndLosses(t *testing.T) {
+	s := newTestStore(t)
+
+	id, err := s.ArchiveGame(context.Background(), GameContext{
+		OurFaction:    "england",
+		DurationTicks: 33050,
+		Won:           false,
+
+		EnemyUnitsKilled:     41,
+		EnemyBuildingsKilled: 3,
+		EnemyUnitsPresumed:   17,
+		InfantryLost:         70,
+		VehiclesLost:         16,
+	}, "", "", nil)
+	if err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	var killed, buildings, presumed, inf, veh int
+	row := s.db.QueryRow(`SELECT enemy_units_killed, enemy_buildings_killed,
+		enemy_units_presumed, infantry_lost, vehicles_lost FROM games WHERE id = ?`, id)
+	if err := row.Scan(&killed, &buildings, &presumed, &inf, &veh); err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	for _, c := range []struct {
+		name      string
+		got, want int
+	}{
+		{"enemy_units_killed", killed, 41},
+		{"enemy_buildings_killed", buildings, 3},
+		{"enemy_units_presumed", presumed, 17},
+		{"infantry_lost", inf, 70},
+		{"vehicles_lost", veh, 16},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s = %d, want %d", c.name, c.got, c.want)
+		}
+	}
+}
