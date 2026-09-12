@@ -259,6 +259,18 @@ func (t *CombatStatsClassView) PropertyNaval_lost() (ClassPropertyView, error) {
 	return t.inner.Property("naval_lost")
 }
 
+func (t *CombatStatsClassView) PropertyEnemy_units_killed() (ClassPropertyView, error) {
+	return t.inner.Property("enemy_units_killed")
+}
+
+func (t *CombatStatsClassView) PropertyEnemy_buildings_destroyed() (ClassPropertyView, error) {
+	return t.inner.Property("enemy_buildings_destroyed")
+}
+
+func (t *CombatStatsClassView) PropertyEnemy_units_presumed_killed() (ClassPropertyView, error) {
+	return t.inner.Property("enemy_units_presumed_killed")
+}
+
 func (t *TypeBuilder) CombatStats() (*CombatStatsClassView, error) {
 	bld, err := t.inner.Class("CombatStats")
 	if err != nil {

@@ -309,10 +309,13 @@ func (c CautionaryPattern) BamlTypeName() string {
 }
 
 type CombatStats struct {
-	Infantry_lost *int64 `json:"infantry_lost"`
-	Vehicles_lost *int64 `json:"vehicles_lost"`
-	Aircraft_lost *int64 `json:"aircraft_lost"`
-	Naval_lost    *int64 `json:"naval_lost"`
+	Infantry_lost               *int64 `json:"infantry_lost"`
+	Vehicles_lost               *int64 `json:"vehicles_lost"`
+	Aircraft_lost               *int64 `json:"aircraft_lost"`
+	Naval_lost                  *int64 `json:"naval_lost"`
+	Enemy_units_killed          *int64 `json:"enemy_units_killed"`
+	Enemy_buildings_destroyed   *int64 `json:"enemy_buildings_destroyed"`
+	Enemy_units_presumed_killed *int64 `json:"enemy_units_presumed_killed"`
 }
 
 func (c *CombatStats) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -341,6 +344,15 @@ func (c *CombatStats) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) 
 		case "naval_lost":
 			c.Naval_lost = baml.Decode(valueHolder).Interface().(*int64)
 
+		case "enemy_units_killed":
+			c.Enemy_units_killed = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "enemy_buildings_destroyed":
+			c.Enemy_buildings_destroyed = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "enemy_units_presumed_killed":
+			c.Enemy_units_presumed_killed = baml.Decode(valueHolder).Interface().(*int64)
+
 		default:
 
 			panic(fmt.Sprintf("unexpected field: %s in class CombatStats", key))
@@ -360,6 +372,12 @@ func (c CombatStats) Encode() (*cffi.HostValue, error) {
 	fields["aircraft_lost"] = c.Aircraft_lost
 
 	fields["naval_lost"] = c.Naval_lost
+
+	fields["enemy_units_killed"] = c.Enemy_units_killed
+
+	fields["enemy_buildings_destroyed"] = c.Enemy_buildings_destroyed
+
+	fields["enemy_units_presumed_killed"] = c.Enemy_units_presumed_killed
 
 	return baml.EncodeClass("CombatStats", fields, nil)
 }

@@ -22,6 +22,7 @@ type retrospectiveSnapshot struct {
 	mapHeight       int
 	history         []DoctrineRecord
 	totalLosses     map[string]int
+	kills           killTracker
 	store           *store.Store
 	// Where this game's states were written, for replay. Empty without
 	// --export-states.
@@ -56,6 +57,7 @@ func (s *Strategist) snapshotForReview(won bool, exportPath string) *retrospecti
 		won:             won,
 		history:         append([]DoctrineRecord(nil), s.history...),
 		totalLosses:     make(map[string]int, len(s.totalLosses)),
+		kills:           s.kills,
 		store:           s.store,
 		exportPath:      exportPath,
 		directive:       s.directive,
@@ -106,6 +108,10 @@ func doRetrospective(ctx context.Context, snap *retrospectiveSnapshot) {
 		Vehicles_lost: int64(snap.totalLosses["vehicle"]),
 		Aircraft_lost: int64(snap.totalLosses["aircraft"]),
 		Naval_lost:    int64(snap.totalLosses["naval"]),
+
+		Enemy_units_killed:          int64(snap.kills.Units),
+		Enemy_buildings_destroyed:   int64(snap.kills.Buildings),
+		Enemy_units_presumed_killed: int64(snap.kills.PresumedUnits),
 	}
 
 	review, err := baml_client.ReviewGame(

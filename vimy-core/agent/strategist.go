@@ -49,6 +49,9 @@ type BattlefieldStatus struct {
 	VehiclesLost       int
 	AircraftLost       int
 	NavalLost          int
+	EnemyUnitsKilled   int // watched die
+	EnemyBuildingsKill int // watched destroyed
+	EnemyUnitsPresumed int // vanished out of sight; some died
 	EnemyBuildings     []TypeCount // currently visible
 	EnemyBuildingsSeen []TypeCount // cumulative historical
 	EnemyUnits         []TypeCount // currently visible
@@ -93,6 +96,10 @@ type Strategist struct {
 	// last tick's per-domain IDs, unmerged, and totalLosses runs for the game.
 	prevFreshIDs map[string]map[int]bool
 	totalLosses  map[string]int
+
+	// The other half of the ledger. See killTracker: enemy losses are inferred,
+	// and the confident and presumed figures are kept apart on purpose.
+	kills killTracker
 
 	// Win/loss record — persists across resets within a session.
 	record []GameResult
@@ -144,6 +151,7 @@ func (s *Strategist) Reset() {
 	s.history = nil
 	s.prevFreshIDs = nil
 	s.totalLosses = nil
+	s.kills.reset()
 	s.lastTick = 0
 	s.memoryCache = nil
 	s.memoryAttempted = false
@@ -273,6 +281,7 @@ func (s *Strategist) GetBattlefieldStatus() *BattlefieldStatus {
 		losses[k] = v
 	}
 	gs := s.latest
+	kills := s.kills
 	s.mu.Unlock()
 
 	if gs == nil {
@@ -284,6 +293,10 @@ func (s *Strategist) GetBattlefieldStatus() *BattlefieldStatus {
 		VehiclesLost: losses["vehicle"],
 		AircraftLost: losses["aircraft"],
 		NavalLost:    losses["naval"],
+
+		EnemyUnitsKilled:   kills.Units,
+		EnemyBuildingsKill: kills.Buildings,
+		EnemyUnitsPresumed: kills.PresumedUnits,
 	}
 
 	// Current enemy composition from game state.
@@ -349,6 +362,7 @@ func (s *Strategist) UpdateState(gs model.GameState) {
 		}
 	}
 	s.prevFreshIDs = curFresh
+	s.kills.observe(gs)
 
 	// prevSnap's ID sets are a high-water mark, so losses accumulate across state
 	// updates rather than resetting every tick.
@@ -428,6 +442,7 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	for k, v := range s.totalLosses {
 		losses[k] = v
 	}
+	kills := s.kills
 	// Wide enough for the BURNED AXIS prompt rule to see pivots 10-20 doctrines
 	// apart — repeated air pivots each followed by losses are otherwise never
 	// visible together.
@@ -461,7 +476,7 @@ func (s *Strategist) evaluate(ctx context.Context) {
 	s.engine.LockMemory()
 	swFires := snapshotSuperweaponFires(s.engine.Memory)
 	mergedEvents := mergeStressEvents(events, stressSnapshot)
-	situation := buildSituation(*gs, s.engine.Memory, mergedEvents, swFires, losses)
+	situation := buildSituation(*gs, s.engine.Memory, mergedEvents, swFires, losses, kills)
 	situation.Recent_doctrines = recentDoctrines
 	situation.Burned_axes = burnedAxes
 	situation.Being_rushed = beingRushed
@@ -1053,7 +1068,7 @@ func recentDoctrineSummaries(history []DoctrineRecord, n int) []types.RecentDoct
 
 // buildSituation assembles the GameSituation handed to the LLM. No side effects
 // beyond reading memory.
-func buildSituation(gs model.GameState, memory map[string]any, events []Event, swFires []types.SuperweaponFire, totalLosses map[string]int) types.GameSituation {
+func buildSituation(gs model.GameState, memory map[string]any, events []Event, swFires []types.SuperweaponFire, totalLosses map[string]int, kills killTracker) types.GameSituation {
 	sit := types.GameSituation{
 		Tick:              int64(gs.Tick),
 		Phase:             gamePhase(gs),
@@ -1213,12 +1228,19 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 		})
 	}
 
-	if len(totalLosses) > 0 {
+	// Kills alone are worth reporting: a game where we have lost nothing and
+	// killed nothing is not the same as one where we have lost nothing because
+	// we are winning.
+	if len(totalLosses) > 0 || kills.Units > 0 || kills.Buildings > 0 {
 		sit.Combat_stats = &types.CombatStats{
 			Infantry_lost: int64(totalLosses["infantry"]),
 			Vehicles_lost: int64(totalLosses["vehicle"]),
 			Aircraft_lost: int64(totalLosses["aircraft"]),
 			Naval_lost:    int64(totalLosses["naval"]),
+
+			Enemy_units_killed:          int64(kills.Units),
+			Enemy_buildings_destroyed:   int64(kills.Buildings),
+			Enemy_units_presumed_killed: int64(kills.PresumedUnits),
 		}
 	}
 

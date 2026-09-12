@@ -56,6 +56,9 @@ class CombatStats {
   vehicles_lost int @description("Total vehicles lost this game")
   aircraft_lost int @description("Total aircraft lost this game")
   naval_lost int @description("Total naval units lost this game")
+  enemy_units_killed int @description("Enemy units we watched die. Compare against your own losses before concluding a fight went badly: losing 30 infantry to kill 40 is a trade you are winning, and losing 30 to kill 5 is not. This is a FLOOR, not a total — an enemy that dies out of our sight is not counted here.")
+  enemy_buildings_destroyed int @description("Enemy buildings we watched destroyed. Progress toward actually winning, as opposed to holding: a game where this stays at zero is a game being survived rather than won.")
+  enemy_units_presumed_killed int @description("Enemy units that vanished where we could not see. Some died, some walked into fog — treat as an upper bound on hidden success, never as confirmed kills.")
 }
 
 class GameSituation {
