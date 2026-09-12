@@ -126,7 +126,7 @@ rule scramble-to-harvesters {
   priority lerp(362, 432, economy-priority)
   category harvester-defense exclusive
   because "the built-in AI lists harvesters first in ProtectionTypes and answers a raid out of its general squad pool, paying nothing until something is attacked. Vimy reserved a four-unit guard squad instead, explicitly so the attack rules could not poach it back, and it covers six harvesters at separate ore patches: the one win saw 26 flee events against 97 and 126 in the losses either side. This pulls the NEAREST units, squad members included, and holds them only long enough to arrive and fight — the squad reclaims them when the hold lapses"
-  do scramble-to-harvesters(lerpf(0.05, 0.15, economy-priority), 6)
+  do scramble-to-harvesters(lerpf(0.05, 0.15, economy-priority), lerp(2, 8, economy-priority))
   require economy-priority > 0.3
   require count(harvesters-in-danger(round2(lerpf(0.05, 0.15, economy-priority)))) > 0
 }
