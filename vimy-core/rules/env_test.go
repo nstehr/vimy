@@ -1565,3 +1565,30 @@ func TestSquadThreatRatioIgnoresUnarmedStructures(t *testing.T) {
 		t.Errorf("threat ratio = %.2f with a heavy tank on the squad, want 3", got)
 	}
 }
+
+// Production gated on QueueBusy meant one item at a time and never queuing
+// ahead: the queue sat idle between an item completing and a rule noticing, and
+// whatever cleared the lowest cash threshold took the money in that gap.
+func TestQueueDepthCountsWaitingWork(t *testing.T) {
+	depth := func(q model.ProductionQueue) int {
+		return RuleEnv{State: model.GameState{ProductionQueues: []model.ProductionQueue{q}}}.QueueDepth("Vehicle")
+	}
+
+	if got := depth(model.ProductionQueue{Type: "Vehicle"}); got != 0 {
+		t.Errorf("empty queue depth = %d, want 0", got)
+	}
+	if got := depth(model.ProductionQueue{Type: "Vehicle", Items: []string{"2tnk", "2tnk"}}); got != 2 {
+		t.Errorf("two queued = %d, want 2", got)
+	}
+	// Items has been seen empty while something was plainly building.
+	if got := depth(model.ProductionQueue{Type: "Vehicle", CurrentItem: "2tnk", CurrentProgress: 40}); got != 1 {
+		t.Errorf("building with an empty item list = %d, want 1", got)
+	}
+	// A different queue is not this one.
+	env := RuleEnv{State: model.GameState{ProductionQueues: []model.ProductionQueue{
+		{Type: "Infantry", Items: []string{"e1", "e1", "e1"}},
+	}}}
+	if got := env.QueueDepth("Vehicle"); got != 0 {
+		t.Errorf("infantry queue leaked into vehicle depth: %d", got)
+	}
+}

@@ -45,7 +45,7 @@ rule recover-mcv {
   require not has-role(construction-yard)
   require not has-unit(mcv)
   require has-role(war-factory)
-  require not queue-busy(Vehicle)
+  require queue-depth(Vehicle) < 2
   require can-build(Vehicle, mcv)
   require cash >= 1000
 }
@@ -116,7 +116,7 @@ rule produce-apc {
   require capture-priority >= 0.3 or capturable-count > 0
   require role-count(engineer) > 0
   require has-role(war-factory)
-  require not queue-busy(Vehicle)
+  require queue-depth(Vehicle) < 2
   require can-build-transport()
   require transport-count < 1
   require cash >= 800
@@ -154,7 +154,7 @@ rule produce-assault-apc {
   do produce-apc
   require transport-assault > 0.1
   require has-role(war-factory)
-  require not queue-busy(Vehicle)
+  require queue-depth(Vehicle) < 2
   require can-build-transport()
   require transport-count < lerp(1, 3, transport-assault)
   require reserves(800)
@@ -207,7 +207,7 @@ rule rebuild-harvester {
   do produce-harvester
   require has-role(refinery)
   require role-count(harvester) < role-count(refinery)
-  require not queue-busy(Vehicle)
+  require queue-depth(Vehicle) < 2
   require can-build-role(harvester)
   require cash >= 600
 }

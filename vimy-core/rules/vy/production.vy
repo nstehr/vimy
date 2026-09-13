@@ -222,7 +222,7 @@ rule produce-vehicle {
   require vehicle-weight > 0.1
   require not axis-burned(vehicle)
   require has-role(war-factory)
-  require not queue-busy(Vehicle)
+  require queue-depth(Vehicle) < 2
   require can-build-any-combat-vehicle()
   require combat-vehicle-count < army-cap(3.0, 18.0, vehicle-weight)
   require scaled-reserves(800)
@@ -291,7 +291,7 @@ rule produce-heavy-vehicle {
   require tech-priority > 0.3
   require has-role(war-factory)
   require has-role(tech-center)
-  require not queue-busy(Vehicle)
+  require queue-depth(Vehicle) < 2
   require can-build-role(heavy-tank) or can-build-role(medium-tank)
   require role-count(heavy-tank) + role-count(medium-tank)
         < army-cap(1.0, 8.0, max(tech-priority, vehicle-weight))
@@ -305,7 +305,7 @@ rule produce-scout-vehicle {
   require vehicle-weight > 0.1
   require not has-enemy-intel()
   require has-role(war-factory)
-  require not queue-busy(Vehicle)
+  require queue-depth(Vehicle) < 2
   require can-build-role(ranger) or can-build-role(light-tank)
   require not has-role(ranger)
   require not has-scout()
@@ -320,7 +320,7 @@ rule produce-siege-vehicle {
   require vehicle-weight > 0.2
   require has-role(war-factory)
   require has-role(radar)
-  require not queue-busy(Vehicle)
+  require queue-depth(Vehicle) < 2
   require can-build-role(artillery) or can-build-role(v2-launcher)
   require role-count(artillery) + role-count(v2-launcher)
         < select(siege-vehicle-first > 0, army-cap(3.0, 12.0, vehicle-weight), army-cap(1.0, 5.0, vehicle-weight))
@@ -333,7 +333,7 @@ rule produce-flak-truck {
   do produce-flak-truck
   require air-defense-priority > 0.2
   require has-role(war-factory)
-  require not queue-busy(Vehicle)
+  require queue-depth(Vehicle) < 2
   require can-build-role(flak-truck)
   require role-count(flak-truck) < lerp(1, 3, air-defense-priority)
   require reserves(600)
@@ -347,7 +347,7 @@ rule produce-mad-tank {
   require tech-priority > 0.3
   require has-role(war-factory)
   require has-role(tech-center)
-  require not queue-busy(Vehicle)
+  require queue-depth(Vehicle) < 2
   require can-build-role(mad-tank)
   require role-count(mad-tank) < lerp(1, 2, aggression)
   require reserves(2000)
@@ -360,7 +360,7 @@ rule produce-minelayer {
   require ground-defense-priority > 0.3
   require has-role(war-factory)
   require has-role(service-depot)
-  require not queue-busy(Vehicle)
+  require queue-depth(Vehicle) < 2
   require can-build-role(minelayer)
   require role-count(minelayer) < lerp(1, 2, ground-defense-priority)
   require reserves(800)

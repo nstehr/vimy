@@ -41,6 +41,33 @@ func (e RuleEnv) HasBuilding(t string) bool  { return containsType(e.State.Build
 func (e RuleEnv) UnitCount(t string) int     { return countType(e.State.Units, t) }
 func (e RuleEnv) BuildingCount(t string) int { return countType(e.State.Buildings, t) }
 
+// QueueDepth is how many items a queue is carrying, in progress plus waiting.
+//
+// Every production rule gated on QueueBusy, so Vimy built strictly one item at
+// a time and never queued ahead: between an item completing and a rule noticing,
+// the queue sat idle, and in that gap whatever cleared the lowest cash
+// threshold took the money. A human commits future income by queuing now — five
+// tanks clicked at once drain cash as they build. Depth is what lets a rule do
+// the same.
+func (e RuleEnv) QueueDepth(q string) int {
+	depth := 0
+	for _, pq := range e.State.ProductionQueues {
+		if !strings.EqualFold(pq.Type, q) {
+			continue
+		}
+		n := len(pq.Items)
+		// Items has been seen empty while something was plainly building, so
+		// an in-progress item counts for itself when the list does not show it.
+		if n == 0 && pq.CurrentItem != "" {
+			n = 1
+		}
+		if n > depth {
+			depth = n
+		}
+	}
+	return depth
+}
+
 func (e RuleEnv) QueueBusy(q string) bool {
 	found := false
 	for _, pq := range e.State.ProductionQueues {
