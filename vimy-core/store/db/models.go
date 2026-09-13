@@ -36,6 +36,8 @@ type Game struct {
 	EnemyUnitsPresumed   sql.NullInt64  `json:"enemy_units_presumed"`
 	InfantryLost         sql.NullInt64  `json:"infantry_lost"`
 	VehiclesLost         sql.NullInt64  `json:"vehicles_lost"`
+	InfantryLostForward  sql.NullInt64  `json:"infantry_lost_forward"`
+	VehiclesLostForward  sql.NullInt64  `json:"vehicles_lost_forward"`
 }
 
 type Lesson struct {

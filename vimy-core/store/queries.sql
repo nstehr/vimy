@@ -4,8 +4,9 @@ INSERT INTO games (
     map_width, map_height, duration_ticks,
     won, quality_tag, review_json, export_path, directive,
     enemy_units_killed, enemy_buildings_killed, enemy_units_presumed,
-    infantry_lost, vehicles_lost
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    infantry_lost, vehicles_lost,
+    infantry_lost_forward, vehicles_lost_forward
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id;
 
 -- name: InsertDoctrine :one

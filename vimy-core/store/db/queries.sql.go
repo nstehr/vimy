@@ -106,8 +106,9 @@ INSERT INTO games (
     map_width, map_height, duration_ticks,
     won, quality_tag, review_json, export_path, directive,
     enemy_units_killed, enemy_buildings_killed, enemy_units_presumed,
-    infantry_lost, vehicles_lost
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    infantry_lost, vehicles_lost,
+    infantry_lost_forward, vehicles_lost_forward
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id
 `
 
@@ -128,6 +129,8 @@ type InsertGameParams struct {
 	EnemyUnitsPresumed   sql.NullInt64  `json:"enemy_units_presumed"`
 	InfantryLost         sql.NullInt64  `json:"infantry_lost"`
 	VehiclesLost         sql.NullInt64  `json:"vehicles_lost"`
+	InfantryLostForward  sql.NullInt64  `json:"infantry_lost_forward"`
+	VehiclesLostForward  sql.NullInt64  `json:"vehicles_lost_forward"`
 }
 
 func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (int64, error) {
@@ -148,6 +151,8 @@ func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (int64, 
 		arg.EnemyUnitsPresumed,
 		arg.InfantryLost,
 		arg.VehiclesLost,
+		arg.InfantryLostForward,
+		arg.VehiclesLostForward,
 	)
 	var id int64
 	err := row.Scan(&id)

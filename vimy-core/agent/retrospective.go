@@ -23,6 +23,7 @@ type retrospectiveSnapshot struct {
 	history         []DoctrineRecord
 	totalLosses     map[string]int
 	kills           killTracker
+	losses          lossTracker
 	store           *store.Store
 	// Where this game's states were written, for replay. Empty without
 	// --export-states.
@@ -58,6 +59,7 @@ func (s *Strategist) snapshotForReview(won bool, exportPath string) *retrospecti
 		history:         append([]DoctrineRecord(nil), s.history...),
 		totalLosses:     make(map[string]int, len(s.totalLosses)),
 		kills:           s.kills,
+		losses:          s.losses,
 		store:           s.store,
 		exportPath:      exportPath,
 		directive:       s.directive,
@@ -181,6 +183,9 @@ func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveRev
 			EnemyUnitsPresumed:   snap.kills.PresumedUnits,
 			InfantryLost:         snap.totalLosses["infantry"],
 			VehiclesLost:         snap.totalLosses["vehicle"],
+
+			InfantryLostForward: snap.losses.Forward["infantry"],
+			VehiclesLostForward: snap.losses.Forward["vehicle"],
 		},
 	}
 

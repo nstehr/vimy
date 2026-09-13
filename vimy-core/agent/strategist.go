@@ -101,6 +101,9 @@ type Strategist struct {
 	// and the confident and presumed figures are kept apart on purpose.
 	kills killTracker
 
+	// Where units were standing when we lost them. See lossTracker.
+	losses lossTracker
+
 	// Win/loss record — persists across resets within a session.
 	record []GameResult
 
@@ -152,6 +155,7 @@ func (s *Strategist) Reset() {
 	s.prevFreshIDs = nil
 	s.totalLosses = nil
 	s.kills.reset()
+	s.losses.reset()
 	s.lastTick = 0
 	s.memoryCache = nil
 	s.memoryAttempted = false
@@ -363,6 +367,7 @@ func (s *Strategist) UpdateState(gs model.GameState) {
 	}
 	s.prevFreshIDs = curFresh
 	s.kills.observe(gs)
+	s.losses.observe(gs)
 
 	// prevSnap's ID sets are a high-water mark, so losses accumulate across state
 	// updates rather than resetting every tick.

@@ -58,6 +58,9 @@ type GameContext struct {
 	EnemyUnitsPresumed   int
 	InfantryLost         int
 	VehiclesLost         int
+	// Only the forward half; home is the subtraction from the totals above.
+	InfantryLostForward int
+	VehiclesLostForward int
 }
 
 // ArchivedDoctrine is one doctrine snapshot from a prior game, ready to be
@@ -281,6 +284,9 @@ func (s *Store) ArchiveGame(
 		EnemyUnitsPresumed:   sql.NullInt64{Int64: int64(gameCtx.EnemyUnitsPresumed), Valid: true},
 		InfantryLost:         sql.NullInt64{Int64: int64(gameCtx.InfantryLost), Valid: true},
 		VehiclesLost:         sql.NullInt64{Int64: int64(gameCtx.VehiclesLost), Valid: true},
+
+		InfantryLostForward: sql.NullInt64{Int64: int64(gameCtx.InfantryLostForward), Valid: true},
+		VehiclesLostForward: sql.NullInt64{Int64: int64(gameCtx.VehiclesLostForward), Valid: true},
 	})
 	if err != nil {
 		return 0, fmt.Errorf("insert game: %w", err)
