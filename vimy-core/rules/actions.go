@@ -270,22 +270,35 @@ func ActionProduceInfantry(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
-// produceResendTicks throttles repeat production orders on one queue.
+// Production resend intervals, chosen by whether the queue has work.
 //
 // `not queue-busy` used to throttle these by accident: one order made the queue
-// busy and the rule stopped asking. Depth-gated rules have a window between an
-// order leaving and the queue reflecting it — and an order the engine rejects,
-// for cost or for a full queue, never closes that window at all. Game 112 sent
-// 1167 vehicle orders to field about 48 vehicles.
+// busy and the rule stopped asking. A depth gate removed that, and game 112
+// sent 1167 vehicle orders to field about 48 vehicles — most rejected for cost
+// or a full queue, each rejection leaving the rule free to ask again.
+//
+// A flat hundred-tick throttle then overcorrected: game 113 ran the same
+// doctrine and the same economy, sent 27 orders, and fielded two tanks against
+// six. Because most orders are rejected, throttling attempts throttles
+// successes in the same proportion — the spam was doing real work.
+//
+// So the interval depends on what the queue is doing. Nothing queued means the
+// last order did not land, or the line has gone idle, and either way asking
+// again shortly is right. Work in progress means a top-up can wait.
+const produceRetryTicks = 15
 const produceResendTicks = 100
 
-// sendProduce issues a production order at most once per queue per
-// produceResendTicks. Returning nil without sending is deliberate: the engine
-// counts a rule as having acted only when something was sent, so a throttled
-// rule reports honestly instead of inflating its own act count.
+// sendProduce issues a production order, spaced by the intervals above.
+// Returning nil without sending is deliberate: the engine counts a rule as
+// having acted only when something was sent, so a throttled rule reports what
+// it did rather than inflating its own act count.
 func sendProduce(env RuleEnv, conn *ipc.Connection, queue, item string) error {
 	sent := memoryMap[string, int](env.Memory, "produceSentTick")
-	if last, ok := sent[queue]; ok && env.State.Tick-last < produceResendTicks {
+	wait := produceResendTicks
+	if env.QueueDepth(queue) == 0 {
+		wait = produceRetryTicks
+	}
+	if last, ok := sent[queue]; ok && env.State.Tick-last < wait {
 		return nil
 	}
 	sent[queue] = env.State.Tick

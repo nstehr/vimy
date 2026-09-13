@@ -1691,50 +1691,57 @@ func TestScrambleToHarvestersTakesTheNearestAndHoldsThem(t *testing.T) {
 	}
 }
 
-// Gating on `not queue-busy` throttled production by accident: one order made
-// the queue busy and the rule stopped asking. Depth-gated rules lost that, and
-// game 112 sent 1167 vehicle orders to field about 48 vehicles — most rejected
-// for cost or a full queue, each rejection leaving the rule free to ask again.
-func TestProduceThrottlesRepeatOrdersPerQueue(t *testing.T) {
+// An idle queue and a busy one want different answers. Game 112 spammed 1167
+// orders because a depth gate replaced the accidental throttle that `not
+// queue-busy` provided; a flat hundred-tick limit then overcorrected, and game
+// 113 fielded two tanks against six on the same doctrine and economy. Most
+// orders are rejected, so throttling attempts throttles successes with them.
+func TestProduceRetriesFastOnAnIdleQueue(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
 
 	mem := map[string]any{}
-	at := func(tick int) RuleEnv {
-		return RuleEnv{State: model.GameState{Tick: tick}, Memory: mem}
+	at := func(tick, depth int) RuleEnv {
+		q := model.ProductionQueue{Type: QueueVehicle}
+		for range depth {
+			q.Items = append(q.Items, "2tnk")
+		}
+		return RuleEnv{
+			State:  model.GameState{Tick: tick, ProductionQueues: []model.ProductionQueue{q}},
+			Memory: mem,
+		}
 	}
-
 	sends := func() uint64 { return conn.Sent() }
 
-	before := sends()
-	if err := sendProduce(at(1000), conn, QueueVehicle, "2tnk"); err != nil {
+	base := sends()
+	if err := sendProduce(at(1000, 0), conn, QueueVehicle, "2tnk"); err != nil {
 		t.Fatal(err)
 	}
-	if sends() != before+1 {
+	if sends() != base+1 {
 		t.Fatal("first order was not sent")
 	}
 
-	// Same queue, immediately after: the queue has not had time to reflect it.
-	if err := sendProduce(at(1000+produceResendTicks-1), conn, QueueVehicle, "2tnk"); err != nil {
+	// Still nothing queued: the order did not land, so asking again is right.
+	if err := sendProduce(at(1000+produceRetryTicks, 0), conn, QueueVehicle, "2tnk"); err != nil {
 		t.Fatal(err)
 	}
-	if sends() != before+1 {
-		t.Errorf("a repeat order inside the throttle window was sent")
+	if sends() != base+2 {
+		t.Error("an idle queue was not retried; this is what starved game 113")
 	}
 
-	// A different queue is a different decision.
-	if err := sendProduce(at(1000), conn, QueueInfantry, "e1"); err != nil {
+	// Work in progress: a top-up can wait.
+	if err := sendProduce(at(1000+produceRetryTicks+produceRetryTicks, 1), conn, QueueVehicle, "2tnk"); err != nil {
 		t.Fatal(err)
 	}
-	if sends() != before+2 {
-		t.Errorf("the infantry queue was throttled by a vehicle order")
+	if sends() != base+2 {
+		t.Error("a busy queue was topped up inside the long window; this is the 1167 spam")
 	}
 
-	// Past the window, production continues.
-	if err := sendProduce(at(1000+produceResendTicks), conn, QueueVehicle, "2tnk"); err != nil {
+	// Past the long window, top-ups resume.
+	if err := sendProduce(at(1000+produceRetryTicks+produceResendTicks, 1), conn, QueueVehicle, "2tnk"); err != nil {
 		t.Fatal(err)
 	}
-	if sends() != before+3 {
-		t.Errorf("production did not resume after the throttle window")
+	if sends() != base+3 {
+		t.Error("production never resumed on a busy queue")
 	}
 }
