@@ -20,7 +20,7 @@ def ground-defense-count() =
   role-count(pillbox) + role-count(camo-pillbox) + role-count(turret)
   + role-count(flame-tower) + role-count(tesla-coil)
 
-def defense-cap() = lerp(2, 10, ground-defense-priority)
+def defense-cap() = lerp(2, 20, ground-defense-priority)
 
 def war-factory-base() = lerp(580, 730, vehicle-weight)
 
