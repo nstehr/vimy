@@ -44,12 +44,12 @@ rule build-extra-refinery {
   category economy exclusive
   do produce-refinery
   require economy-priority > 0.1
-  require lerp(1, 5, economy-priority) > 2
+  require economy-priority > 0.37
   require not is-rushed()
   require not queue-busy(Building)
   require can-build-role(refinery)
   require role-count(refinery) >= 2
-  require role-count(refinery) < lerp(1, 5, economy-priority)
+  require role-count(refinery) < lerp(1, 10, economy-priority)
   require has-role(barracks) or has-role(war-factory)
   require cash >= lerp(2000, 800, economy-priority)
   require not queue-producing-role(refinery)
