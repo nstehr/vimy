@@ -31,6 +31,38 @@ namespace OpenRA.Mods.Vimy
 
 		[JsonPropertyName("powerState")]
 		public string PowerState { get; set; }
+
+		// Ground truth from PlayerStatistics, as opposed to what the sidecar can
+		// infer by watching. Kills were being deduced from enemies vanishing,
+		// which cannot tell a death from a walk into fog, and the trade was being
+		// read as a count of units — a medium tank and a rifleman are one unit
+		// each and 850 credits apart.
+		[JsonPropertyName("unitsKilled")]
+		public int UnitsKilled { get; set; }
+
+		[JsonPropertyName("unitsDead")]
+		public int UnitsDead { get; set; }
+
+		[JsonPropertyName("buildingsKilled")]
+		public int BuildingsKilled { get; set; }
+
+		[JsonPropertyName("buildingsDead")]
+		public int BuildingsDead { get; set; }
+
+		[JsonPropertyName("killsCost")]
+		public int KillsCost { get; set; }
+
+		[JsonPropertyName("deathsCost")]
+		public int DeathsCost { get; set; }
+
+		[JsonPropertyName("armyValue")]
+		public int ArmyValue { get; set; }
+
+		[JsonPropertyName("assetsValue")]
+		public int AssetsValue { get; set; }
+
+		[JsonPropertyName("earned")]
+		public int Earned { get; set; }
 	}
 
 	public class ActorData
@@ -166,6 +198,7 @@ namespace OpenRA.Mods.Vimy
 			var player = bot.Player;
 			var resources = player.PlayerActor.Trait<PlayerResources>();
 			var power = player.PlayerActor.TraitOrDefault<PowerManager>();
+			var stats = player.PlayerActor.TraitOrDefault<PlayerStatistics>();
 
 			return new PlayerData
 			{
@@ -175,7 +208,17 @@ namespace OpenRA.Mods.Vimy
 				ResourceCapacity = resources.ResourceCapacity,
 				PowerProvided = power?.PowerProvided ?? 0,
 				PowerDrained = power?.PowerDrained ?? 0,
-				PowerState = power?.PowerState.ToString() ?? "Normal"
+				PowerState = power?.PowerState.ToString() ?? "Normal",
+
+				UnitsKilled = stats?.UnitsKilled ?? 0,
+				UnitsDead = stats?.UnitsDead ?? 0,
+				BuildingsKilled = stats?.BuildingsKilled ?? 0,
+				BuildingsDead = stats?.BuildingsDead ?? 0,
+				KillsCost = stats?.KillsCost ?? 0,
+				DeathsCost = stats?.DeathsCost ?? 0,
+				ArmyValue = stats?.ArmyValue ?? 0,
+				AssetsValue = stats?.AssetsValue ?? 0,
+				Earned = resources.Earned
 			};
 		}
 

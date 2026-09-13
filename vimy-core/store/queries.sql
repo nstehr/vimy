@@ -5,8 +5,11 @@ INSERT INTO games (
     won, quality_tag, review_json, export_path, directive,
     enemy_units_killed, enemy_buildings_killed, enemy_units_presumed,
     infantry_lost, vehicles_lost,
-    infantry_lost_forward, vehicles_lost_forward
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    infantry_lost_forward, vehicles_lost_forward,
+    engine_units_killed, engine_units_dead, engine_buildings_killed,
+    engine_buildings_dead, engine_kills_cost, engine_deaths_cost,
+    engine_army_value, engine_earned
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id;
 
 -- name: InsertDoctrine :one

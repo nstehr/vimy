@@ -19,25 +19,33 @@ type ArchivedDoctrine struct {
 }
 
 type Game struct {
-	ID                   int64          `json:"id"`
-	PlayedAt             int64          `json:"played_at"`
-	OurFaction           string         `json:"our_faction"`
-	OpponentFaction      sql.NullString `json:"opponent_faction"`
-	MapWidth             int64          `json:"map_width"`
-	MapHeight            int64          `json:"map_height"`
-	DurationTicks        int64          `json:"duration_ticks"`
-	Won                  int64          `json:"won"`
-	QualityTag           sql.NullString `json:"quality_tag"`
-	ReviewJson           sql.NullString `json:"review_json"`
-	ExportPath           sql.NullString `json:"export_path"`
-	Directive            sql.NullString `json:"directive"`
-	EnemyUnitsKilled     sql.NullInt64  `json:"enemy_units_killed"`
-	EnemyBuildingsKilled sql.NullInt64  `json:"enemy_buildings_killed"`
-	EnemyUnitsPresumed   sql.NullInt64  `json:"enemy_units_presumed"`
-	InfantryLost         sql.NullInt64  `json:"infantry_lost"`
-	VehiclesLost         sql.NullInt64  `json:"vehicles_lost"`
-	InfantryLostForward  sql.NullInt64  `json:"infantry_lost_forward"`
-	VehiclesLostForward  sql.NullInt64  `json:"vehicles_lost_forward"`
+	ID                    int64          `json:"id"`
+	PlayedAt              int64          `json:"played_at"`
+	OurFaction            string         `json:"our_faction"`
+	OpponentFaction       sql.NullString `json:"opponent_faction"`
+	MapWidth              int64          `json:"map_width"`
+	MapHeight             int64          `json:"map_height"`
+	DurationTicks         int64          `json:"duration_ticks"`
+	Won                   int64          `json:"won"`
+	QualityTag            sql.NullString `json:"quality_tag"`
+	ReviewJson            sql.NullString `json:"review_json"`
+	ExportPath            sql.NullString `json:"export_path"`
+	Directive             sql.NullString `json:"directive"`
+	EnemyUnitsKilled      sql.NullInt64  `json:"enemy_units_killed"`
+	EnemyBuildingsKilled  sql.NullInt64  `json:"enemy_buildings_killed"`
+	EnemyUnitsPresumed    sql.NullInt64  `json:"enemy_units_presumed"`
+	InfantryLost          sql.NullInt64  `json:"infantry_lost"`
+	VehiclesLost          sql.NullInt64  `json:"vehicles_lost"`
+	InfantryLostForward   sql.NullInt64  `json:"infantry_lost_forward"`
+	VehiclesLostForward   sql.NullInt64  `json:"vehicles_lost_forward"`
+	EngineUnitsKilled     sql.NullInt64  `json:"engine_units_killed"`
+	EngineUnitsDead       sql.NullInt64  `json:"engine_units_dead"`
+	EngineBuildingsKilled sql.NullInt64  `json:"engine_buildings_killed"`
+	EngineBuildingsDead   sql.NullInt64  `json:"engine_buildings_dead"`
+	EngineKillsCost       sql.NullInt64  `json:"engine_kills_cost"`
+	EngineDeathsCost      sql.NullInt64  `json:"engine_deaths_cost"`
+	EngineArmyValue       sql.NullInt64  `json:"engine_army_value"`
+	EngineEarned          sql.NullInt64  `json:"engine_earned"`
 }
 
 type Lesson struct {

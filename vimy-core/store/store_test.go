@@ -410,3 +410,53 @@ func TestArchiveGameRecordsKillsAndLosses(t *testing.T) {
 		}
 	}
 }
+
+// The engine's account has to sit beside the sidecar's inference, or the
+// inference can never be checked. Everything concluded from game 111 onward —
+// that Vimy wins its fights three to one and loses the production race — rests
+// on kills deduced from enemies vanishing, which cannot tell a death from a
+// walk into fog.
+func TestArchiveGameRecordsBothAccountsOfTheSameGame(t *testing.T) {
+	s := newTestStore(t)
+
+	id, err := s.ArchiveGame(context.Background(), GameContext{
+		OurFaction:    "england",
+		DurationTicks: 74570,
+
+		// What the sidecar worked out by watching.
+		EnemyUnitsKilled: 681,
+		InfantryLost:     179,
+		VehiclesLost:     38,
+
+		// What the engine actually recorded.
+		EngineUnitsKilled: 402,
+		EngineUnitsDead:   217,
+		EngineKillsCost:   41000,
+		EngineDeathsCost:  63000,
+		EngineArmyValue:   4200,
+		EngineEarned:      88000,
+	}, "", "", nil)
+	if err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+
+	var inferred, engine, killsCost, deathsCost, army, earned int
+	row := s.db.QueryRow(`SELECT enemy_units_killed, engine_units_killed,
+		engine_kills_cost, engine_deaths_cost, engine_army_value, engine_earned
+		FROM games WHERE id = ?`, id)
+	if err := row.Scan(&inferred, &engine, &killsCost, &deathsCost, &army, &earned); err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+
+	// Both survive, and independently: the comparison is the point.
+	if inferred != 681 || engine != 402 {
+		t.Errorf("kills = inferred %d / engine %d, want 681 / 402", inferred, engine)
+	}
+	// Cost is what makes a three-to-one count legible as a losing trade.
+	if killsCost != 41000 || deathsCost != 63000 {
+		t.Errorf("cost = killed %d / lost %d, want 41000 / 63000", killsCost, deathsCost)
+	}
+	if army != 4200 || earned != 88000 {
+		t.Errorf("army %d earned %d, want 4200 / 88000", army, earned)
+	}
+}

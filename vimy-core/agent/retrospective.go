@@ -7,6 +7,7 @@ import (
 
 	baml_client "github.com/nstehr/vimy/vimy-core/baml_client"
 	"github.com/nstehr/vimy/vimy-core/baml_client/types"
+	"github.com/nstehr/vimy/vimy-core/model"
 	"github.com/nstehr/vimy/vimy-core/rules"
 	"github.com/nstehr/vimy/vimy-core/store"
 )
@@ -24,6 +25,7 @@ type retrospectiveSnapshot struct {
 	totalLosses     map[string]int
 	kills           killTracker
 	losses          lossTracker
+	engineStats     model.Player
 	store           *store.Store
 	// Where this game's states were written, for replay. Empty without
 	// --export-states.
@@ -68,6 +70,7 @@ func (s *Strategist) snapshotForReview(won bool, exportPath string) *retrospecti
 		snap.opponentFaction = "unknown"
 	}
 	if s.latest != nil {
+		snap.engineStats = s.latest.Player
 		snap.durationTicks = s.latest.Tick
 		snap.mapWidth = s.latest.MapWidth
 		snap.mapHeight = s.latest.MapHeight
@@ -186,6 +189,15 @@ func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveRev
 
 			InfantryLostForward: snap.losses.Forward["infantry"],
 			VehiclesLostForward: snap.losses.Forward["vehicle"],
+
+			EngineUnitsKilled:     snap.engineStats.UnitsKilled,
+			EngineUnitsDead:       snap.engineStats.UnitsDead,
+			EngineBuildingsKilled: snap.engineStats.BuildingsKilled,
+			EngineBuildingsDead:   snap.engineStats.BuildingsDead,
+			EngineKillsCost:       snap.engineStats.KillsCost,
+			EngineDeathsCost:      snap.engineStats.DeathsCost,
+			EngineArmyValue:       snap.engineStats.ArmyValue,
+			EngineEarned:          snap.engineStats.Earned,
 		},
 	}
 

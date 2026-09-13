@@ -21,6 +21,21 @@ type Player struct {
 	PowerProvided    int    `json:"powerProvided"`
 	PowerDrained     int    `json:"powerDrained"`
 	PowerState       string `json:"powerState"`
+
+	// Ground truth from the engine's PlayerStatistics, as against what the
+	// sidecar infers by watching. Kills were deduced from enemies vanishing,
+	// which cannot separate a death from a walk into fog, and the trade was read
+	// as a count of units — a medium tank and a rifleman are one unit each and
+	// 850 credits apart.
+	UnitsKilled     int `json:"unitsKilled"`
+	UnitsDead       int `json:"unitsDead"`
+	BuildingsKilled int `json:"buildingsKilled"`
+	BuildingsDead   int `json:"buildingsDead"`
+	KillsCost       int `json:"killsCost"`
+	DeathsCost      int `json:"deathsCost"`
+	ArmyValue       int `json:"armyValue"`
+	AssetsValue     int `json:"assetsValue"`
+	Earned          int `json:"earned"`
 }
 
 type Unit struct {

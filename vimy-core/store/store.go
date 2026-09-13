@@ -61,6 +61,16 @@ type GameContext struct {
 	// Only the forward half; home is the subtraction from the totals above.
 	InfantryLostForward int
 	VehiclesLostForward int
+
+	// The engine's own account, to hold the inferred figures against.
+	EngineUnitsKilled     int
+	EngineUnitsDead       int
+	EngineBuildingsKilled int
+	EngineBuildingsDead   int
+	EngineKillsCost       int
+	EngineDeathsCost      int
+	EngineArmyValue       int
+	EngineEarned          int
 }
 
 // ArchivedDoctrine is one doctrine snapshot from a prior game, ready to be
@@ -287,6 +297,15 @@ func (s *Store) ArchiveGame(
 
 		InfantryLostForward: sql.NullInt64{Int64: int64(gameCtx.InfantryLostForward), Valid: true},
 		VehiclesLostForward: sql.NullInt64{Int64: int64(gameCtx.VehiclesLostForward), Valid: true},
+
+		EngineUnitsKilled:     sql.NullInt64{Int64: int64(gameCtx.EngineUnitsKilled), Valid: true},
+		EngineUnitsDead:       sql.NullInt64{Int64: int64(gameCtx.EngineUnitsDead), Valid: true},
+		EngineBuildingsKilled: sql.NullInt64{Int64: int64(gameCtx.EngineBuildingsKilled), Valid: true},
+		EngineBuildingsDead:   sql.NullInt64{Int64: int64(gameCtx.EngineBuildingsDead), Valid: true},
+		EngineKillsCost:       sql.NullInt64{Int64: int64(gameCtx.EngineKillsCost), Valid: true},
+		EngineDeathsCost:      sql.NullInt64{Int64: int64(gameCtx.EngineDeathsCost), Valid: true},
+		EngineArmyValue:       sql.NullInt64{Int64: int64(gameCtx.EngineArmyValue), Valid: true},
+		EngineEarned:          sql.NullInt64{Int64: int64(gameCtx.EngineEarned), Valid: true},
 	})
 	if err != nil {
 		return 0, fmt.Errorf("insert game: %w", err)

@@ -107,30 +107,41 @@ INSERT INTO games (
     won, quality_tag, review_json, export_path, directive,
     enemy_units_killed, enemy_buildings_killed, enemy_units_presumed,
     infantry_lost, vehicles_lost,
-    infantry_lost_forward, vehicles_lost_forward
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    infantry_lost_forward, vehicles_lost_forward,
+    engine_units_killed, engine_units_dead, engine_buildings_killed,
+    engine_buildings_dead, engine_kills_cost, engine_deaths_cost,
+    engine_army_value, engine_earned
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id
 `
 
 type InsertGameParams struct {
-	PlayedAt             int64          `json:"played_at"`
-	OurFaction           string         `json:"our_faction"`
-	OpponentFaction      sql.NullString `json:"opponent_faction"`
-	MapWidth             int64          `json:"map_width"`
-	MapHeight            int64          `json:"map_height"`
-	DurationTicks        int64          `json:"duration_ticks"`
-	Won                  int64          `json:"won"`
-	QualityTag           sql.NullString `json:"quality_tag"`
-	ReviewJson           sql.NullString `json:"review_json"`
-	ExportPath           sql.NullString `json:"export_path"`
-	Directive            sql.NullString `json:"directive"`
-	EnemyUnitsKilled     sql.NullInt64  `json:"enemy_units_killed"`
-	EnemyBuildingsKilled sql.NullInt64  `json:"enemy_buildings_killed"`
-	EnemyUnitsPresumed   sql.NullInt64  `json:"enemy_units_presumed"`
-	InfantryLost         sql.NullInt64  `json:"infantry_lost"`
-	VehiclesLost         sql.NullInt64  `json:"vehicles_lost"`
-	InfantryLostForward  sql.NullInt64  `json:"infantry_lost_forward"`
-	VehiclesLostForward  sql.NullInt64  `json:"vehicles_lost_forward"`
+	PlayedAt              int64          `json:"played_at"`
+	OurFaction            string         `json:"our_faction"`
+	OpponentFaction       sql.NullString `json:"opponent_faction"`
+	MapWidth              int64          `json:"map_width"`
+	MapHeight             int64          `json:"map_height"`
+	DurationTicks         int64          `json:"duration_ticks"`
+	Won                   int64          `json:"won"`
+	QualityTag            sql.NullString `json:"quality_tag"`
+	ReviewJson            sql.NullString `json:"review_json"`
+	ExportPath            sql.NullString `json:"export_path"`
+	Directive             sql.NullString `json:"directive"`
+	EnemyUnitsKilled      sql.NullInt64  `json:"enemy_units_killed"`
+	EnemyBuildingsKilled  sql.NullInt64  `json:"enemy_buildings_killed"`
+	EnemyUnitsPresumed    sql.NullInt64  `json:"enemy_units_presumed"`
+	InfantryLost          sql.NullInt64  `json:"infantry_lost"`
+	VehiclesLost          sql.NullInt64  `json:"vehicles_lost"`
+	InfantryLostForward   sql.NullInt64  `json:"infantry_lost_forward"`
+	VehiclesLostForward   sql.NullInt64  `json:"vehicles_lost_forward"`
+	EngineUnitsKilled     sql.NullInt64  `json:"engine_units_killed"`
+	EngineUnitsDead       sql.NullInt64  `json:"engine_units_dead"`
+	EngineBuildingsKilled sql.NullInt64  `json:"engine_buildings_killed"`
+	EngineBuildingsDead   sql.NullInt64  `json:"engine_buildings_dead"`
+	EngineKillsCost       sql.NullInt64  `json:"engine_kills_cost"`
+	EngineDeathsCost      sql.NullInt64  `json:"engine_deaths_cost"`
+	EngineArmyValue       sql.NullInt64  `json:"engine_army_value"`
+	EngineEarned          sql.NullInt64  `json:"engine_earned"`
 }
 
 func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (int64, error) {
@@ -153,6 +164,14 @@ func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (int64, 
 		arg.VehiclesLost,
 		arg.InfantryLostForward,
 		arg.VehiclesLostForward,
+		arg.EngineUnitsKilled,
+		arg.EngineUnitsDead,
+		arg.EngineBuildingsKilled,
+		arg.EngineBuildingsDead,
+		arg.EngineKillsCost,
+		arg.EngineDeathsCost,
+		arg.EngineArmyValue,
+		arg.EngineEarned,
 	)
 	var id int64
 	err := row.Scan(&id)
