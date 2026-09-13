@@ -14,11 +14,7 @@ import (
 
 func ActionProduceMCV(env RuleEnv, conn *ipc.Connection) error {
 	slog.Debug("producing MCV — construction yard lost")
-	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-		Queue: QueueVehicle,
-		Item:  MCV,
-		Count: 1,
-	})
+	return sendProduce(env, conn, QueueVehicle, MCV)
 }
 
 // mcvDeployState detects an MCV whose Deploy the engine keeps silently
@@ -274,17 +270,39 @@ func ActionProduceInfantry(env RuleEnv, conn *ipc.Connection) error {
 	})
 }
 
+// produceResendTicks throttles repeat production orders on one queue.
+//
+// `not queue-busy` used to throttle these by accident: one order made the queue
+// busy and the rule stopped asking. Depth-gated rules have a window between an
+// order leaving and the queue reflecting it — and an order the engine rejects,
+// for cost or for a full queue, never closes that window at all. Game 112 sent
+// 1167 vehicle orders to field about 48 vehicles.
+const produceResendTicks = 100
+
+// sendProduce issues a production order at most once per queue per
+// produceResendTicks. Returning nil without sending is deliberate: the engine
+// counts a rule as having acted only when something was sent, so a throttled
+// rule reports honestly instead of inflating its own act count.
+func sendProduce(env RuleEnv, conn *ipc.Connection, queue, item string) error {
+	sent := memoryMap[string, int](env.Memory, "produceSentTick")
+	if last, ok := sent[queue]; ok && env.State.Tick-last < produceResendTicks {
+		return nil
+	}
+	sent[queue] = env.State.Tick
+	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
+		Queue: queue,
+		Item:  item,
+		Count: 1,
+	})
+}
+
 func ActionProduceVehicle(env RuleEnv, conn *ipc.Connection) error {
 	item := env.BestBuildableVehicle()
 	if item == "" {
 		return nil
 	}
 	slog.Debug("producing vehicle", "item", item)
-	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-		Queue: QueueVehicle,
-		Item:  item,
-		Count: 1,
-	})
+	return sendProduce(env, conn, QueueVehicle, item)
 }
 
 func ActionProduceSpecialistInfantry(env RuleEnv, conn *ipc.Connection) error {
@@ -747,11 +765,7 @@ func ActionProduceHeavyVehicle(env RuleEnv, conn *ipc.Connection) error {
 		item := env.BuildableType(role)
 		if item != "" {
 			slog.Debug("producing heavy vehicle", "item", item)
-			return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-				Queue: QueueVehicle,
-				Item:  item,
-				Count: 1,
-			})
+			return sendProduce(env, conn, QueueVehicle, item)
 		}
 	}
 	return nil
@@ -767,22 +781,14 @@ func ActionProduceScoutVehicle(env RuleEnv, conn *ipc.Connection) error {
 		return nil
 	}
 	slog.Debug("producing scout vehicle", "item", item)
-	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-		Queue: QueueVehicle,
-		Item:  item,
-		Count: 1,
-	})
+	return sendProduce(env, conn, QueueVehicle, item)
 }
 
 func ActionProduceSiegeVehicle(env RuleEnv, conn *ipc.Connection) error {
 	for _, role := range []string{"artillery", "v2_launcher"} {
 		if item := env.BuildableType(role); item != "" {
 			slog.Debug("producing siege vehicle", "item", item)
-			return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-				Queue: QueueVehicle,
-				Item:  item,
-				Count: 1,
-			})
+			return sendProduce(env, conn, QueueVehicle, item)
 		}
 	}
 	return nil
@@ -1349,11 +1355,7 @@ func ActionCaptureBuilding(env RuleEnv, conn *ipc.Connection) error {
 
 func ActionProduceHarvester(env RuleEnv, conn *ipc.Connection) error {
 	slog.Debug("producing harvester")
-	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-		Queue: QueueVehicle,
-		Item:  Harvester,
-		Count: 1,
-	})
+	return sendProduce(env, conn, QueueVehicle, Harvester)
 }
 
 // harvestResend throttles repeat harvest orders. A harvester idle for a single
@@ -1648,11 +1650,7 @@ func ActionProduceFlakTruck(env RuleEnv, conn *ipc.Connection) error {
 		return nil
 	}
 	slog.Debug("producing flak truck", "item", item)
-	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-		Queue: QueueVehicle,
-		Item:  item,
-		Count: 1,
-	})
+	return sendProduce(env, conn, QueueVehicle, item)
 }
 
 func ActionProduceGunboat(env RuleEnv, conn *ipc.Connection) error {
@@ -1677,11 +1675,7 @@ func ActionProduceAPC(env RuleEnv, conn *ipc.Connection) error {
 		return nil
 	}
 	slog.Debug("producing transport", "item", item)
-	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-		Queue: QueueVehicle,
-		Item:  item,
-		Count: 1,
-	})
+	return sendProduce(env, conn, QueueVehicle, item)
 }
 
 func ActionProduceGrenadier(env RuleEnv, conn *ipc.Connection) error {
@@ -1729,11 +1723,7 @@ func ActionProduceMADTank(env RuleEnv, conn *ipc.Connection) error {
 		return nil
 	}
 	slog.Debug("producing MAD tank", "item", item)
-	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-		Queue: QueueVehicle,
-		Item:  item,
-		Count: 1,
-	})
+	return sendProduce(env, conn, QueueVehicle, item)
 }
 
 func ActionProduceMinelayer(env RuleEnv, conn *ipc.Connection) error {
@@ -1742,11 +1732,7 @@ func ActionProduceMinelayer(env RuleEnv, conn *ipc.Connection) error {
 		return nil
 	}
 	slog.Debug("producing minelayer", "item", item)
-	return conn.Send(ipc.TypeProduce, ipc.ProduceCommand{
-		Queue: QueueVehicle,
-		Item:  item,
-		Count: 1,
-	})
+	return sendProduce(env, conn, QueueVehicle, item)
 }
 
 func ActionProduceKennel(env RuleEnv, conn *ipc.Connection) error {
