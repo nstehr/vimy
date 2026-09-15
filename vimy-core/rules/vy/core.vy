@@ -28,7 +28,7 @@ def force-scale() =
   select(force-size > 0.0, lerpf(1.0, 2.5, force-size), 1.0)
 
 def army-cap(low: float, high: float, weight: float) =
-  trunc(lerpf(low, high, weight) * force-scale())
+  trunc(low + (lerpf(low, high, weight) - low) * force-scale())
 
 rule deploy-mcv {
   priority 1000
