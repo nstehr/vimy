@@ -1010,14 +1010,20 @@ func isCriticalRepairType(t string) bool {
 	return false
 }
 
-// repairCashFloor stops all repair spend below this cash level. Without it,
-// in-flight repairs consume income the instant ore converts and cash sits
-// pinned at zero for the whole mid-game.
+// Repair floors, by what is being repaired.
 //
-// Measured against Cash(), the spendable total, as every other threshold in
-// the rule layer is. Read against Player.Cash alone it was unreachable, and
-// repair acted zero times in every recorded game.
+// One floor of 500 read against the whole base meant repair never ran. It has
+// acted zero times in every game on record — 57/0, 43/0, 31/0, 14/0 across four
+// consecutive games, each of them with a base visibly taking damage. The floor
+// bites hardest exactly when repair matters, because a base under attack is a
+// base spending its cash on defences.
+//
+// The reasoning behind a floor is sound: repairs charge per tick per building
+// and will eat income the moment ore converts. But it was being applied to a
+// war factory at a fifth health the same as to a radar dome with a scratch. A
+// construction yard is worth more than the reserve it is being protected from.
 const repairCashFloor = 500
+const criticalRepairFloor = 150
 
 // repairMaxConcurrent bounds cash drain: OpenRA charges per tick per active
 // repair, so N damaged buildings drain N times income.
@@ -1027,10 +1033,11 @@ const repairMaxConcurrent = 2
 // read from env memory as "repairBudgetRatio": the fraction of cash repair is
 // allowed to touch, the rest reserved for production.
 func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
-	// Below the floor, production and rebuild need what's left.
-	if env.Cash() < repairCashFloor {
+	// Below even the critical floor, production and rebuild need what's left.
+	if env.Cash() < criticalRepairFloor {
 		return nil
 	}
+	repairAnything := env.Cash() >= repairCashFloor
 
 	state := memoryMap[int, repairToggleEntry](env.Memory, "repairToggleSent")
 	underPressure := env.IsRushed() || env.IsHarvesterHarassed()
@@ -1058,8 +1065,10 @@ func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
 
 	for _, b := range env.DamagedBuildings() {
 		// Under pressure, radar/tech/helipad damage is acceptable; lost
-		// production is not.
-		if underPressure && !isCriticalRepairType(b.Type) {
+		// production is not. The same test decides what is worth repairing on
+		// thin cash: between the two floors, only the buildings that lose the
+		// game when they die.
+		if (underPressure || !repairAnything) && !isCriticalRepairType(b.Type) {
 			continue
 		}
 		// Budget gates new repairs only; in-flight ones still complete.

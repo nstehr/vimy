@@ -1569,22 +1569,20 @@ func TestScoutWithIdleUnitsKeepsTheSameParty(t *testing.T) {
 	}
 }
 
-// Repair is gated on the money the rules actually spend. Read against
-// Player.Cash alone the floor was unreachable — ore sits in Resources until it
-// converts — and repair acted zero times in every recorded game while
-// buildings burned.
-func TestRepairSpendsAgainstTotalCash(t *testing.T) {
+// Repair has acted zero times in every game on record — 57/0, 43/0, 31/0, 14/0
+// across four consecutive games with a base visibly taking damage. A single
+// floor of 500 bit hardest exactly when repair mattered, because a base under
+// attack is a base spending its cash on defences.
+func TestRepairKeepsCriticalBuildingsAliveOnThinCash(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
 
-	damaged := []model.Building{{ID: 1, Type: "proc", HP: 100, MaxHP: 1000, X: 10, Y: 10}}
-
-	repaired := func(cash, resources int) bool {
+	repaired := func(cash int, b model.Building) bool {
 		env := RuleEnv{
 			State: model.GameState{
-				Tick:      1000,
-				Buildings: damaged,
-				Player:    model.Player{Cash: cash, Resources: resources},
+				Tick:      5000,
+				Buildings: []model.Building{b},
+				Player:    model.Player{Cash: cash},
 			},
 			Memory: map[string]any{},
 		}
@@ -1594,14 +1592,25 @@ func TestRepairSpendsAgainstTotalCash(t *testing.T) {
 		return len(memoryMap[int, repairToggleEntry](env.Memory, "repairToggleSent")) > 0
 	}
 
-	// The floor's worth, held mostly as unconverted ore. This is the ordinary
-	// case that never repaired.
-	if !repaired(100, 600) {
-		t.Error("cash 100 + resources 600 is above the floor, but nothing was repaired")
+	warFactory := model.Building{ID: 1, Type: "weap", HP: 200, MaxHP: 1000}
+	radar := model.Building{ID: 2, Type: "dome", HP: 200, MaxHP: 1000}
+
+	// The case that has never once fired: under attack, cash gone to defences,
+	// production burning.
+	if !repaired(300, warFactory) {
+		t.Error("a war factory at a fifth health went unrepaired on 300 cash")
+	}
+	// A scratched radar can wait for the money; that is what the floor is for.
+	if repaired(300, radar) {
+		t.Error("a radar dome was repaired on cash a war factory would need")
+	}
+	// With room to spare, anything damaged is worth fixing.
+	if !repaired(800, radar) {
+		t.Error("nothing was repaired despite cash well over the floor")
 	}
 	// Genuinely broke: production and rebuild need what is left.
-	if repaired(100, 100) {
-		t.Error("cash 100 + resources 100 is below the floor, but repair started anyway")
+	if repaired(100, warFactory) {
+		t.Error("repair started with almost no cash at all")
 	}
 }
 
