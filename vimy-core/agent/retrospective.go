@@ -114,8 +114,9 @@ func doRetrospective(ctx context.Context, snap *retrospectiveSnapshot) {
 		Aircraft_lost: int64(snap.totalLosses["aircraft"]),
 		Naval_lost:    int64(snap.totalLosses["naval"]),
 
-		Enemy_units_killed:          int64(snap.kills.Units),
-		Enemy_buildings_destroyed:   int64(snap.kills.Buildings),
+		// The engine's count, not the inference it disagrees with by 3x.
+		Enemy_units_killed:          int64(snap.engineStats.UnitsKilled),
+		Enemy_buildings_destroyed:   int64(snap.engineStats.BuildingsKilled),
 		Enemy_units_presumed_killed: int64(snap.kills.PresumedUnits),
 	}
 

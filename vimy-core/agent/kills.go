@@ -30,14 +30,32 @@ type killTracker struct {
 }
 
 type enemySighting struct {
-	Type string
-	X, Y int
+	Type   string
+	X, Y   int
+	HPFrac float64
 }
 
 // observedFraction is how close one of our actors must be to a last-known
 // position for us to claim we saw what happened there, as a fraction of the map
-// diagonal. Deliberately tight: the cost of guessing wrong is a false kill.
+// diagonal.
 const observedFraction = 0.06
+
+// woundedFraction is how much health an enemy must have lost before its
+// disappearance is read as a death.
+//
+// Proximity alone counted 396 kills in game 118 where the engine recorded 138 —
+// wrong by nearly three times, and wrong in the direction that flatters. The
+// error is structural rather than a matter of degree: the commonest way for an
+// enemy to vanish beside one of our units is to walk past it and out of vision,
+// and those are exactly the near cases a tighter radius keeps. Distance says
+// nothing about dying.
+//
+// Damage does. Things that die take damage first; things that walk away are
+// generally whole. An enemy sniped from full health between two observations is
+// missed, and that is the right way to be wrong here: the figure is documented
+// as a floor, and a count that runs high is what sent two days of work in the
+// wrong direction.
+const woundedFraction = 0.9
 
 func (k *killTracker) reset() {
 	k.prevSeen = nil
@@ -49,7 +67,11 @@ func (k *killTracker) reset() {
 func (k *killTracker) observe(gs model.GameState) {
 	cur := make(map[int]enemySighting, len(gs.Enemies))
 	for _, e := range gs.Enemies {
-		cur[e.ID] = enemySighting{Type: e.Type, X: e.X, Y: e.Y}
+		hp := 1.0
+		if e.MaxHP > 0 {
+			hp = float64(e.HP) / float64(e.MaxHP)
+		}
+		cur[e.ID] = enemySighting{Type: e.Type, X: e.X, Y: e.Y, HPFrac: hp}
 	}
 
 	if k.prevSeen != nil {
@@ -59,7 +81,7 @@ func (k *killTracker) observe(gs model.GameState) {
 				continue
 			}
 			building := rules.IsKnownBuildingType(seen.Type)
-			if weWatched(gs, seen.X, seen.Y, threshSq) {
+			if seen.HPFrac < woundedFraction && weWatched(gs, seen.X, seen.Y, threshSq) {
 				if building {
 					k.Buildings++
 				} else {

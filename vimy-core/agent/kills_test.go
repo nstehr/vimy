@@ -20,9 +20,9 @@ func TestKillTrackerSeparatesWatchedDeathsFromFog(t *testing.T) {
 
 	seen := base
 	seen.Enemies = []model.Enemy{
-		{ID: 90, Type: "e1", X: 505, Y: 505},   // under our nose
-		{ID: 91, Type: "3tnk", X: 900, Y: 900}, // far away, seen once
-		{ID: 92, Type: "proc", X: 510, Y: 510}, // a building under our nose
+		{ID: 90, Type: "e1", X: 505, Y: 505, HP: 20, MaxHP: 100},   // hurt, under our nose
+		{ID: 91, Type: "3tnk", X: 900, Y: 900, HP: 10, MaxHP: 100}, // hurt, far away
+		{ID: 92, Type: "proc", X: 510, Y: 510, HP: 30, MaxHP: 100}, // hurt building, under our nose
 	}
 
 	var k killTracker
@@ -67,7 +67,7 @@ func TestKillTrackerCountsBuildingsAsEyes(t *testing.T) {
 	gs := model.GameState{
 		MapWidth: 1000, MapHeight: 1000,
 		Buildings: []model.Building{{ID: 1, Type: "proc", X: 200, Y: 200}},
-		Enemies:   []model.Enemy{{ID: 90, Type: "e1", X: 205, Y: 205}},
+		Enemies:   []model.Enemy{{ID: 90, Type: "e1", X: 205, Y: 205, HP: 15, MaxHP: 100}},
 	}
 	var k killTracker
 	k.observe(gs)
@@ -77,5 +77,32 @@ func TestKillTrackerCountsBuildingsAsEyes(t *testing.T) {
 
 	if k.Units != 1 {
 		t.Errorf("watched deaths = %d, want 1: the refinery saw it", k.Units)
+	}
+}
+
+// The commonest way for an enemy to vanish beside one of our units is to walk
+// past it and out of vision. Proximity alone read 396 kills in game 118 where
+// the engine recorded 138; a healthy unit leaving is not a death.
+func TestKillTrackerDoesNotCountTheHealthyWhoWalkAway(t *testing.T) {
+	gs := model.GameState{
+		MapWidth: 1000, MapHeight: 1000,
+		Units: []model.Unit{{ID: 1, Type: "e1", X: 500, Y: 500}},
+		Enemies: []model.Enemy{
+			{ID: 90, Type: "e1", X: 505, Y: 505, HP: 100, MaxHP: 100}, // untouched
+			{ID: 91, Type: "e1", X: 506, Y: 506, HP: 25, MaxHP: 100},  // badly hurt
+		},
+	}
+
+	var k killTracker
+	k.observe(gs)
+
+	gs.Enemies = nil // both leave our view at once
+	k.observe(gs)
+
+	if k.Units != 1 {
+		t.Errorf("watched deaths = %d, want 1: only the wounded one died", k.Units)
+	}
+	if k.PresumedUnits != 1 {
+		t.Errorf("presumed = %d, want 1: the untouched one walked off", k.PresumedUnits)
 	}
 }

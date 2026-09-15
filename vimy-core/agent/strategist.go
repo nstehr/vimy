@@ -1243,8 +1243,12 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 			Aircraft_lost: int64(totalLosses["aircraft"]),
 			Naval_lost:    int64(totalLosses["naval"]),
 
-			Enemy_units_killed:          int64(kills.Units),
-			Enemy_buildings_destroyed:   int64(kills.Buildings),
+			// The engine's own count, not the sidecar's inference. Game 118
+			// inferred 396 kills where the engine recorded 138, and 10 enemy
+			// buildings where it recorded none — the strategist was being told
+			// it was winning fights it was losing.
+			Enemy_units_killed:          int64(gs.Player.UnitsKilled),
+			Enemy_buildings_destroyed:   int64(gs.Player.BuildingsKilled),
 			Enemy_units_presumed_killed: int64(kills.PresumedUnits),
 		}
 	}
