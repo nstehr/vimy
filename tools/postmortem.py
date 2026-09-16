@@ -7,9 +7,12 @@ session, one of them four separate times:
   the ledger   what the engine recorded, including the value of the trade
   the spend    what the money bought, priced from the engine's own rules
   the blame    which clause of which rule blocked it, and how often alone
+  the warnings what the compiler said about the rule set before it ran
 
-The blame half is not new work — `vimyc --blame` has always reported it.
-It was written again by hand four times because nobody ran the tool.
+Neither the blame nor the warnings are new work — vimyc has always
+reported both. The blame was written again by hand four times because
+nobody ran the tool; the warnings were filtered away with `grep -v
+seed.vy`, which hid a live dead-rule finding for most of a session.
 
   tools/postmortem.py            the most recent game
   tools/postmortem.py 122        a particular one
@@ -31,6 +34,17 @@ EXPORTS = Path(os.path.expanduser("~/.vimy/exports"))
 RULES = ROOT / "vimy-core" / "rules" / "vy"
 VIMYC = ROOT.parent / "vimyc" / "target" / "release" / "vimyc"
 ENGINE_RULES = ROOT / "engine" / "mods" / "ra" / "rules"
+
+
+def sources():
+    """The files the sidecar compiles.
+
+    Not the directory: seed.vy sits beside the doctrine sources and is a
+    standalone rule set, so compiling the directory whole yields a set the
+    game never runs — and buries the real warnings under six duplicate-name
+    ones from seed.vy. rules/vimyc.go drops it the same way.
+    """
+    return sorted(str(f) for f in RULES.glob("*.vy") if f.name != "seed.vy")
 
 
 def engine_costs():
@@ -167,18 +181,12 @@ def spend(db, game, earned):
         print(f"    (no engine price for: {', '.join(sorted(set(unpriced)))})")
 
 
-def blame(game, top):
-    """Which clause stopped which rule — from vimyc, not rewritten here."""
-    exports = sorted(EXPORTS.glob("*.json.gz"), key=lambda p: p.stat().st_mtime)
-    if not exports or not VIMYC.exists():
-        print("\n  no export or vimyc binary; skipping blame")
-        return
-    with gzip.open(exports[-1]) as fh:
-        states = json.load(fh).get("states", [])
-    if not states:
-        print("\n  export has no states")
-        return
+def doctrine_params(game):
+    """The doctrine the game actually ran, as vimyc wants it.
 
+    Doctrine params are compile-time constants, so the warnings and the
+    blame are only about this game if they are folded with these values.
+    """
     params = {}
     for (js,) in sqlite3.connect(DB).execute(
             "SELECT doctrine_json FROM archived_doctrines WHERE game_id=? LIMIT 1", (game,)):
@@ -192,12 +200,53 @@ def blame(game, top):
     for decl in RULES.glob("*.vy"):
         for name, kind in re.findall(r"^param ([\w-]+):\s*(\w+)", decl.read_text(), re.M):
             params.setdefault(name, 0 if kind == "int" else 0.0)
+    return params
+
+
+def warnings(game):
+    """What vimyc said about the rule set, unfiltered.
+
+    A dead rule is invisible in the blame — it is not that its clauses kept
+    blocking it, it is that an exclusive rule above it always wins, so it
+    never enters the contest and never shows up as a rule that "never held"
+    for any reason you can read off a clause.
+    """
+    if not VIMYC.exists():
+        print("\n  no vimyc binary; skipping warnings")
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        pp = Path(tmp) / "params.json"
+        pp.write_text(json.dumps(doctrine_params(game)))
+        run = subprocess.run([str(VIMYC), *sources(), "--params", str(pp)],
+                             capture_output=True, text=True)
+    lines = [l for l in run.stderr.splitlines() if "warning:" in l]
+    print(f"\n  COMPILER ({len(lines)} warning{'' if len(lines) == 1 else 's'} "
+          f"on the rule set this game ran)")
+    if not lines:
+        print("    none")
+    for l in lines:
+        print(f"    {l.strip()}")
+
+
+def blame(game, top):
+    """Which clause stopped which rule — from vimyc, not rewritten here."""
+    exports = sorted(EXPORTS.glob("*.json.gz"), key=lambda p: p.stat().st_mtime)
+    if not exports or not VIMYC.exists():
+        print("\n  no export or vimyc binary; skipping blame")
+        return
+    with gzip.open(exports[-1]) as fh:
+        states = json.load(fh).get("states", [])
+    if not states:
+        print("\n  export has no states")
+        return
+
+    params = doctrine_params(game)
 
     with tempfile.TemporaryDirectory() as tmp:
         sp, pp = Path(tmp) / "states.json", Path(tmp) / "params.json"
         sp.write_text(json.dumps(states))
         pp.write_text(json.dumps(params))
-        run = subprocess.run([str(VIMYC), str(RULES), "--blame", str(sp), "--params", str(pp)],
+        run = subprocess.run([str(VIMYC), *sources(), "--blame", str(sp), "--params", str(pp)],
                              capture_output=True, text=True)
     if run.returncode != 0:
         print(f"\n  blame failed: {run.stderr.strip().splitlines()[-1:] or run.returncode}")
@@ -225,6 +274,7 @@ def main():
     v = ledger(db, game)
     spend(db, game, v.get("engine_earned"))
     blame(game, top=8)
+    warnings(game)
 
 
 if __name__ == "__main__":

@@ -101,31 +101,10 @@ rule scout-with-idle-units {
   require count(unassigned-idle-ground) >= 2
 }
 
-rule form-harvester-guard {
-  priority lerp(360, 430, economy-priority) + 5
-  category squad-form
-  because "a squad reserved for the economy, so the attack rules cannot poach it back — formed at its own size, since the surplus it used to demand on top never arrived"
-  do form-squad(harvester-guard, Ground, lerp(2, 4, economy-priority), Defend)
-  require economy-priority > 0.3
-  require (not squad-exists(harvester-guard)
-           and count(unassigned-idle-ground) >= lerp(2, 4, economy-priority))
-       or (squad-needs-reinforcement(harvester-guard) and count(unassigned-idle-ground) >= 1)
-}
-
-rule guard-harvesters {
-  priority lerp(360, 430, economy-priority)
-  category harvester-defense exclusive
-  because "every other defensive rule is anchored at the base, so a harvester raided at an ore patch summoned nobody — and it no longer waits for the squad to be idle, because a guard already riding to one raid is not idle and harassment does not wait its turn: across games 84 and 85 this fired five times while the harvesters fled a thousand"
-  do squad-guard-harvesters(harvester-guard, lerpf(0.05, 0.15, economy-priority))
-  require economy-priority > 0.3
-  require squad-exists(harvester-guard)
-  require count(harvesters-in-danger(round2(lerpf(0.05, 0.15, economy-priority)))) > 0
-}
-
 rule scramble-to-harvesters {
   priority lerp(362, 432, economy-priority)
-  category harvester-defense exclusive
-  because "the built-in AI lists harvesters first in ProtectionTypes and answers a raid out of its general squad pool, paying nothing until something is attacked. Vimy reserved a four-unit guard squad instead, explicitly so the attack rules could not poach it back, and it covers six harvesters at separate ore patches: the one win saw 26 flee events against 97 and 126 in the losses either side. This pulls the NEAREST units, squad members included, and holds them only long enough to arrive and fight — the squad reclaims them when the hold lapses"
+  category harvester-defense
+  because "the built-in AI lists harvesters first in ProtectionTypes and answers a raid out of its general squad pool, paying nothing until something is attacked. Vimy pre-committed a harvester-guard squad instead, reserved so the attack rules could not poach it back, to cover six harvesters at separate ore patches: the one win saw 26 flee events against 97 and 126 in the losses either side. This replaced it and then subsumed it — the compiler found guard-harvesters could never fire, since this sits above it in the same exclusive category on strictly weaker conditions, so the squad had no consumer left and form-harvester-guard was sequestering 2-4 ground units from an army already outvalued 2:1. Both are gone. This pulls the NEAREST combat units from the whole army and holds them only long enough to arrive and fight, so whatever squad they came from reclaims them when the hold lapses"
   do scramble-to-harvesters(lerpf(0.05, 0.15, economy-priority), lerp(2, 8, economy-priority))
   require economy-priority > 0.3
   require count(harvesters-in-danger(round2(lerpf(0.05, 0.15, economy-priority)))) > 0
