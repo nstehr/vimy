@@ -1754,3 +1754,49 @@ func TestProduceRetriesFastOnAnIdleQueue(t *testing.T) {
 		t.Error("production never resumed on a busy queue")
 	}
 }
+
+// repair_budget_ratio scaled its cash requirement by how many buildings were
+// damaged, so a base under heavy attack — maximum damage — demanded the most
+// cash before fixing any of it. Eight damaged buildings at a ratio of 0.2 asked
+// for 4000 credits against a cash median in the low hundreds, and repair acted
+// zero times across five consecutive games.
+func TestRepairBudgetDoesNotScaleWithTheFire(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	burning := func(n int, kind string) []model.Building {
+		var out []model.Building
+		for i := range n {
+			out = append(out, model.Building{ID: i + 1, Type: kind, HP: 150, MaxHP: 1000})
+		}
+		return out
+	}
+
+	repaired := func(cash int, bs []model.Building) bool {
+		env := RuleEnv{
+			State:  model.GameState{Tick: 9000, Buildings: bs, Player: model.Player{Cash: cash}},
+			Memory: map[string]any{"repairBudgetRatio": 0.2},
+		}
+		if err := ActionRepairDamagedBuildings(env, conn); err != nil {
+			t.Fatalf("repair: %v", err)
+		}
+		return len(memoryMap[int, repairToggleEntry](env.Memory, "repairToggleSent")) > 0
+	}
+
+	// One radar damaged, cash well clear of two repairs at a fifth of cash.
+	if !repaired(1200, burning(1, "dome")) {
+		t.Error("nothing repaired with a single damaged building and ample cash")
+	}
+	// Eight damaged instead of one. The bill is still two repairs, not eight.
+	if !repaired(1200, burning(8, "dome")) {
+		t.Error("a heavily damaged base was refused the repair a lightly damaged one got")
+	}
+	// The budget still bites on non-critical work when cash is genuinely thin.
+	if repaired(300, burning(8, "dome")) {
+		t.Error("radar domes were repaired on cash the budget reserves for production")
+	}
+	// But never on the buildings that lose the game.
+	if !repaired(300, burning(8, "weap")) {
+		t.Error("war factories burned while the budget protected a production reserve")
+	}
+}

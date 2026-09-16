@@ -1045,11 +1045,14 @@ func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
 	// Zero disables the budget entirely (unlimited repair).
 	reserveOK := true
 	if budgetRatio > 0 && budgetRatio < 1.0 {
-		// Approximation: gate new starts on current cash clearing a reserve
-		// that scales with damaged-building count as a proxy for total cost.
-		damagedCount := len(env.DamagedBuildings())
-		perBuildingRepairAllowance := 100 // rough estimate per damaged building
-		neededHeadroom := int(float64(damagedCount*perBuildingRepairAllowance) / budgetRatio)
+		// The bill is what we are about to start, not everything that is
+		// damaged. Scaling it by the damaged count inverted the rule: a base
+		// under heavy attack has the most damage and so demanded the most cash
+		// before fixing any of it — eight damaged buildings at a ratio of 0.2
+		// asked for 4000 credits against a cash median in the low hundreds.
+		// Repairs are bounded by repairMaxConcurrent regardless.
+		perBuildingRepairAllowance := 100 // rough estimate per repair started
+		neededHeadroom := int(float64(repairMaxConcurrent*perBuildingRepairAllowance) / budgetRatio)
 		if env.Cash() < neededHeadroom {
 			reserveOK = false
 		}
@@ -1071,9 +1074,12 @@ func ActionRepairDamagedBuildings(env RuleEnv, conn *ipc.Connection) error {
 		if (underPressure || !repairAnything) && !isCriticalRepairType(b.Type) {
 			continue
 		}
-		// Budget gates new repairs only; in-flight ones still complete.
+		// Budget gates new repairs only; in-flight ones still complete. It does
+		// not gate the buildings that lose the game when they die: a doctrine
+		// choosing to spend a fifth of its cash on repairs is choosing between
+		// a radar dome and a tank, not between a construction yard and one.
 		prev, sent := state[b.ID]
-		if !reserveOK && !sent {
+		if !reserveOK && !sent && !isCriticalRepairType(b.Type) {
 			continue
 		}
 		if sent && env.State.Tick-prev.Tick < repairResendTicks {
