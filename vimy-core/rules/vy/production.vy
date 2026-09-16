@@ -237,7 +237,7 @@ rule produce-aircraft {
   require has-role(airfield)
   require not queue-busy(Aircraft)
   require can-build-any-combat-aircraft()
-  require combat-aircraft-count < army-cap(2.0, 10.0, air-weight)
+  require combat-aircraft-count < army-cap(0.0, 6.0, air-weight)
   require combat-aircraft-count < aircraft-capacity
   require reserves(800)
 }
@@ -395,7 +395,7 @@ rule produce-attack-aircraft {
   require has-role(airfield)
   require not queue-busy(Aircraft)
   require can-build-role(advanced-aircraft)
-  require role-count(advanced-aircraft) < army-cap(1.0, 6.0, max(tech-priority, air-weight))
+  require role-count(advanced-aircraft) < army-cap(0.0, 4.0, air-weight)
   require combat-aircraft-count < aircraft-capacity
   require reserves(1500)
 }
