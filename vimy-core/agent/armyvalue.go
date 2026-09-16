@@ -15,13 +15,17 @@ import "github.com/nstehr/vimy/vimy-core/model"
 // undercounts whatever sits in fog — so the gap this measures is a floor on the
 // real one.
 type armyValueTracker struct {
-	OursPeak  int
+	OursPeak   int
 	TheirsPeak int
 	// Summed at each sample so the averages describe the game rather than its
 	// last moment.
-	oursTotal   int
-	theirsTotal int
-	samples     int
+	oursTotal int
+	samples   int
+	// Theirs is averaged only over samples where any of it was visible.
+	// Including the blind ticks made an army of 8500 average out to 460 and
+	// read as small, when it was mostly just out of sight.
+	theirsTotal   int
+	theirsSamples int
 }
 
 func (a *armyValueTracker) reset() { *a = armyValueTracker{} }
@@ -39,14 +43,23 @@ func (a *armyValueTracker) observe(gs model.GameState) {
 		a.TheirsPeak = theirs
 	}
 	a.oursTotal += ours
-	a.theirsTotal += theirs
 	a.samples++
+	if theirs > 0 {
+		a.theirsTotal += theirs
+		a.theirsSamples++
+	}
 }
 
-// Means over the game, zero before anything has been seen.
+// Means over the game: ours across every sample, theirs across the samples
+// where we could see any of it. The two are not averaged over the same
+// denominator on purpose — theirs answers "how big is what we run into", not
+// "how much of the map is empty".
 func (a *armyValueTracker) Means() (ours, theirs int) {
-	if a.samples == 0 {
-		return 0, 0
+	if a.samples > 0 {
+		ours = a.oursTotal / a.samples
 	}
-	return a.oursTotal / a.samples, a.theirsTotal / a.samples
+	if a.theirsSamples > 0 {
+		theirs = a.theirsTotal / a.theirsSamples
+	}
+	return ours, theirs
 }

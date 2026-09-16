@@ -44,13 +44,31 @@ func TestArmyValueTracksBothSidesOverTheGame(t *testing.T) {
 	if ours != (300+5200+0)/3 {
 		t.Errorf("our mean = %d, want %d", ours, (300+5200)/3)
 	}
-	if theirs != (2300+4900+0)/3 {
-		t.Errorf("their mean = %d, want %d", theirs, (2300+4900)/3)
+	// Theirs averages only the samples where any of it was visible. Counting
+	// the blind third would report an army of 4900 as 2400 and read as small
+	// when it was merely out of sight.
+	if want := (2300 + 4900) / 2; theirs != want {
+		t.Errorf("their mean = %d, want %d — blind samples must not dilute it", theirs, want)
 	}
 
 	// A reset must not carry one game's armies into the next.
 	a.reset()
 	if o, tt := a.Means(); a.OursPeak != 0 || a.TheirsPeak != 0 || o != 0 || tt != 0 {
 		t.Error("reset left values behind")
+	}
+}
+
+// An enemy never seen at all is not an enemy of size zero; it is an unknown.
+func TestArmyValueReportsNoEnemyMeanWhenNoneWasEverSeen(t *testing.T) {
+	var a armyValueTracker
+	for range 5 {
+		a.observe(model.GameState{Player: model.Player{ArmyValue: 900}})
+	}
+	ours, theirs := a.Means()
+	if ours != 900 {
+		t.Errorf("our mean = %d, want 900", ours)
+	}
+	if theirs != 0 || a.TheirsPeak != 0 {
+		t.Errorf("reported an enemy army (%d/%d) that was never observed", theirs, a.TheirsPeak)
 	}
 }
