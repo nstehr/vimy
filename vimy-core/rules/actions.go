@@ -2561,6 +2561,19 @@ type attackOrderEntry struct {
 
 const attackOrderResend = 60
 
+// sendSquadAttack puts the whole squad on one target, which is what focus fire
+// means: kill the thing, then pick the next. Per-actor throttling comes from
+// sendAttack.
+func sendSquadAttack(env RuleEnv, conn *ipc.Connection, ids []uint32, targetID int) error {
+	for _, id := range ids {
+		if err := sendAttack(env, conn, id, uint32(targetID)); err != nil {
+			return err
+		}
+	}
+	markEffect(env)
+	return nil
+}
+
 // sendAttack suppresses identical re-issues within attackOrderResend ticks.
 func sendAttack(env RuleEnv, conn *ipc.Connection, actorID, targetID uint32) error {
 	state := memoryMap[int, attackOrderEntry](env.Memory, "attackOrderSent")
@@ -2604,6 +2617,33 @@ func sendAttackMove(env RuleEnv, conn *ipc.Connection, actorIDs []uint32, x, y i
 	})
 }
 
+// structureStrikeRange is how close the squad must be before it stops walking
+// and starts shooting, as a fraction of the map diagonal.
+const structureStrikeFraction = 0.12
+
+// squadStructureTarget is the enemy structure worth shooting, if the squad has
+// arrived somewhere it can shoot one.
+//
+// Scored from the squad rather than from home, so the building in front of it
+// outranks a rifleman back at our own base — see BestGroundTargetFrom.
+func squadStructureTarget(env RuleEnv, name string) *model.Enemy {
+	cx, cy, ok := squadCentroid(env, name)
+	if !ok {
+		return nil
+	}
+	target := env.BestGroundTargetFrom(cx, cy)
+	if target == nil || !IsKnownBuildingType(target.Type) {
+		return nil
+	}
+	mw, mh := float64(env.State.MapWidth), float64(env.State.MapHeight)
+	reach := math.Sqrt(mw*mw+mh*mh) * structureStrikeFraction
+	dx, dy := float64(target.X-cx), float64(target.Y-cy)
+	if dx*dx+dy*dy > reach*reach {
+		return nil // still a walk away; keep moving
+	}
+	return target
+}
+
 func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
 		base := env.NearestEnemyBase()
@@ -2641,6 +2681,23 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 		} else {
 			prev.LastTick = env.State.Tick
 			aState[name] = prev
+		}
+
+		// Arrived, and something of theirs is standing here: shoot it.
+		//
+		// Until now the squad attack-moved to a coordinate and left the choice
+		// to the engine, which engages whatever wanders past — so five measured
+		// games killed 184750 credits of enemy units and took zero buildings.
+		// A person clicks the target: whatever is shooting back, then what
+		// replaces their losses, then the rest. groundTargetValue already says
+		// that — construction yard 12, tesla coil 10, turret 8, refinery 7, war
+		// factory 6 — and nothing was reading it once the squad got there.
+		if target := squadStructureTarget(env, name); target != nil {
+			if err := sendSquadAttack(env, conn, ids, target.ID); err != nil {
+				return err
+			}
+			aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: true, LastTick: env.State.Tick}
+			return nil
 		}
 
 		memKey := "huntBase:" + name
