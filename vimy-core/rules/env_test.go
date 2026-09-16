@@ -1592,3 +1592,27 @@ func TestQueueDepthCountsWaitingWork(t *testing.T) {
 		t.Errorf("infantry queue leaked into vehicle depth: %d", got)
 	}
 }
+
+// Distance was measured from our own base whether attacking or defending, so a
+// squad standing in front of the enemy construction yard scored it as
+// maximally distant while a rifleman back home scored near full value. Five
+// measured games destroyed 0, 0, 0, 1 and 0 enemy buildings.
+func TestBestGroundTargetScoresFromWhereTheFightingIs(t *testing.T) {
+	env := RuleEnv{State: model.GameState{
+		Buildings: []model.Building{{ID: 1, Type: "fact", X: 100, Y: 100}},
+		Enemies: []model.Enemy{
+			{ID: 90, Type: "fact", X: 900, Y: 900, HP: 1000, MaxHP: 1000}, // their CY, far from us
+			{ID: 91, Type: "e1", X: 130, Y: 130, HP: 100, MaxHP: 100},     // a rifleman at our door
+		},
+	}}
+
+	// Defending: the thing at our door is the thing to kill.
+	if got := env.BestGroundTarget(); got == nil || got.ID != 91 {
+		t.Errorf("defending picked %v, want the rifleman at our base", got)
+	}
+
+	// Attacking, with the squad standing at their base: the construction yard.
+	if got := env.BestGroundTargetFrom(900, 900); got == nil || got.ID != 90 {
+		t.Errorf("attacking from their base picked %v, want their construction yard", got)
+	}
+}

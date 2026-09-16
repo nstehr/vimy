@@ -1192,14 +1192,29 @@ const groundTargetValueDefault = 1.0 // mobile units / unknown types
 // always beat a war factory across the map, and squads chased trash forever.
 const groundDistanceScale = 50.0
 
+// BestGroundTarget scores targets from our own base, which is what defending
+// wants: the thing nearest home is the thing to kill.
 func (e RuleEnv) BestGroundTarget() *model.Enemy {
-	if len(e.State.Enemies) == 0 {
-		return nil
-	}
 	bx, by := 0, 0
 	if len(e.State.Buildings) > 0 {
 		bx = e.State.Buildings[0].X
 		by = e.State.Buildings[0].Y
+	}
+	return e.BestGroundTargetFrom(bx, by)
+}
+
+// BestGroundTargetFrom scores from wherever the fighting is.
+//
+// Distance was always measured from our own base, for attacking as well as
+// defending, so a squad standing inside the enemy base scored the construction
+// yard beside it as maximally distant while a rifleman back home scored at
+// nearly full value. The table has the construction yard at 12 and a mobile
+// unit at 1, and the divisor undid that: five measured games destroyed 0, 0, 0,
+// 1 and 0 enemy buildings while killing 184750 credits of enemy units in the
+// last of them.
+func (e RuleEnv) BestGroundTargetFrom(bx, by int) *model.Enemy {
+	if len(e.State.Enemies) == 0 {
+		return nil
 	}
 	var best *model.Enemy
 	bestScore := -1.0

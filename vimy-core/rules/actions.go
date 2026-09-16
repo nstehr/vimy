@@ -2461,9 +2461,21 @@ const (
 	squadRallyRadius = 8
 )
 
+// bestTargetForSquad scores from the squad's own position, falling back to the
+// base when the squad has no position to speak of.
+func bestTargetForSquad(env RuleEnv, name string) *model.Enemy {
+	if cx, cy, ok := squadCentroid(env, name); ok {
+		return env.BestGroundTargetFrom(cx, cy)
+	}
+	return env.BestGroundTarget()
+}
+
 func SquadAttackMove(name string) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
-		enemy := env.BestGroundTarget()
+		// Scored from where the squad is, not from home. Anchoring on our own
+		// base made every enemy building look distant to a squad standing in
+		// front of it.
+		enemy := bestTargetForSquad(env, name)
 		if enemy == nil {
 			enemy = env.NearestEnemy()
 		}
@@ -3174,7 +3186,7 @@ func SquadDisengage(name string) ActionFunc {
 // than letting each member pick its own.
 func SquadFocusFire(name string) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
-		target := env.BestGroundTarget()
+		target := bestTargetForSquad(env, name)
 		if target == nil {
 			return nil
 		}
