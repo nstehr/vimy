@@ -58,7 +58,6 @@ class CombatStats {
   naval_lost int @description("Total naval units lost this game")
   enemy_units_killed int @description("Enemy units destroyed, counted by the engine — exact, not an estimate. Compare against your own losses before concluding a fight went badly, and compare the VALUE rather than the count: thirty riflemen are worth one heavy tank, so trading tanks for infantry loses even when the kill count flatters you.")
   enemy_buildings_destroyed int @description("Enemy buildings destroyed, counted by the engine. Progress toward actually winning, as opposed to holding: a game where this stays at zero is a game being survived rather than won.")
-  enemy_units_presumed_killed int @description("Enemy units that vanished where we could not see. Some died, some walked into fog — treat as an upper bound on hidden success, never as confirmed kills.")
 }
 
 class GameSituation {

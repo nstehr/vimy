@@ -379,29 +379,28 @@ func TestArchiveGameRecordsKillsAndLosses(t *testing.T) {
 		DurationTicks: 33050,
 		Won:           false,
 
-		EnemyUnitsKilled:     41,
-		EnemyBuildingsKilled: 3,
-		EnemyUnitsPresumed:   17,
-		InfantryLost:         70,
-		VehiclesLost:         16,
+		InfantryLost: 70,
+		VehiclesLost: 16,
+
+		EngineUnitsKilled:     41,
+		EngineBuildingsKilled: 3,
 	}, "", "", nil)
 	if err != nil {
 		t.Fatalf("archive: %v", err)
 	}
 
-	var killed, buildings, presumed, inf, veh int
-	row := s.db.QueryRow(`SELECT enemy_units_killed, enemy_buildings_killed,
-		enemy_units_presumed, infantry_lost, vehicles_lost FROM games WHERE id = ?`, id)
-	if err := row.Scan(&killed, &buildings, &presumed, &inf, &veh); err != nil {
+	var killed, buildings, inf, veh int
+	row := s.db.QueryRow(`SELECT engine_units_killed, engine_buildings_killed,
+		infantry_lost, vehicles_lost FROM games WHERE id = ?`, id)
+	if err := row.Scan(&killed, &buildings, &inf, &veh); err != nil {
 		t.Fatalf("read back: %v", err)
 	}
 	for _, c := range []struct {
 		name      string
 		got, want int
 	}{
-		{"enemy_units_killed", killed, 41},
-		{"enemy_buildings_killed", buildings, 3},
-		{"enemy_units_presumed", presumed, 17},
+		{"engine_units_killed", killed, 41},
+		{"engine_buildings_killed", buildings, 3},
 		{"infantry_lost", inf, 70},
 		{"vehicles_lost", veh, 16},
 	} {
@@ -423,10 +422,8 @@ func TestArchiveGameRecordsBothAccountsOfTheSameGame(t *testing.T) {
 		OurFaction:    "england",
 		DurationTicks: 74570,
 
-		// What the sidecar worked out by watching.
-		EnemyUnitsKilled: 681,
-		InfantryLost:     179,
-		VehiclesLost:     38,
+		InfantryLost: 179,
+		VehiclesLost: 38,
 
 		// What the engine actually recorded.
 		EngineUnitsKilled: 402,
@@ -440,7 +437,8 @@ func TestArchiveGameRecordsBothAccountsOfTheSameGame(t *testing.T) {
 		t.Fatalf("archive: %v", err)
 	}
 
-	var inferred, engine, killsCost, deathsCost, army, earned int
+	var engine, killsCost, deathsCost, army, earned int
+	var inferred sql.NullInt64
 	row := s.db.QueryRow(`SELECT enemy_units_killed, engine_units_killed,
 		engine_kills_cost, engine_deaths_cost, engine_army_value, engine_earned
 		FROM games WHERE id = ?`, id)
@@ -448,9 +446,13 @@ func TestArchiveGameRecordsBothAccountsOfTheSameGame(t *testing.T) {
 		t.Fatalf("read back: %v", err)
 	}
 
-	// Both survive, and independently: the comparison is the point.
-	if inferred != 681 || engine != 402 {
-		t.Errorf("kills = inferred %d / engine %d, want 681 / 402", inferred, engine)
+	// The inferred column is retired: NULL reads as "not measured", where a
+	// zero would read as "measured none".
+	if inferred.Valid {
+		t.Errorf("inferred kills = %d, want NULL now the tracker is gone", inferred.Int64)
+	}
+	if engine != 402 {
+		t.Errorf("engine kills = %d, want 402", engine)
 	}
 	// Cost is what makes a three-to-one count legible as a losing trade.
 	if killsCost != 41000 || deathsCost != 63000 {

@@ -267,10 +267,6 @@ func (t *CombatStatsClassView) PropertyEnemy_buildings_destroyed() (ClassPropert
 	return t.inner.Property("enemy_buildings_destroyed")
 }
 
-func (t *CombatStatsClassView) PropertyEnemy_units_presumed_killed() (ClassPropertyView, error) {
-	return t.inner.Property("enemy_units_presumed_killed")
-}
-
 func (t *TypeBuilder) CombatStats() (*CombatStatsClassView, error) {
 	bld, err := t.inner.Class("CombatStats")
 	if err != nil {

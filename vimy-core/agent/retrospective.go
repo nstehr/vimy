@@ -23,7 +23,6 @@ type retrospectiveSnapshot struct {
 	mapHeight       int
 	history         []DoctrineRecord
 	totalLosses     map[string]int
-	kills           killTracker
 	losses          lossTracker
 	engineStats     model.Player
 	store           *store.Store
@@ -60,7 +59,6 @@ func (s *Strategist) snapshotForReview(won bool, exportPath string) *retrospecti
 		won:             won,
 		history:         append([]DoctrineRecord(nil), s.history...),
 		totalLosses:     make(map[string]int, len(s.totalLosses)),
-		kills:           s.kills,
 		losses:          s.losses,
 		store:           s.store,
 		exportPath:      exportPath,
@@ -117,7 +115,6 @@ func doRetrospective(ctx context.Context, snap *retrospectiveSnapshot) {
 		// The engine's count, not the inference it disagrees with by 3x.
 		Enemy_units_killed:          int64(snap.engineStats.UnitsKilled),
 		Enemy_buildings_destroyed:   int64(snap.engineStats.BuildingsKilled),
-		Enemy_units_presumed_killed: int64(snap.kills.PresumedUnits),
 	}
 
 	review, err := baml_client.ReviewGame(
@@ -182,9 +179,6 @@ func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveRev
 			ExportPath:      snap.exportPath,
 			Directive:       snap.directive,
 
-			EnemyUnitsKilled:     snap.kills.Units,
-			EnemyBuildingsKilled: snap.kills.Buildings,
-			EnemyUnitsPresumed:   snap.kills.PresumedUnits,
 			InfantryLost:         snap.totalLosses["infantry"],
 			VehiclesLost:         snap.totalLosses["vehicle"],
 
