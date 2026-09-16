@@ -99,6 +99,15 @@ namespace OpenRA.Mods.Vimy
 	{
 		[JsonPropertyName("owner")]
 		public string Owner { get; set; }
+
+		// What this actor is worth, so the sidecar can price what it is looking
+		// at. Vimy has been fielding riflemen against heavy tanks and V2s and
+		// had no way to say so: the engine reports our own army value and
+		// nothing about theirs, and asking for their statistics would be
+		// reading the opponent's internals rather than observing the field.
+		// Summing the cost of what we can SEE is an estimate we are entitled to.
+		[JsonPropertyName("cost")]
+		public int Cost { get; set; }
 	}
 
 	public class SupportPowerData
@@ -412,6 +421,7 @@ namespace OpenRA.Mods.Vimy
 					continue;
 
 				var health = actor.TraitOrDefault<Health>();
+				var valued = actor.Info.TraitInfoOrDefault<ValuedInfo>();
 				enemies.Add(new EnemyActorData
 				{
 					Type = actor.Info.Name,
@@ -420,7 +430,8 @@ namespace OpenRA.Mods.Vimy
 					X = actor.Location.X,
 					Y = actor.Location.Y,
 					Hp = health?.HP ?? 0,
-					MaxHp = health?.MaxHP ?? 0
+					MaxHp = health?.MaxHP ?? 0,
+					Cost = valued?.Cost ?? 0
 				});
 			}
 

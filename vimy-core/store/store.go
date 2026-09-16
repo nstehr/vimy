@@ -65,6 +65,12 @@ type GameContext struct {
 	EngineDeathsCost      int
 	EngineArmyValue       int
 	EngineEarned          int
+
+	// What the two armies were worth while the game was live, not at the end.
+	OurArmyPeak       int
+	OurArmyMean       int
+	EnemyArmySeenPeak int
+	EnemyArmySeenMean int
 }
 
 // ArchivedDoctrine is one doctrine snapshot from a prior game, ready to be
@@ -303,6 +309,11 @@ func (s *Store) ArchiveGame(
 		EngineDeathsCost:      sql.NullInt64{Int64: int64(gameCtx.EngineDeathsCost), Valid: true},
 		EngineArmyValue:       sql.NullInt64{Int64: int64(gameCtx.EngineArmyValue), Valid: true},
 		EngineEarned:          sql.NullInt64{Int64: int64(gameCtx.EngineEarned), Valid: true},
+
+		OurArmyPeak:       sql.NullInt64{Int64: int64(gameCtx.OurArmyPeak), Valid: true},
+		OurArmyMean:       sql.NullInt64{Int64: int64(gameCtx.OurArmyMean), Valid: true},
+		EnemyArmySeenPeak: sql.NullInt64{Int64: int64(gameCtx.EnemyArmySeenPeak), Valid: true},
+		EnemyArmySeenMean: sql.NullInt64{Int64: int64(gameCtx.EnemyArmySeenMean), Valid: true},
 	})
 	if err != nil {
 		return 0, fmt.Errorf("insert game: %w", err)

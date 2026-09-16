@@ -110,8 +110,9 @@ INSERT INTO games (
     infantry_lost_forward, vehicles_lost_forward,
     engine_units_killed, engine_units_dead, engine_buildings_killed,
     engine_buildings_dead, engine_kills_cost, engine_deaths_cost,
-    engine_army_value, engine_earned
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    engine_army_value, engine_earned,
+    our_army_peak, our_army_mean, enemy_army_seen_peak, enemy_army_seen_mean
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id
 `
 
@@ -142,6 +143,10 @@ type InsertGameParams struct {
 	EngineDeathsCost      sql.NullInt64  `json:"engine_deaths_cost"`
 	EngineArmyValue       sql.NullInt64  `json:"engine_army_value"`
 	EngineEarned          sql.NullInt64  `json:"engine_earned"`
+	OurArmyPeak           sql.NullInt64  `json:"our_army_peak"`
+	OurArmyMean           sql.NullInt64  `json:"our_army_mean"`
+	EnemyArmySeenPeak     sql.NullInt64  `json:"enemy_army_seen_peak"`
+	EnemyArmySeenMean     sql.NullInt64  `json:"enemy_army_seen_mean"`
 }
 
 func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (int64, error) {
@@ -172,6 +177,10 @@ func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (int64, 
 		arg.EngineDeathsCost,
 		arg.EngineArmyValue,
 		arg.EngineEarned,
+		arg.OurArmyPeak,
+		arg.OurArmyMean,
+		arg.EnemyArmySeenPeak,
+		arg.EnemyArmySeenMean,
 	)
 	var id int64
 	err := row.Scan(&id)

@@ -46,6 +46,10 @@ type Game struct {
 	EngineDeathsCost      sql.NullInt64  `json:"engine_deaths_cost"`
 	EngineArmyValue       sql.NullInt64  `json:"engine_army_value"`
 	EngineEarned          sql.NullInt64  `json:"engine_earned"`
+	OurArmyPeak           sql.NullInt64  `json:"our_army_peak"`
+	OurArmyMean           sql.NullInt64  `json:"our_army_mean"`
+	EnemyArmySeenPeak     sql.NullInt64  `json:"enemy_army_seen_peak"`
+	EnemyArmySeenMean     sql.NullInt64  `json:"enemy_army_seen_mean"`
 }
 
 type Lesson struct {

@@ -24,6 +24,7 @@ type retrospectiveSnapshot struct {
 	history         []DoctrineRecord
 	totalLosses     map[string]int
 	losses          lossTracker
+	army            armyValueTracker
 	engineStats     model.Player
 	store           *store.Store
 	// Where this game's states were written, for replay. Empty without
@@ -60,6 +61,7 @@ func (s *Strategist) snapshotForReview(won bool, exportPath string) *retrospecti
 		history:         append([]DoctrineRecord(nil), s.history...),
 		totalLosses:     make(map[string]int, len(s.totalLosses)),
 		losses:          s.losses,
+		army:            s.army,
 		store:           s.store,
 		exportPath:      exportPath,
 		directive:       s.directive,
@@ -113,8 +115,8 @@ func doRetrospective(ctx context.Context, snap *retrospectiveSnapshot) {
 		Naval_lost:    int64(snap.totalLosses["naval"]),
 
 		// The engine's count, not the inference it disagrees with by 3x.
-		Enemy_units_killed:          int64(snap.engineStats.UnitsKilled),
-		Enemy_buildings_destroyed:   int64(snap.engineStats.BuildingsKilled),
+		Enemy_units_killed:        int64(snap.engineStats.UnitsKilled),
+		Enemy_buildings_destroyed: int64(snap.engineStats.BuildingsKilled),
 	}
 
 	review, err := baml_client.ReviewGame(
@@ -179,8 +181,8 @@ func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveRev
 			ExportPath:      snap.exportPath,
 			Directive:       snap.directive,
 
-			InfantryLost:         snap.totalLosses["infantry"],
-			VehiclesLost:         snap.totalLosses["vehicle"],
+			InfantryLost: snap.totalLosses["infantry"],
+			VehiclesLost: snap.totalLosses["vehicle"],
 
 			InfantryLostForward: snap.losses.Forward["infantry"],
 			VehiclesLostForward: snap.losses.Forward["vehicle"],
@@ -193,6 +195,11 @@ func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveRev
 			EngineDeathsCost:      snap.engineStats.DeathsCost,
 			EngineArmyValue:       snap.engineStats.ArmyValue,
 			EngineEarned:          snap.engineStats.Earned,
+
+			OurArmyPeak:       snap.army.OursPeak,
+			EnemyArmySeenPeak: snap.army.TheirsPeak,
+			OurArmyMean:       armyMeanOurs(snap.army),
+			EnemyArmySeenMean: armyMeanTheirs(snap.army),
 		},
 	}
 
@@ -281,3 +288,6 @@ func toBAMLDoctrine(d rules.Doctrine) types.Doctrine {
 		Air_target_ground_def_priority: d.AirTargetGroundDefPriority,
 	}
 }
+
+func armyMeanOurs(a armyValueTracker) int   { o, _ := a.Means(); return o }
+func armyMeanTheirs(a armyValueTracker) int { _, t := a.Means(); return t }

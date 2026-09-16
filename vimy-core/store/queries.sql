@@ -8,8 +8,9 @@ INSERT INTO games (
     infantry_lost_forward, vehicles_lost_forward,
     engine_units_killed, engine_units_dead, engine_buildings_killed,
     engine_buildings_dead, engine_kills_cost, engine_deaths_cost,
-    engine_army_value, engine_earned
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    engine_army_value, engine_earned,
+    our_army_peak, our_army_mean, enemy_army_seen_peak, enemy_army_seen_mean
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id;
 
 -- name: InsertDoctrine :one

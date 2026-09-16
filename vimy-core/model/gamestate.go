@@ -78,6 +78,10 @@ type Enemy struct {
 	Y     int    `json:"y"`
 	HP    int    `json:"hp"`
 	MaxHP int    `json:"maxHp"`
+	// What it is worth, from the engine. Lets the sidecar price what it is
+	// looking at instead of counting heads: a rifleman and a heavy tank are
+	// one unit each and a thousand credits apart.
+	Cost int `json:"cost"`
 }
 
 func (e Enemy) TypeName() string { return e.Type }
