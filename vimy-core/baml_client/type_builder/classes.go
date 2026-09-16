@@ -1235,6 +1235,10 @@ func (t *SquadInfoClassView) PropertyUnit_count() (ClassPropertyView, error) {
 	return t.inner.Property("unit_count")
 }
 
+func (t *SquadInfoClassView) PropertyPhase() (ClassPropertyView, error) {
+	return t.inner.Property("phase")
+}
+
 func (t *TypeBuilder) SquadInfo() (*SquadInfoClassView, error) {
 	bld, err := t.inner.Class("SquadInfo")
 	if err != nil {

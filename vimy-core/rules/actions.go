@@ -2673,7 +2673,7 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 				cx, cy, ok := squadCentroid(env, name)
 				if ok {
 					aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: false, LastTick: env.State.Tick}
-					slog.Debug("squad rallying before base-attack", "squad", name, "count", len(ids), "base_x", base.X, "base_y", base.Y, "centroid_x", cx, "centroid_y", cy)
+					recordAssaultPhase(env, name, phaseRally, "")
 					return sendAttackMove(env, conn, ids, cx, cy)
 				}
 				aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: true, LastTick: env.State.Tick}
@@ -2693,6 +2693,7 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 		// that — construction yard 12, tesla coil 10, turret 8, refinery 7, war
 		// factory 6 — and nothing was reading it once the squad got there.
 		if target := squadStructureTarget(env, name); target != nil {
+			recordAssaultPhase(env, name, phaseStrike, target.Type)
 			if err := sendSquadAttack(env, conn, ids, target.ID); err != nil {
 				return err
 			}
@@ -2765,8 +2766,11 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 			return nil
 		}
 
-		slog.Debug("squad attacking known base", "squad", name, "count", len(ids),
-			"owner", base.Owner, "step", state.Step, "x", tx, "y", ty)
+		if state.Step == 0 {
+			recordAssaultPhase(env, name, phaseApproach, "")
+		} else {
+			recordAssaultPhase(env, name, phaseHunt, "")
+		}
 
 		// Wraps to 1, not 0 — the centroid is only worth the initial approach.
 		if state.Step >= maxStep {

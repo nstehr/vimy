@@ -1674,6 +1674,7 @@ type SquadInfo struct {
 	Name       string `json:"name"`
 	Role       string `json:"role"`
 	Unit_count int64  `json:"unit_count"`
+	Phase      string `json:"phase"`
 }
 
 func (c *SquadInfo) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -1699,6 +1700,9 @@ func (c *SquadInfo) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		case "unit_count":
 			c.Unit_count = baml.Decode(valueHolder).Int()
 
+		case "phase":
+			c.Phase = baml.Decode(valueHolder).Interface().(string)
+
 		default:
 
 			panic(fmt.Sprintf("unexpected field: %s in class SquadInfo", key))
@@ -1716,6 +1720,8 @@ func (c SquadInfo) Encode() (*cffi.HostValue, error) {
 	fields["role"] = c.Role
 
 	fields["unit_count"] = c.Unit_count
+
+	fields["phase"] = c.Phase
 
 	return baml.EncodeClass("SquadInfo", fields, nil)
 }

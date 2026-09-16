@@ -30,6 +30,7 @@ class SquadInfo {
   name string
   role string @description("'attack', 'defend', or 'scout'")
   unit_count int
+  phase string @description("What an attacking squad is doing: 'rally' (waiting to be together enough to commit), 'approach' (walking in), 'strike' (shooting a structure), 'hunt' (arrived and searching for what is left). Empty for squads that are not assaulting. A squad stuck in approach or hunt for a long stretch is a squad achieving nothing — it has walked to where the enemy base was and found no target.")
 }
 
 class EnemyBase {

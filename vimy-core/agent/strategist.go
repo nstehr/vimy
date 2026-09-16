@@ -1173,6 +1173,7 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 				Name:       sq.Name,
 				Role:       sq.Role,
 				Unit_count: int64(len(sq.UnitIDs)),
+				Phase:      rules.RuleEnv{Memory: memory}.AssaultPhase(sq.Name),
 			})
 		}
 	}

@@ -1844,3 +1844,39 @@ func TestSquadStructureTargetPicksTheBuildingInFrontOfIt(t *testing.T) {
 		t.Errorf("opened fire on a building %v away instead of closing the distance", got.ID)
 	}
 }
+
+// The assault has always been a state machine with its state scattered across
+// four memory maps and its transitions buried in nested conditionals. Naming
+// the phases changes no behaviour; it makes the machine legible before anyone
+// argues about whether its sequencing is right.
+func TestAssaultPhaseRecordsTransitionsNotTicks(t *testing.T) {
+	mem := map[string]any{}
+	at := func(tick int) RuleEnv {
+		return RuleEnv{State: model.GameState{Tick: tick}, Memory: mem}
+	}
+
+	recordAssaultPhase(at(1000), "ground-attack", phaseApproach, "")
+	if got := at(1000).AssaultPhase("ground-attack"); got != "approach" {
+		t.Errorf("phase = %q, want approach", got)
+	}
+
+	// Holding the same phase must not reset when it started, or "stuck in
+	// approach for 20000 ticks" becomes unanswerable.
+	recordAssaultPhase(at(1500), "ground-attack", phaseApproach, "")
+	entry := memoryMap[string, assaultPhaseEntry](mem, "assaultPhase")["ground-attack"]
+	if entry.Since != 1000 {
+		t.Errorf("phase start moved to %d; it should still be 1000", entry.Since)
+	}
+
+	// A new phase is a transition, and carries what it is shooting at.
+	recordAssaultPhase(at(2000), "ground-attack", phaseStrike, "weap")
+	entry = memoryMap[string, assaultPhaseEntry](mem, "assaultPhase")["ground-attack"]
+	if entry.Phase != phaseStrike || entry.Since != 2000 || entry.Target != "weap" {
+		t.Errorf("transition recorded as %+v, want strike at 2000 on weap", entry)
+	}
+
+	// Squads are tracked apart.
+	if got := at(2000).AssaultPhase("harvester-guard"); got != "" {
+		t.Errorf("unrelated squad has phase %q, want empty", got)
+	}
+}
