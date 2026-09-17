@@ -315,7 +315,7 @@ rule produce-scout-vehicle {
 rule produce-siege-vehicle {
   priority trunc(select(siege-vehicle-first > 0, 485.0, 482.0))
   category produce-vehicle exclusive
-  because "siege has to beat generic vehicles to the queue whether or not it is the plan, because in an exclusive category the loser does not build later, it does not build at all. At 460 it sat below produce-vehicle's 480 and game 127 measured the result: ready in 216 of 660 sampled states and preempted in all 216, so it produced 5 times in 111510 ticks against produce-vehicle's 323 — roughly 1 percent of a 189914-credit economy, of which 67 percent went on plain tanks, for 2 enemy buildings destroyed. Not zero, which is what the sampled blame alone appeared to say: the sample is every 15th evaluation and a rule can act between samples, so the engine's own act count is the number that settles it. The flood this priority once caused — game 96 built 49 artillery and 0 medium tanks — is held off by the cap below, not by the ordering: six siege against produce-vehicle's twenty-four. Staying FIRST when the doctrine asks for it keeps the two branches distinguishable"
+  because "siege has to beat generic vehicles to the queue, because in an exclusive category the loser does not build later, it does not build at all: at 460 this sat below produce-vehicle's 480 and game 127 produced 5 artillery in 111510 ticks against 323 tanks. Promoted to 482 it produced 14 in 33090 ticks — the rate rose ninefold and the TANK rate fell by three quarters, 2.9 per thousand ticks to 0.73. The absolute cap does not stop that, because artillery is fragile: each one that dies drops the count below the cap and hands siege first call on the next credits, so the queue runs a rebuild treadmill and the tanks never get their turn. Two gates stop it instead. A floor, because artillery without escorts is a gift, and a ratio, because the floor alone would let artillery reach its cap of six beside seven tanks. Both are set from what Vimy FIELDS, not from what a tank line ought to look like: combat-vehicle-count peaked at 13 in game 127 and at 4 in game 128, median 2 and 1. A screen of seven would have been unreachable in both and would have returned this rule to dead, which is the mistake this whole entry exists to record. Counting TANKS, not combat vehicles: combat-vehicle-count includes artillery, so a gate written on it would satisfy itself as the artillery accumulated"
   do produce-siege-vehicle
   require vehicle-weight > 0.2
   require has-role(war-factory)
@@ -324,6 +324,10 @@ rule produce-siege-vehicle {
   require can-build-role(artillery) or can-build-role(v2-launcher)
   require role-count(artillery) + role-count(v2-launcher)
         < select(siege-vehicle-first > 0, army-cap(3.0, 12.0, vehicle-weight), army-cap(1.0, 5.0, vehicle-weight))
+  require combat-vehicle-count - role-count(artillery) - role-count(v2-launcher)
+        >= lerp(2, 4, vehicle-weight)
+  require 3 * (role-count(artillery) + role-count(v2-launcher))
+        <= combat-vehicle-count - role-count(artillery) - role-count(v2-launcher)
   require scaled-reserves(900)
 }
 
