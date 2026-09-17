@@ -79,8 +79,18 @@ const (
 	// The squad was too strung out, so it was sent to re-gather and never
 	// looked for a target at all.
 	StrikeBlockedUnclumped = "unclumped"
-	// Nothing of theirs was visible from the squad to score.
-	StrikeBlockedNoTarget = "no-target"
+	// Nothing of theirs was visible from the squad to score, and the squad had
+	// reached the base it remembers. The squad is standing where the enemy is
+	// supposed to be and can see nothing: either the memory is wrong, or
+	// targeting is blind to buildings it has already scouted. Game 132 hit
+	// no-target in 23 of 27 attempts and this is the half that matters.
+	StrikeBlockedBlindAtBase = "blind-at-base"
+	// Nothing visible, and the squad is still a walk from the base. Expected,
+	// and not a defect: it has not arrived yet. Separated from the above
+	// because the two have nothing to do with each other and game 132 could
+	// not tell them apart — its squad was disengaging under a 5x army deficit,
+	// so most of its no-targets may simply have been "nowhere near them".
+	StrikeBlockedNoTargetEnRoute = "no-target-en-route"
 	// Something was visible and the best of it was a unit, not a building.
 	// Mobile units score 1.0 against a building's 3 to 12, so this means no
 	// building was in view at all rather than a unit outranking one.

@@ -74,7 +74,8 @@ type GameContext struct {
 	HarvesterHaulDist   float64
 
 	StrikeBlockedUnclumped   int
-	StrikeBlockedNoTarget    int
+	StrikeBlockedBlindAtBase int
+	StrikeBlockedEnRoute     int
 	StrikeBlockedNotBuilding int
 	StrikeBlockedOutOfReach  int
 
@@ -328,7 +329,8 @@ func (s *Store) ArchiveGame(
 		HarvesterHaulDistance: sql.NullFloat64{Float64: gameCtx.HarvesterHaulDist, Valid: true},
 
 		StrikeBlockedUnclumped:   sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedUnclumped), Valid: true},
-		StrikeBlockedNoTarget:    sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedNoTarget), Valid: true},
+		StrikeBlockedBlindAtBase: sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedBlindAtBase), Valid: true},
+		StrikeBlockedEnRoute:     sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedEnRoute), Valid: true},
 		StrikeBlockedNotBuilding: sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedNotBuilding), Valid: true},
 		StrikeBlockedOutOfReach:  sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedOutOfReach), Valid: true},
 
@@ -791,9 +793,12 @@ type Outcome struct {
 	// ore near the base is gone.
 	HarvesterHaulDistance float64
 
-	// Why squads told to attack never shot a building. Four reasons, four
-	// different fixes; the assault phase log cannot tell them apart.
-	StrikeBlockedUnclumped, StrikeBlockedNoTarget     int
+	// Why squads told to attack never shot a building. Each has a different
+	// fix, and the assault phase log cannot tell them apart. blind-at-base is
+	// the one that matters: the squad is standing where the enemy is supposed
+	// to be and can see nothing.
+	StrikeBlockedUnclumped, StrikeBlockedBlindAtBase  int
+	StrikeBlockedEnRoute                              int
 	StrikeBlockedNotBuilding, StrikeBlockedOutOfReach int
 
 	// Which fields the row actually carried. Games predating a migration have
@@ -862,7 +867,8 @@ func (s *Store) GameOutcome(ctx context.Context, id int64) (Outcome, error) {
 		HarvesterHaulDistance: r.HarvesterHaulDistance.Float64,
 
 		StrikeBlockedUnclumped:   int(r.StrikeBlockedUnclumped.Int64),
-		StrikeBlockedNoTarget:    int(r.StrikeBlockedNoTarget.Int64),
+		StrikeBlockedBlindAtBase: int(r.StrikeBlockedBlindAtBase.Int64),
+		StrikeBlockedEnRoute:     int(r.StrikeBlockedEnRoute.Int64),
 		StrikeBlockedNotBuilding: int(r.StrikeBlockedNotBuilding.Int64),
 		StrikeBlockedOutOfReach:  int(r.StrikeBlockedOutOfReach.Int64),
 

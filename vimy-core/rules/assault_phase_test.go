@@ -20,7 +20,7 @@ func TestStrikeBlockersAreCountedSeparately(t *testing.T) {
 		t.Errorf("out-of-reach = %d, want 1", got[StrikeBlockedOutOfReach])
 	}
 	// A reason that never happened must read as absent, not as zero recorded.
-	if _, seen := got[StrikeBlockedNoTarget]; seen {
-		t.Errorf("no-target was never recorded and must not appear")
+	if _, seen := got[StrikeBlockedBlindAtBase]; seen {
+		t.Errorf("blind-at-base was never recorded and must not appear")
 	}
 }

@@ -207,7 +207,8 @@ func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveRev
 			HarvesterHaulDist:   snap.harvesters.MeanHaulDistance(),
 
 			StrikeBlockedUnclumped:   snap.strikeBlocked[rules.StrikeBlockedUnclumped],
-			StrikeBlockedNoTarget:    snap.strikeBlocked[rules.StrikeBlockedNoTarget],
+			StrikeBlockedBlindAtBase: snap.strikeBlocked[rules.StrikeBlockedBlindAtBase],
+			StrikeBlockedEnRoute:     snap.strikeBlocked[rules.StrikeBlockedNoTargetEnRoute],
 			StrikeBlockedNotBuilding: snap.strikeBlocked[rules.StrikeBlockedNotBuilding],
 			StrikeBlockedOutOfReach:  snap.strikeBlocked[rules.StrikeBlockedOutOfReach],
 

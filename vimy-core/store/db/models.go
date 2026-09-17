@@ -59,6 +59,8 @@ type Game struct {
 	StrikeBlockedNoTarget    sql.NullInt64   `json:"strike_blocked_no_target"`
 	StrikeBlockedNotBuilding sql.NullInt64   `json:"strike_blocked_not_building"`
 	StrikeBlockedOutOfReach  sql.NullInt64   `json:"strike_blocked_out_of_reach"`
+	StrikeBlockedBlindAtBase sql.NullInt64   `json:"strike_blocked_blind_at_base"`
+	StrikeBlockedEnRoute     sql.NullInt64   `json:"strike_blocked_en_route"`
 }
 
 type Lesson struct {

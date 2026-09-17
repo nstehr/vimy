@@ -2631,9 +2631,22 @@ func squadStructureTarget(env RuleEnv, name string) *model.Enemy {
 	if !ok {
 		return nil
 	}
+	mw0, mh0 := float64(env.State.MapWidth), float64(env.State.MapHeight)
+	strikeReach := math.Sqrt(mw0*mw0+mh0*mh0) * structureStrikeFraction
+
 	target := env.BestGroundTargetFrom(cx, cy)
 	if target == nil {
-		recordStrikeBlocked(env, StrikeBlockedNoTarget)
+		// Whether it has arrived decides what this means. Standing on the
+		// remembered base and seeing nothing is a targeting defect; still
+		// walking is just walking.
+		if base := env.NearestEnemyBase(); base != nil {
+			dx, dy := float64(base.X-cx), float64(base.Y-cy)
+			if dx*dx+dy*dy <= strikeReach*strikeReach {
+				recordStrikeBlocked(env, StrikeBlockedBlindAtBase)
+				return nil
+			}
+		}
+		recordStrikeBlocked(env, StrikeBlockedNoTargetEnRoute)
 		return nil
 	}
 	if !IsKnownBuildingType(target.Type) {

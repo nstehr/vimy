@@ -228,10 +228,11 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
       {{end}}
       {{if .HasStrikes}}
       <div class="led">
-        <div class="led-n bad">{{.StrikeBlockedUnclumped}}</div>
-        <div class="led-l">strikes lost to a strung-out squad</div>
-        <div class="led-sub">no target {{.StrikeBlockedNoTarget}} &middot;
-          best target not a building {{.StrikeBlockedNotBuilding}} &middot;
+        <div class="led-n bad">{{.StrikeBlockedBlindAtBase}}</div>
+        <div class="led-l">strikes lost standing on the base, seeing nothing</div>
+        <div class="led-sub">still en route {{.StrikeBlockedEnRoute}} &middot;
+          strung-out squad {{.StrikeBlockedUnclumped}} &middot;
+          not a building {{.StrikeBlockedNotBuilding}} &middot;
           out of reach {{.StrikeBlockedOutOfReach}}</div>
       </div>
       {{end}}

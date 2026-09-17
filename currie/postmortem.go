@@ -96,11 +96,12 @@ func writeLedger(w io.Writer, o store.Outcome) {
 			o.InfantryLost, o.VehiclesLost, o.VehiclesLostForward, o.VehiclesLostAtHome())
 	}
 	if o.HasStrikes {
-		total := o.StrikeBlockedUnclumped + o.StrikeBlockedNoTarget +
-			o.StrikeBlockedNotBuilding + o.StrikeBlockedOutOfReach
+		total := o.StrikeBlockedUnclumped + o.StrikeBlockedBlindAtBase +
+			o.StrikeBlockedEnRoute + o.StrikeBlockedNotBuilding + o.StrikeBlockedOutOfReach
 		if total > 0 {
-			fmt.Fprintf(w, "  no strike  unclumped %d, no target %d, target not a building %d, out of reach %d\n",
-				o.StrikeBlockedUnclumped, o.StrikeBlockedNoTarget,
+			fmt.Fprintf(w, "  no strike  BLIND AT BASE %d, still en route %d, unclumped %d, "+
+				"not a building %d, out of reach %d\n",
+				o.StrikeBlockedBlindAtBase, o.StrikeBlockedEnRoute, o.StrikeBlockedUnclumped,
 				o.StrikeBlockedNotBuilding, o.StrikeBlockedOutOfReach)
 		}
 	}
