@@ -73,6 +73,29 @@ type deadRule struct {
 	SolePct        float64
 }
 
+// preemptedRule is a rule that was ready and never got to run.
+//
+// It has no culprit clause and so cannot appear among the dead rules, which
+// are ranked by the clause that blocked them: nothing blocked this one. An
+// exclusive category runs the highest-priority rule whose condition HOLDS, so
+// a rule below the winner does not build later — it never builds, and reads as
+// working code on every other section of this page. produce-siege-vehicle was
+// preempted 216 times in game 127 and built zero artillery all game, while the
+// page reported it only inside a count.
+type preemptedRule struct {
+	Name      string
+	Category  string
+	Preempted int
+	Seen      int
+	// What the rule did in the real game; Acted is -1 when unmeasured.
+	Matched, Acted int
+	// Rules in the same category that did hold. Whichever of these outranks it
+	// is what it keeps losing to.
+	LostTo []string
+	// Share of the states it was ready in and lost.
+	Rate float64
+}
+
 // LateStart is a rule that worked, but not until late.
 //
 // A blame count has no clock, so the replay can say what blocked a rule but not
@@ -165,6 +188,8 @@ type view struct {
 	// Rules the replay never saw satisfiable that the game says fired. The sample
 	// missed them; calling them dead would be wrong.
 	FiredAnyway []deadRule
+	// Rules that were ready and lost their category every time.
+	NeverRan []preemptedRule
 
 	Home        string
 	Windows     int
@@ -226,6 +251,63 @@ func reconcile(v *view, firings map[string]store.Firing) {
 // Where a first action counts as late: early enough to catch an opener that
 // never happened, late enough not to list every rule that needs a building.
 const lateStartPct = 25.0
+
+// preempted finds the rules that were ready every time and never ran.
+//
+// Separate from the dead rules because the remedy is different and the two
+// read alike. A dead rule has a clause to loosen. This one has no clause to
+// loosen — its conditions held — so the only fix is the ordering, and looking
+// for a gate to move would waste the search.
+func preempted(rules []ruleReport, firings map[string]store.Firing) []preemptedRule {
+	// Which rules won each category, so a row can name what it lost to. Most
+	// frequent winner first and only the top few: the report carries no
+	// priorities, so the rule that held most often is the best available
+	// answer to "what beat it", and listing every holder in the category
+	// answers nothing.
+	type winner struct {
+		name string
+		held int
+	}
+	byCat := map[string][]winner{}
+	for _, r := range rules {
+		if r.Held > 0 {
+			byCat[r.Category] = append(byCat[r.Category], winner{r.Rule, r.Held})
+		}
+	}
+	winners := map[string][]string{}
+	for cat, ws := range byCat {
+		sort.SliceStable(ws, func(i, j int) bool { return ws[i].held > ws[j].held })
+		for i, x := range ws {
+			if i == 3 {
+				break
+			}
+			winners[cat] = append(winners[cat], x.name)
+		}
+	}
+	var out []preemptedRule
+	for _, r := range rules {
+		if r.Held > 0 || r.Preempted == 0 {
+			continue
+		}
+		// The engine saw it act, so the sample missed it rather than the
+		// category starving it.
+		if f, ok := firings[r.Rule]; ok && f.Acted > 0 {
+			continue
+		}
+		p := preemptedRule{
+			Name: r.Rule, Category: r.Category, Preempted: r.Preempted,
+			Seen: r.Seen, Matched: -1, Acted: -1,
+			LostTo: winners[r.Category],
+			Rate:   100 * float64(r.Preempted) / float64(max(r.Seen, 1)),
+		}
+		if f, ok := firings[r.Rule]; ok {
+			p.Matched, p.Acted = f.Matched, f.Acted
+		}
+		out = append(out, p)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Preempted > out[j].Preempted })
+	return out
+}
 
 func plural(n int) string {
 	if n == 1 {
@@ -382,6 +464,7 @@ func build(title string, rep report, firings map[string]store.Firing, durationTi
 	if len(v.Dead) > 24 {
 		v.Dead = v.Dead[:24]
 	}
+	v.NeverRan = preempted(rep.Rules, firings)
 	v.DurationTicks = durationTicks
 	v.Faction = faction
 	if v.DurationTicks > 0 {

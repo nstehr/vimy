@@ -124,3 +124,49 @@ func TestTrimSourcePathLeavesJustTheFile(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+// The CLI and the page must agree about which rules never ran. They did not:
+// the raw blame lists rules the engine recorded acting, because the sample is
+// every 15th evaluation and a rule can act between samples. Calling those dead
+// produced a false "zero artillery" reading of game 127, where the rule had in
+// fact produced five times.
+func TestPreemptedExcludesRulesTheEngineSawAct(t *testing.T) {
+	rules := []ruleReport{
+		{Rule: "produce-vehicle", Category: "produce-vehicle", Seen: 100, Held: 90},
+		{Rule: "produce-siege-vehicle", Category: "produce-vehicle", Seen: 100, Preempted: 80},
+		// Never held in the sample, but the engine recorded it producing.
+		{Rule: "produce-minelayer", Category: "produce-vehicle", Seen: 100, Preempted: 70},
+		// Never held and nothing preempted it: a blocked rule, not this list.
+		{Rule: "produce-flak-truck", Category: "produce-vehicle", Seen: 100, Blocked: 100},
+	}
+	firings := map[string]store.Firing{
+		"produce-minelayer": {Matched: 47, Acted: 6},
+		// -1 is "unmeasured", not "did nothing", and must not exclude a rule.
+		"produce-siege-vehicle": {Matched: 40, Acted: -1},
+	}
+	got := preempted(rules, firings)
+	if len(got) != 1 || got[0].Name != "produce-siege-vehicle" {
+		t.Fatalf("got %+v, want only produce-siege-vehicle", got)
+	}
+	if got[0].Preempted != 80 || got[0].Rate != 80 {
+		t.Errorf("got %d at %.0f%%, want 80 at 80%%", got[0].Preempted, got[0].Rate)
+	}
+	if len(got[0].LostTo) != 1 || got[0].LostTo[0] != "produce-vehicle" {
+		t.Errorf("lost to %v, want [produce-vehicle]", got[0].LostTo)
+	}
+}
+
+func TestPreemptedNamesTheMostFrequentWinnerFirst(t *testing.T) {
+	rules := []ruleReport{
+		{Rule: "rare-winner", Category: "c", Seen: 10, Held: 2},
+		{Rule: "usual-winner", Category: "c", Seen: 10, Held: 8},
+		{Rule: "loser", Category: "c", Seen: 10, Preempted: 10},
+	}
+	got := preempted(rules, nil)
+	if len(got) != 1 {
+		t.Fatalf("got %d rows", len(got))
+	}
+	if got[0].LostTo[0] != "usual-winner" {
+		t.Errorf("lost to %v, want usual-winner first", got[0].LostTo)
+	}
+}

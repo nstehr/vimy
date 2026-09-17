@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"sort"
 	"strings"
 
 	"github.com/nstehr/vimy/vimy-core/store"
@@ -45,8 +44,40 @@ func (s *server) postmortem(ctx context.Context, w io.Writer, id int64, top int)
 	}
 	s.writeSpend(w, rep, o)
 	writeWarnings(w, rep.Warnings)
-	writeBlame(w, rep, top)
+
+	// Rendered from the view the page builds, not from the raw report: the two
+	// must agree about which rules count as dead, and they did not. The raw
+	// blame lists rules the engine recorded acting — the sample is every 15th
+	// evaluation, so a rule can act between samples — and calling those dead is
+	// the mistake the reconcile step exists to prevent.
+	v := buildWith(g.OurFaction, rep.Report, rep.Windows_, rep.Firings,
+		g.DurationTicks, g.OurFaction, rep.Doctrines)
+	writeNeverRan(w, v.NeverRan, top)
+	writeBlame(w, v, rep, top)
 	return nil
+}
+
+func writeNeverRan(w io.Writer, rows []preemptedRule, top int) {
+	fmt.Fprintf(w, "\n  READY AND NEVER RAN (%d) — lost an exclusive category every time\n", len(rows))
+	if len(rows) == 0 {
+		fmt.Fprintln(w, "    none")
+		return
+	}
+	for i, r := range rows {
+		if i == top {
+			fmt.Fprintf(w, "    ... and %d more\n", len(rows)-top)
+			break
+		}
+		lost := "nothing that held"
+		if len(r.LostTo) > 0 {
+			lost = r.LostTo[0]
+			if n := len(r.LostTo) - 1; n > 0 {
+				lost = fmt.Sprintf("%s (+%d)", lost, n)
+			}
+		}
+		fmt.Fprintf(w, "    %-28s %4d x (%2.0f%% of %3d seen) in %-16s to %s\n",
+			r.Name, r.Preempted, r.Rate, r.Seen, r.Category+",", lost)
+	}
 }
 
 func writeLedger(w io.Writer, o store.Outcome) {
@@ -112,50 +143,23 @@ func writeWarnings(w io.Writer, warnings []Warning) {
 	}
 }
 
-func writeBlame(w io.Writer, rep *Replay, top int) {
-	fmt.Fprintf(w, "\n  BLAME (%d states across %d doctrine windows) — rules that never held\n",
+// writeBlame lists the rules a single clause kept false, worst first.
+//
+// These are the ones with a gate to move, which is what separates them from
+// the rules above: nothing was blocking those.
+func writeBlame(w io.Writer, v view, rep *Replay, top int) {
+	fmt.Fprintf(w, "\n  BLAME (%d states across %d doctrine windows) — never fired, one clause to blame\n",
 		rep.Report.States, rep.Windows)
-
-	type row struct {
-		rule      string
-		sole      int
-		preempted int
-		source    string
+	if len(v.Dead) == 0 {
+		fmt.Fprintln(w, "    none")
+		return
 	}
-	var rows []row
-	for _, r := range rep.Report.Rules {
-		if r.Held > 0 || r.Seen == 0 {
-			continue
-		}
-		worst := row{rule: r.Rule, preempted: r.Preempted}
-		for _, c := range r.Clauses {
-			if c.Sole > worst.sole {
-				worst.sole, worst.source = c.Sole, strings.TrimSpace(c.Source)
-			}
-		}
-		rows = append(rows, worst)
-	}
-	// Preemption first: a rule blocked by its own clause is a gate to move, but
-	// a rule that keeps losing its category never enters the contest at all,
-	// and no amount of loosening its conditions will help.
-	sort.SliceStable(rows, func(i, j int) bool {
-		if rows[i].preempted != rows[j].preempted {
-			return rows[i].preempted > rows[j].preempted
-		}
-		return rows[i].sole > rows[j].sole
-	})
-	for i, r := range rows {
+	for i, d := range v.Dead {
 		if i == top {
-			fmt.Fprintf(w, "    ... and %d more\n", len(rows)-top)
+			fmt.Fprintf(w, "    ... and %d more\n", len(v.Dead)-top)
 			break
 		}
-		switch {
-		case r.preempted > 0:
-			fmt.Fprintf(w, "    %-30s preempted %d x; lost its category\n", r.rule, r.preempted)
-		case r.sole > 0:
-			fmt.Fprintf(w, "    %-30s sole blocker %d x: %.52s\n", r.rule, r.sole, r.source)
-		default:
-			fmt.Fprintf(w, "    %-30s never held; no single culprit\n", r.rule)
-		}
+		fmt.Fprintf(w, "    %-28s sole blocker %4d x (%.0f%%): %.46s\n",
+			d.Name, d.Culprit.Sole, d.SolePct, strings.TrimSpace(d.Culprit.Source))
 	}
 }

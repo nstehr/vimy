@@ -174,6 +174,13 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
 .warns li{background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--sole);padding:.6rem .85rem;font-family:var(--mono);font-size:.82rem;line-height:1.5}
 .warns .w-scope{display:block;margin-top:.25rem;font-family:var(--body);font-size:.8rem;color:var(--ink-3)}
 .clean{margin:0;color:var(--ink-3);font-size:.9rem}
+.ran{width:100%;border-collapse:collapse;font-size:.9rem}
+.ran th{text-align:left;font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:400;padding:.3rem .7rem .3rem 0;border-bottom:1px solid var(--rule)}
+.ran td{padding:.42rem .7rem .42rem 0;border-bottom:1px solid var(--rule-soft);vertical-align:baseline}
+.ran td.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.ran .rn2{font-family:var(--mono);font-size:.85rem}
+.ran .lost{color:var(--ink-3);font-size:.82rem}
+.ran .lost b{color:var(--sole);font-weight:500;font-family:var(--mono);font-size:.95em}
 </style>
 
 <div class="wrap">
@@ -512,6 +519,31 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     </div>
   </section>
 </details>
+  {{end}}
+
+  {{if .NeverRan}}
+  <section>
+    <h2>Rules that were ready and never ran</h2>
+    <p class="lede">
+      Their conditions <b>held</b>. An exclusive category runs only the highest-priority rule whose
+      condition holds, so these lost the contest every time &mdash; and a rule that loses does not
+      build later, it never builds. There is no gate to move here: nothing was blocking them, which
+      is why they appear in no section above and are counted but never named below. This is the one
+      failure the blame is blind to.
+    </p>
+    <table class="ran">
+      <tr><th>rule</th><th>category</th><th>lost to</th><th>times</th><th>of states seen</th></tr>
+      {{range .NeverRan}}
+      <tr>
+        <td class="rn2">{{.Name}}</td>
+        <td class="lost">{{.Category}}</td>
+        <td class="lost">{{range .LostTo}}<b>{{.}}</b> {{else}}&mdash;{{end}}</td>
+        <td class="n">{{.Preempted}}</td>
+        <td class="n">{{printf "%.0f" .Rate}}%</td>
+      </tr>
+      {{end}}
+    </table>
+  </section>
   {{end}}
 
   <section>
