@@ -1,0 +1,126 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/nstehr/vimy/vimy-core/store"
+)
+
+// The rule table and the engine are the two halves that can drift apart, so
+// the test that matters is that every rule the table names is one the engine
+// still prices.
+func TestRuleItemsArePricedByTheEngine(t *testing.T) {
+	items, err := loadRuleItems()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) == 0 {
+		t.Fatal("no rule items")
+	}
+	dir := filepath.Join("..", "engine", "mods", "ra", "rules")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skip("no engine checkout")
+	}
+	prices, err := enginePrices(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rule, it := range items {
+		if _, ok := prices[it.Item]; !ok {
+			t.Errorf("%s buys %q, which the engine does not price", rule, it.Item)
+		}
+	}
+}
+
+func TestEnginePricesReadsTheFirstCostPerActor(t *testing.T) {
+	dir := t.TempDir()
+	// Shaped like the mod's: an actor, its Cost nested under a trait, and a
+	// .Husk variant that must not be mistaken for a second actor.
+	yaml := "E1:\n\tInherits: ^Soldier\n\tValued:\n\t\tCost: 100\n" +
+		"2TNK:\n\tValued:\n\t\tCost: 850\n" +
+		"2TNK.Husk:\n\tValued:\n\t\tCost: 9999\n"
+	if err := os.WriteFile(filepath.Join(dir, "units.yaml"), []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	prices, err := enginePrices(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for item, want := range map[string]int{"e1": 100, "2tnk": 850} {
+		if prices[item] != want {
+			t.Errorf("%s = %d, want %d", item, prices[item], want)
+		}
+	}
+}
+
+func TestComputeSpendSkipsRulesThatNeverActed(t *testing.T) {
+	items := map[string]ruleItem{
+		"produce-vehicle":  {Item: "2tnk", Kind: "armour"},
+		"produce-infantry": {Item: "e1", Kind: "infantry"},
+		"build-refinery":   {Item: "proc", Kind: "economy"},
+	}
+	prices := map[string]int{"2tnk": 850, "e1": 100, "proc": 1400}
+	firings := map[string]store.Firing{
+		"produce-vehicle": {Matched: 500, Acted: 10},
+		// Matched plenty and bought nothing.
+		"produce-infantry": {Matched: 300, Acted: 0},
+		// Predates the counter: -1 is not zero and must not be priced.
+		"build-refinery": {Matched: 40, Acted: -1},
+		// Not a producing rule at all.
+		"retreat-damaged-units": {Matched: 90, Acted: 12},
+	}
+	s := computeSpend(firings, prices, items, 20000)
+	if s.Total != 8500 {
+		t.Errorf("total = %d, want 8500", s.Total)
+	}
+	if len(s.Lines) != 1 || s.Lines[0].Rule != "produce-vehicle" {
+		t.Fatalf("lines = %+v, want only produce-vehicle", s.Lines)
+	}
+	if len(s.Kinds) != 1 || s.Kinds[0].Percent != 100 {
+		t.Errorf("kinds = %+v, want armour at 100%%", s.Kinds)
+	}
+	if s.Earned != 20000 {
+		t.Errorf("earned = %d", s.Earned)
+	}
+}
+
+func TestComputeSpendReportsUnpricedItemsRatherThanDroppingThem(t *testing.T) {
+	items := map[string]ruleItem{"produce-spy": {Item: "spy", Kind: "infantry"}}
+	s := computeSpend(map[string]store.Firing{"produce-spy": {Acted: 3}}, map[string]int{}, items, 0)
+	if s.Total != 0 {
+		t.Errorf("total = %d, want 0", s.Total)
+	}
+	if len(s.Unpriced) != 1 || s.Unpriced[0] != "spy" {
+		t.Errorf("unpriced = %v, want [spy]", s.Unpriced)
+	}
+}
+
+// A rule dead under one doctrine can be live under the next, so the count of
+// windows is the finding, not the mere presence of the warning.
+func TestWarningSetCountsWindows(t *testing.T) {
+	w := newWarningSet()
+	w.add([]string{"a can never fire"})
+	w.add(nil)
+	w.add([]string{"a can never fire", "b and c share priority"})
+
+	got := w.list()
+	if len(got) != 2 {
+		t.Fatalf("got %d warnings, want 2", len(got))
+	}
+	if got[0].Text != "a can never fire" || got[0].Windows != 2 || got[0].Total != 3 {
+		t.Errorf("first = %+v, want a in 2 of 3", got[0])
+	}
+	if got[1].Windows != 1 {
+		t.Errorf("second = %+v, want 1 window", got[1])
+	}
+}
+
+func TestTrimSourcePathLeavesJustTheFile(t *testing.T) {
+	args := []string{"/tmp/x/vy/micro.vy", "/tmp/x/vy/core.vy"}
+	line := "/tmp/x/vy/micro.vy:115:6: warning: `guard-harvesters` can never fire"
+	if got := trimSourcePath(line, args); got != "micro.vy:115:6: warning: `guard-harvesters` can never fire" {
+		t.Errorf("got %q", got)
+	}
+}

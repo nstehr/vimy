@@ -128,3 +128,10 @@ FROM rule_firings f
 JOIN archived_doctrines d ON d.id = f.doctrine_id
 WHERE d.game_id = ?
 GROUP BY f.rule_name;
+
+-- name: GetGameOutcome :one
+SELECT id, duration_ticks, won, our_faction, opponent_faction,
+       engine_kills_cost, engine_deaths_cost, engine_buildings_killed,
+       engine_earned, our_army_peak, enemy_army_seen_peak,
+       infantry_lost, vehicles_lost, infantry_lost_forward, vehicles_lost_forward
+FROM games WHERE id = ?;

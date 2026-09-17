@@ -25,6 +25,8 @@ func main() {
 func run() error {
 	dir := flag.String("dir", "~/.vimy", "the Vimy state directory")
 	rulesDir := flag.String("rules", "../vimy-core/rules/vy", "directory of .vy rule sources")
+	engineRules := flag.String("engine-rules", "../engine/mods/ra/rules",
+		"the engine's rule yaml, for pricing what a game spent")
 	bin := flag.String("vimyc", "vimyc", "the vimyc binary")
 	addr := flag.String("addr", ":8090", "listen address")
 	flag.Parse()
@@ -45,7 +47,7 @@ func run() error {
 		slog.Info("insight disabled: no OPENAI_API_KEY or ANTHROPIC_API_KEY")
 	}
 
-	srv, err := newServer(expand(*dir), *rulesDir, *bin, st, ins)
+	srv, err := newServer(expand(*dir), *rulesDir, expand(*engineRules), *bin, st, ins)
 	if err != nil {
 		return err
 	}

@@ -175,6 +175,20 @@ type view struct {
 	// is configured.
 	InsightURL string
 	SweepURL   string
+
+	// What the engine recorded about how the game went. The blame explains why
+	// rules did not fire; this is the only part of the page that says whether
+	// any of it worked.
+	Outcome    *store.Outcome
+	TradeRatio string
+	// Whether the exchange was won, decided on the number rather than on its
+	// rendering: a template comparing "0.73" to "1" is comparing strings.
+	TradeWon  bool
+	ArmyRatio string
+	// What the money bought, priced from the engine's own rules.
+	Spend *Spend
+	// What the compiler said about the rule set while replaying it.
+	Warnings []Warning
 }
 
 // buildWith adds the analysis that needs the windows kept apart.

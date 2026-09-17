@@ -730,3 +730,83 @@ func (s *Store) FiringsForGame(ctx context.Context, gameID int64) (map[string]Fi
 	}
 	return out, nil
 }
+
+// Outcome is what the engine recorded about how a game went.
+//
+// The sidecar never asks the engine anything mid-game — it observes. These are
+// the end-of-game statistics the mod hands over, and they are the only numbers
+// in the archive that are not Vimy's own opinion of events. Where Vimy's own
+// counting disagreed with these, Vimy was wrong: a kill tracker built on
+// observation over-counted by 2.9x and was deleted.
+type Outcome struct {
+	ID              int64
+	DurationTicks   int
+	Won             bool
+	OurFaction      string
+	OpponentFaction string
+
+	// What the trade was worth, in credits, both ways.
+	KillsCost, DeathsCost int
+	BuildingsKilled       int
+	Earned                int
+
+	// Peak army value, ours and theirs. Theirs is what was SEEN, so it is a
+	// floor and never a measurement — fog hides the rest.
+	OurArmyPeak, EnemyArmySeenPeak int
+
+	// Losses, and how many happened away from base. The split is the difference
+	// between an army that died attacking and one ground down at home.
+	InfantryLost, VehiclesLost               int
+	InfantryLostForward, VehiclesLostForward int
+
+	// Which fields the row actually carried. Games predating a migration have
+	// NULL, which is not zero: "destroyed no buildings" and "was not counting
+	// buildings" are different findings.
+	HasTrade, HasArmy, HasLosses bool
+}
+
+// VehiclesLostAtHome is the complement of the forward count.
+func (o Outcome) VehiclesLostAtHome() int { return o.VehiclesLost - o.VehiclesLostForward }
+
+// InfantryLostAtHome is the complement of the forward count.
+func (o Outcome) InfantryLostAtHome() int { return o.InfantryLost - o.InfantryLostForward }
+
+// TradeRatio is credits lost per credit destroyed. Below 1 means the exchange
+// was won. Zero when the game recorded no trade.
+func (o Outcome) TradeRatio() float64 {
+	if o.KillsCost == 0 {
+		return 0
+	}
+	return float64(o.DeathsCost) / float64(o.KillsCost)
+}
+
+// GameOutcome reads one game's engine statistics.
+func (s *Store) GameOutcome(ctx context.Context, id int64) (Outcome, error) {
+	r, err := s.queries.GetGameOutcome(ctx, id)
+	if err != nil {
+		return Outcome{}, fmt.Errorf("game %d outcome: %w", id, err)
+	}
+	o := Outcome{
+		ID:              r.ID,
+		DurationTicks:   int(r.DurationTicks),
+		Won:             r.Won != 0,
+		OurFaction:      r.OurFaction,
+		OpponentFaction: r.OpponentFaction.String,
+
+		KillsCost:           int(r.EngineKillsCost.Int64),
+		DeathsCost:          int(r.EngineDeathsCost.Int64),
+		BuildingsKilled:     int(r.EngineBuildingsKilled.Int64),
+		Earned:              int(r.EngineEarned.Int64),
+		OurArmyPeak:         int(r.OurArmyPeak.Int64),
+		EnemyArmySeenPeak:   int(r.EnemyArmySeenPeak.Int64),
+		InfantryLost:        int(r.InfantryLost.Int64),
+		VehiclesLost:        int(r.VehiclesLost.Int64),
+		InfantryLostForward: int(r.InfantryLostForward.Int64),
+		VehiclesLostForward: int(r.VehiclesLostForward.Int64),
+
+		HasTrade:  r.EngineKillsCost.Valid && r.EngineDeathsCost.Valid,
+		HasArmy:   r.OurArmyPeak.Valid && r.EnemyArmySeenPeak.Valid,
+		HasLosses: r.VehiclesLost.Valid && r.VehiclesLostForward.Valid,
+	}
+	return o, nil
+}

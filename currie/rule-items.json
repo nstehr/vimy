@@ -1,0 +1,161 @@
+{
+  "_comment": [
+    "What each producing rule actually buys, and which bucket it counts in.",
+    "Read by currie (embedded) and by tools/postmortem.py, so the two cannot",
+    "drift into disagreeing about what a game spent.",
+    "Rules that build several things name the representative one; the totals",
+    "are an estimate and every view that prints them says so.",
+    "Prices are NOT here - they are read from the engine's own yaml, because",
+    "a table transcribed by hand goes stale the moment the mod changes."
+  ],
+  "rules": {
+    "produce-infantry": {
+      "item": "e1",
+      "kind": "infantry"
+    },
+    "produce-infantry-rush": {
+      "item": "e1",
+      "kind": "infantry"
+    },
+    "produce-bridge-infantry": {
+      "item": "e1",
+      "kind": "infantry"
+    },
+    "produce-capture-defense-infantry": {
+      "item": "e1",
+      "kind": "infantry"
+    },
+    "produce-rocket-soldier": {
+      "item": "e3",
+      "kind": "infantry"
+    },
+    "produce-grenadier": {
+      "item": "e2",
+      "kind": "infantry"
+    },
+    "produce-attack-dog": {
+      "item": "dog",
+      "kind": "infantry"
+    },
+    "produce-specialist-infantry": {
+      "item": "e4",
+      "kind": "infantry"
+    },
+    "produce-spy": {
+      "item": "spy",
+      "kind": "infantry"
+    },
+    "produce-engineer": {
+      "item": "e6",
+      "kind": "infantry"
+    },
+    "produce-vehicle": {
+      "item": "2tnk",
+      "kind": "armour"
+    },
+    "produce-heavy-vehicle": {
+      "item": "3tnk",
+      "kind": "armour"
+    },
+    "produce-siege-vehicle": {
+      "item": "arty",
+      "kind": "armour"
+    },
+    "produce-scout-vehicle": {
+      "item": "1tnk",
+      "kind": "armour"
+    },
+    "produce-apc": {
+      "item": "apc",
+      "kind": "armour"
+    },
+    "produce-assault-apc": {
+      "item": "apc",
+      "kind": "armour"
+    },
+    "produce-flak-truck": {
+      "item": "ftrk",
+      "kind": "armour"
+    },
+    "produce-extra-harvester": {
+      "item": "harv",
+      "kind": "harvester"
+    },
+    "rebuild-harvester": {
+      "item": "harv",
+      "kind": "harvester"
+    },
+    "produce-aircraft": {
+      "item": "heli",
+      "kind": "air"
+    },
+    "produce-basic-aircraft": {
+      "item": "heli",
+      "kind": "air"
+    },
+    "produce-attack-aircraft": {
+      "item": "mig",
+      "kind": "air"
+    },
+    "build-base-defense": {
+      "item": "pbox",
+      "kind": "defence"
+    },
+    "build-base-defense-rush": {
+      "item": "pbox",
+      "kind": "defence"
+    },
+    "build-aa-defense": {
+      "item": "agun",
+      "kind": "defence"
+    },
+    "build-power": {
+      "item": "powr",
+      "kind": "economy"
+    },
+    "build-advanced-power": {
+      "item": "apwr",
+      "kind": "economy"
+    },
+    "build-refinery": {
+      "item": "proc",
+      "kind": "economy"
+    },
+    "build-second-refinery": {
+      "item": "proc",
+      "kind": "economy"
+    },
+    "build-extra-refinery": {
+      "item": "proc",
+      "kind": "economy"
+    },
+    "build-war-factory": {
+      "item": "weap",
+      "kind": "economy"
+    },
+    "build-barracks": {
+      "item": "tent",
+      "kind": "economy"
+    },
+    "build-radar": {
+      "item": "dome",
+      "kind": "economy"
+    },
+    "build-service-depot": {
+      "item": "fix",
+      "kind": "economy"
+    },
+    "build-tech-center": {
+      "item": "atek",
+      "kind": "economy"
+    },
+    "build-airfield": {
+      "item": "hpad",
+      "kind": "economy"
+    },
+    "build-extra-airfield": {
+      "item": "hpad",
+      "kind": "economy"
+    }
+  }
+}

@@ -96,6 +96,52 @@ type Replay struct {
 	// Per-window block rates, for telling a rule-set problem from a doctrine
 	// that priced itself out.
 	Windows_ []windowStats
+	// What vimyc said about the rule set while replaying it.
+	Warnings []Warning
+}
+
+// Warning is one thing the compiler said, and how much of the game it applied
+// to.
+//
+// Counted per window because doctrine params are compile-time constants: a
+// rule that is dead under one doctrine can be live under the next, so "dead in
+// 12 of 14 windows" and "dead in 1 of 14" are different findings. A warning is
+// about the rule set, which no amount of blame can reach — a rule that never
+// enters an exclusive contest has no blocking clause to report, and so is
+// invisible on every other section of this page.
+type Warning struct {
+	Text    string
+	Windows int
+	Total   int
+}
+
+// warningSet tallies warnings across the windows they appeared in.
+type warningSet struct {
+	order []string
+	count map[string]int
+	total int
+}
+
+func newWarningSet() *warningSet { return &warningSet{count: map[string]int{}} }
+
+func (w *warningSet) add(lines []string) {
+	w.total++
+	for _, l := range lines {
+		if _, seen := w.count[l]; !seen {
+			w.order = append(w.order, l)
+		}
+		w.count[l]++
+	}
+}
+
+// list returns the warnings, the most widely applicable first.
+func (w *warningSet) list() []Warning {
+	out := make([]Warning, 0, len(w.order))
+	for _, l := range w.order {
+		out = append(out, Warning{Text: l, Windows: w.count[l], Total: w.total})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Windows > out[j].Windows })
+	return out
 }
 
 // replayGame pairs a game's states to its doctrines and blames each window
@@ -223,15 +269,17 @@ func replayGame(ctx context.Context, st *store.Store, g store.ReplayableGame, ru
 	}
 
 	merged := newMerger()
+	seenWarnings := newWarningSet()
 	for _, w := range byID {
 		if len(w.States) == 0 || w.Rating == "seed" {
 			continue // the seed set is not the doctrine's rule set
 		}
 		rep.Windows++
-		out, err := blameWindow(w, rulesDir, bin)
+		out, warnings, err := blameWindow(w, rulesDir, bin)
 		if err != nil {
 			return nil, err
 		}
+		seenWarnings.add(warnings)
 		merged.addWindow(out, w.Doctrine.Name, rules.DoctrineParams(w.Doctrine), len(w.States), w.States)
 	}
 	if rep.Windows == 0 {
@@ -245,56 +293,57 @@ func replayGame(ctx context.Context, st *store.Store, g store.ReplayableGame, ru
 	rep.Windows_ = merged.windows
 	rep.DoctrineNames = names
 	rep.Doctrines = chosen
+	rep.Warnings = seenWarnings.list()
 	return rep, nil
 }
 
 // blameWindow replays one doctrine's states against the rules it compiled to.
-func blameWindow(w *window, rulesDir, bin string) (report, error) {
+func blameWindow(w *window, rulesDir, bin string) (report, []string, error) {
 	return blameStates(rules.DoctrineParams(w.Doctrine), w.States, rulesDir, bin)
 }
 
 // blameStates takes parameters rather than deriving them, so a sweep can
 // override one input and leave the rest alone.
-func blameStates(params map[string]float64, raw []json.RawMessage, rulesDir, bin string) (report, error) {
+func blameStates(params map[string]float64, raw []json.RawMessage, rulesDir, bin string) (report, []string, error) {
 	dir, err := os.MkdirTemp("", "currie-")
 	if err != nil {
-		return report{}, fmt.Errorf("temp dir: %w", err)
+		return report{}, nil, fmt.Errorf("temp dir: %w", err)
 	}
 	defer os.RemoveAll(dir)
 
 	encoded, err := json.Marshal(params)
 	if err != nil {
-		return report{}, fmt.Errorf("params: %w", err)
+		return report{}, nil, fmt.Errorf("params: %w", err)
 	}
 	paramsPath := filepath.Join(dir, "params.json")
 	if err := os.WriteFile(paramsPath, encoded, 0o600); err != nil {
-		return report{}, fmt.Errorf("write params: %w", err)
+		return report{}, nil, fmt.Errorf("write params: %w", err)
 	}
 	states, err := json.Marshal(struct {
 		States []json.RawMessage `json:"states"`
 	}{raw})
 	if err != nil {
-		return report{}, fmt.Errorf("states: %w", err)
+		return report{}, nil, fmt.Errorf("states: %w", err)
 	}
 	statesPath := filepath.Join(dir, "states.json")
 	if err := os.WriteFile(statesPath, states, 0o600); err != nil {
-		return report{}, fmt.Errorf("write states: %w", err)
+		return report{}, nil, fmt.Errorf("write states: %w", err)
 	}
 
 	args, err := ruleArgs(rulesDir)
 	if err != nil {
-		return report{}, err
+		return report{}, nil, err
 	}
 	args = append(args, "--params", paramsPath, "--blame", statesPath)
-	stdout, err := runVimyc(bin, args)
+	stdout, warnings, err := runVimyc(bin, args)
 	if err != nil {
-		return report{}, err
+		return report{}, nil, err
 	}
 	var out report
 	if err := json.Unmarshal(stdout, &out); err != nil {
-		return report{}, fmt.Errorf("parse blame: %w", err)
+		return report{}, nil, fmt.Errorf("parse blame: %w", err)
 	}
-	return out, nil
+	return out, warnings, nil
 }
 
 // ruleArgs is every .vy source bar the seed set, which is its own rule set.
@@ -419,19 +468,37 @@ func (m *merger) result(states int) report {
 // runVimyc compiles the rule set and replays the states. Warnings on stderr —
 // shared priorities, shadowed rules — are findings about the rule set, so they
 // pass through rather than being swallowed or raised as errors.
-func runVimyc(bin string, args []string) ([]byte, error) {
+func runVimyc(bin string, args []string) ([]byte, []string, error) {
 	cmd := exec.Command(bin, args...)
 	var out, errs bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errs
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("vimyc: %w: %s", err, strings.TrimSpace(errs.String()))
+		return nil, nil, fmt.Errorf("vimyc: %w: %s", err, strings.TrimSpace(errs.String()))
 	}
+	var warnings []string
 	for _, line := range strings.Split(strings.TrimSpace(errs.String()), "\n") {
-		if line != "" {
-			fmt.Fprintln(os.Stderr, line)
+		if strings.Contains(line, "warning:") {
+			warnings = append(warnings, trimSourcePath(strings.TrimSpace(line), args))
 		}
 	}
-	return out.Bytes(), nil
+	return out.Bytes(), warnings, nil
+}
+
+// trimSourcePath shortens the file a warning names to its base name.
+//
+// vimyc is handed whatever path the -rules flag resolved to, which is an
+// absolute temp directory under test and a relative one in normal use. Neither
+// helps a reader: the file name alone is what identifies the source.
+func trimSourcePath(line string, args []string) string {
+	for _, a := range args {
+		if !strings.HasSuffix(a, ".vy") {
+			continue
+		}
+		if dir := filepath.Dir(a); dir != "." && strings.Contains(line, dir+string(filepath.Separator)) {
+			line = strings.ReplaceAll(line, dir+string(filepath.Separator), "")
+		}
+	}
+	return line
 }
 
 func expand(p string) string {

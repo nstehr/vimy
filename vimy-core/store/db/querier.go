@@ -12,6 +12,7 @@ type Querier interface {
 	CountLosses(ctx context.Context) (int64, error)
 	CountWins(ctx context.Context) (int64, error)
 	GetGame(ctx context.Context, id int64) (GetGameRow, error)
+	GetGameOutcome(ctx context.Context, id int64) (GetGameOutcomeRow, error)
 	InsertDoctrine(ctx context.Context, arg InsertDoctrineParams) (int64, error)
 	InsertGame(ctx context.Context, arg InsertGameParams) (int64, error)
 	InsertLesson(ctx context.Context, arg InsertLessonParams) error

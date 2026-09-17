@@ -70,6 +70,55 @@ func (q *Queries) GetGame(ctx context.Context, id int64) (GetGameRow, error) {
 	return i, err
 }
 
+const getGameOutcome = `-- name: GetGameOutcome :one
+SELECT id, duration_ticks, won, our_faction, opponent_faction,
+       engine_kills_cost, engine_deaths_cost, engine_buildings_killed,
+       engine_earned, our_army_peak, enemy_army_seen_peak,
+       infantry_lost, vehicles_lost, infantry_lost_forward, vehicles_lost_forward
+FROM games WHERE id = ?
+`
+
+type GetGameOutcomeRow struct {
+	ID                    int64          `json:"id"`
+	DurationTicks         int64          `json:"duration_ticks"`
+	Won                   int64          `json:"won"`
+	OurFaction            string         `json:"our_faction"`
+	OpponentFaction       sql.NullString `json:"opponent_faction"`
+	EngineKillsCost       sql.NullInt64  `json:"engine_kills_cost"`
+	EngineDeathsCost      sql.NullInt64  `json:"engine_deaths_cost"`
+	EngineBuildingsKilled sql.NullInt64  `json:"engine_buildings_killed"`
+	EngineEarned          sql.NullInt64  `json:"engine_earned"`
+	OurArmyPeak           sql.NullInt64  `json:"our_army_peak"`
+	EnemyArmySeenPeak     sql.NullInt64  `json:"enemy_army_seen_peak"`
+	InfantryLost          sql.NullInt64  `json:"infantry_lost"`
+	VehiclesLost          sql.NullInt64  `json:"vehicles_lost"`
+	InfantryLostForward   sql.NullInt64  `json:"infantry_lost_forward"`
+	VehiclesLostForward   sql.NullInt64  `json:"vehicles_lost_forward"`
+}
+
+func (q *Queries) GetGameOutcome(ctx context.Context, id int64) (GetGameOutcomeRow, error) {
+	row := q.db.QueryRowContext(ctx, getGameOutcome, id)
+	var i GetGameOutcomeRow
+	err := row.Scan(
+		&i.ID,
+		&i.DurationTicks,
+		&i.Won,
+		&i.OurFaction,
+		&i.OpponentFaction,
+		&i.EngineKillsCost,
+		&i.EngineDeathsCost,
+		&i.EngineBuildingsKilled,
+		&i.EngineEarned,
+		&i.OurArmyPeak,
+		&i.EnemyArmySeenPeak,
+		&i.InfantryLost,
+		&i.VehiclesLost,
+		&i.InfantryLostForward,
+		&i.VehiclesLostForward,
+	)
+	return i, err
+}
+
 const insertDoctrine = `-- name: InsertDoctrine :one
 INSERT INTO archived_doctrines (
     game_id, tick, doctrine_json, rating, rating_reason, rule_set_json

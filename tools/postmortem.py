@@ -14,6 +14,11 @@ reported both. The blame was written again by hand four times because
 nobody ran the tool; the warnings were filtered away with `grep -v
 seed.vy`, which hid a live dead-rule finding for most of a session.
 
+Currie shows all four for any archived game, with the blame done properly
+per doctrine window rather than against one merged rule set. This is the
+terminal view: no server, no browser, one command. The rule-to-item table is
+shared with currie so the two cannot disagree about what a game spent.
+
   tools/postmortem.py            the most recent game
   tools/postmortem.py 122        a particular one
 """
@@ -67,47 +72,15 @@ def engine_costs():
     return costs
 
 
-# What each producing rule actually buys. Rules that build several things name
-# the representative one; the totals are an estimate and say so.
-RULE_ITEM = {
-    "produce-infantry": ("e1", "infantry"),
-    "produce-infantry-rush": ("e1", "infantry"),
-    "produce-bridge-infantry": ("e1", "infantry"),
-    "produce-capture-defense-infantry": ("e1", "infantry"),
-    "produce-rocket-soldier": ("e3", "infantry"),
-    "produce-grenadier": ("e2", "infantry"),
-    "produce-attack-dog": ("dog", "infantry"),
-    "produce-specialist-infantry": ("e4", "infantry"),
-    "produce-spy": ("spy", "infantry"),
-    "produce-engineer": ("e6", "infantry"),
-    "produce-vehicle": ("2tnk", "armour"),
-    "produce-heavy-vehicle": ("3tnk", "armour"),
-    "produce-siege-vehicle": ("arty", "armour"),
-    "produce-scout-vehicle": ("1tnk", "armour"),
-    "produce-apc": ("apc", "armour"),
-    "produce-assault-apc": ("apc", "armour"),
-    "produce-flak-truck": ("ftrk", "armour"),
-    "produce-extra-harvester": ("harv", "harvester"),
-    "rebuild-harvester": ("harv", "harvester"),
-    "produce-aircraft": ("heli", "air"),
-    "produce-basic-aircraft": ("heli", "air"),
-    "produce-attack-aircraft": ("mig", "air"),
-    "build-base-defense": ("pbox", "defence"),
-    "build-base-defense-rush": ("pbox", "defence"),
-    "build-aa-defense": ("agun", "defence"),
-    "build-power": ("powr", "economy"),
-    "build-advanced-power": ("apwr", "economy"),
-    "build-refinery": ("proc", "economy"),
-    "build-second-refinery": ("proc", "economy"),
-    "build-extra-refinery": ("proc", "economy"),
-    "build-war-factory": ("weap", "economy"),
-    "build-barracks": ("tent", "economy"),
-    "build-radar": ("dome", "economy"),
-    "build-service-depot": ("fix", "economy"),
-    "build-tech-center": ("atek", "economy"),
-    "build-airfield": ("hpad", "economy"),
-    "build-extra-airfield": ("hpad", "economy"),
-}
+def rule_items():
+    """What each producing rule buys, from the table currie embeds.
+
+    One file rather than a copy here: the two views of a game's spend must not
+    be able to disagree about what a rule bought, and a duplicated table drifts
+    the first time either side gains a rule.
+    """
+    doc = json.loads((ROOT / "currie" / "rule-items.json").read_text())
+    return {k: (v["item"], v["kind"]) for k, v in doc["rules"].items()}
 
 
 def latest_game(db):
@@ -146,6 +119,7 @@ def ledger(db, game):
 
 def spend(db, game, earned):
     costs = engine_costs()
+    items = rule_items()
     rows = db.execute(
         "SELECT f.rule_name, SUM(f.act_count) FROM rule_firings f "
         "JOIN archived_doctrines d ON d.id = f.doctrine_id "
@@ -153,7 +127,7 @@ def spend(db, game, earned):
 
     by_kind, detail, unpriced = {}, [], []
     for name, acted in rows:
-        entry = RULE_ITEM.get(name)
+        entry = items.get(name)
         if not entry:
             continue
         item, kind = entry

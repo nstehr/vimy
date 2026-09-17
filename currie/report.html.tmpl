@@ -157,6 +157,23 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
 @keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
 @media (prefers-reduced-motion:reduce){.pulse{animation:none;opacity:.7}}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+.ledger{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule)}
+.led{background:var(--panel);padding:1rem 1.1rem;display:flex;flex-direction:column;gap:.2rem}
+.led-n{font-family:var(--display);font-size:1.75rem;line-height:1.05;letter-spacing:-.01em}
+.led-n.good{color:var(--calm)}.led-n.bad{color:var(--sole)}
+.led-l{font-family:var(--mono);font-size:.7rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.led-sub{font-size:.82rem;color:var(--ink-2)}
+.spend{width:100%;border-collapse:collapse;font-size:.9rem}
+.spend th{text-align:left;font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:400;padding:.3rem .6rem .3rem 0;border-bottom:1px solid var(--rule)}
+.spend td{padding:.32rem .6rem .32rem 0;border-bottom:1px solid var(--rule-soft);vertical-align:baseline}
+.spend td.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.spend td.r{font-family:var(--mono);font-size:.85rem}
+.bar{position:relative;height:.5rem;background:var(--rule-soft);min-width:80px}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--other);display:block}
+.warns{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.5rem}
+.warns li{background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--sole);padding:.6rem .85rem;font-family:var(--mono);font-size:.82rem;line-height:1.5}
+.warns .w-scope{display:block;margin-top:.25rem;font-family:var(--body);font-size:.8rem;color:var(--ink-3)}
+.clean{margin:0;color:var(--ink-3);font-size:.9rem}
 </style>
 
 <div class="wrap">
@@ -174,6 +191,96 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     <div class="stat"><div class="stat-n{{if .Approximate}} hot{{end}}">{{.Windows}}</div><div class="stat-l">doctrine windows{{if .Approximate}} · paired by tick, rules have changed{{else if .Orphaned}} · {{.Orphaned}} unmatched{{end}}</div></div>
     <div class="stat"><div class="stat-n">{{.RuleCount}}</div><div class="stat-l">rules compiled</div></div>
   </div>
+
+  {{with .Outcome}}
+  <section>
+    <h2>What the engine recorded</h2>
+    <p class="lede">
+      The only numbers here that are not Vimy's own opinion of events. Everything else on this
+      page explains why rules did not fire; this says whether any of it worked.
+    </p>
+    <div class="ledger">
+      {{if .HasTrade}}
+      <div class="led">
+        <div class="led-n{{if $.TradeWon}} good{{else}} bad{{end}}">{{$.TradeRatio}}</div>
+        <div class="led-l">credits lost per credit killed</div>
+        <div class="led-sub">destroyed {{.KillsCost}}, lost {{.DeathsCost}} · below 1 wins the trade</div>
+      </div>
+      {{end}}
+      <div class="led">
+        <div class="led-n">{{.BuildingsKilled}}</div>
+        <div class="led-l">enemy buildings destroyed</div>
+        <div class="led-sub">in {{.DurationTicks}} ticks</div>
+      </div>
+      {{if .HasArmy}}
+      <div class="led">
+        <div class="led-n">{{$.ArmyRatio}}&times;</div>
+        <div class="led-l">their army peak over ours</div>
+        <div class="led-sub">ours {{.OurArmyPeak}}, theirs {{.EnemyArmySeenPeak}} &mdash; seen, so a floor</div>
+      </div>
+      {{end}}
+      {{if .HasLosses}}
+      <div class="led">
+        <div class="led-n">{{.VehiclesLostForward}} / {{.VehiclesLostAtHome}}</div>
+        <div class="led-l">vehicles lost forward / at home</div>
+        <div class="led-sub">{{.InfantryLost}} infantry lost · an army ground down at home never attacked</div>
+      </div>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+
+  {{with .Spend}}
+  <section>
+    <h2>What the money bought</h2>
+    <p class="lede">
+      Estimated: each rule's act count times the engine's own price for what it builds. An act is a
+      produce envelope sent, not a unit finished, and rules that build several things are priced at
+      the representative one. Blame analysis cannot see any of this &mdash; nothing was blocking these.
+    </p>
+    <table class="spend">
+      <tr><th>bucket</th><th></th><th>credits</th><th>share</th></tr>
+      {{range .Kinds}}
+      <tr>
+        <td>{{.Kind}}</td>
+        <td style="width:40%"><span class="bar"><i style="width:{{.Percent}}%"></i></span></td>
+        <td class="n">{{.Credits}}</td><td class="n">{{.Percent}}%</td>
+      </tr>
+      {{end}}
+      <tr><td><b>total</b></td><td></td><td class="n"><b>{{.Total}}</b></td>
+          <td class="n">{{if .Earned}}of {{.Earned}} earned{{end}}</td></tr>
+    </table>
+    <table class="spend">
+      <tr><th>rule</th><th>acts</th><th>each</th><th>credits</th></tr>
+      {{range .Lines}}
+      <tr><td class="r">{{.Rule}}</td><td class="n">{{.Acts}}</td>
+          <td class="n">{{.Price}}</td><td class="n">{{.Credits}}</td></tr>
+      {{end}}
+    </table>
+    {{if .Unpriced}}
+    <p class="clean">No engine price found for: {{range .Unpriced}}<code>{{.}}</code> {{end}}&mdash; these are missing from the total.</p>
+    {{end}}
+  </section>
+  {{end}}
+
+  <section>
+    <h2>What the compiler said</h2>
+    <p class="lede">
+      Findings about the rule set itself, which no amount of blame can reach: a rule that never enters
+      an exclusive contest has no blocking clause to report, so it is invisible everywhere else on this
+      page. Counted per doctrine window, because params are compile-time constants and a rule dead
+      under one doctrine can be live under the next.
+    </p>
+    {{if .Warnings}}
+    <ul class="warns">
+      {{range .Warnings}}
+      <li>{{.Text}}<span class="w-scope">in {{.Windows}} of {{.Total}} doctrine windows</span></li>
+      {{end}}
+    </ul>
+    {{else}}
+    <p class="clean">Nothing &mdash; the rule set compiled clean for every doctrine this game ran.</p>
+    {{end}}
+  </section>
 
   {{if .Findings}}
   <section>

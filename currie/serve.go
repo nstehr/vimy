@@ -29,7 +29,10 @@ var pages embed.FS
 type server struct {
 	dir      string
 	rulesDir string
-	bin      string
+	// The engine's own rules, for pricing what a game spent. Read rather than
+	// transcribed, so the numbers track the mod.
+	engineRules string
+	bin         string
 	store    *store.Store
 	tmpl     *template.Template
 	insight  insighter
@@ -66,7 +69,7 @@ type insighter interface {
 	Read(ctx context.Context, r *Replay) (*Insight, error)
 }
 
-func newServer(dir, rulesDir, bin string, st *store.Store, ins insighter) (*server, error) {
+func newServer(dir, rulesDir, engineRules, bin string, st *store.Store, ins insighter) (*server, error) {
 	// A reading survives a restart; a replay is cheap enough to redo.
 	stored, err := newCache(dir, rulesDir)
 	if err != nil {
@@ -83,7 +86,7 @@ func newServer(dir, rulesDir, bin string, st *store.Store, ins insighter) (*serv
 		return nil, fmt.Errorf("templates: %w", terr)
 	}
 	return &server{
-		dir: dir, rulesDir: rulesDir, bin: bin, store: st,
+		dir: dir, rulesDir: rulesDir, engineRules: engineRules, bin: bin, store: st,
 		tmpl: t, insight: ins, cached: stored,
 		cache:    map[int64]*Replay{},
 		insights: map[int64]*insightJob{},
@@ -236,6 +239,8 @@ func (s *server) handleGame(w http.ResponseWriter, r *http.Request) {
 	v.Orphaned = rep.Orphaned
 	v.Approximate = rep.Approximate
 	v.Home = "/"
+	v.Warnings = rep.Warnings
+	s.addOutcome(r.Context(), &v, rep)
 
 	// The report is what the reader came for and it is ready now; the prose
 	// arrives when it arrives.
@@ -248,6 +253,45 @@ func (s *server) handleGame(w http.ResponseWriter, r *http.Request) {
 		v.SweepURL = fmt.Sprintf("/game/%d/sweep", id)
 	}
 	s.render(w, "report.html.tmpl", v)
+}
+
+// addOutcome attaches what the engine recorded and what the money bought.
+//
+// Best-effort: a game played before the statistics migration has none of this,
+// and a missing ledger is not a reason to withhold the blame. Every absence is
+// a skipped section rather than an error, and never a zero — "destroyed no
+// buildings" and "was not counting buildings" are different findings.
+func (s *server) addOutcome(ctx context.Context, v *view, rep *Replay) {
+	o, err := s.store.GameOutcome(ctx, rep.Game.ID)
+	if err != nil {
+		slog.Warn("no outcome", "game", rep.Game.ID, "error", err)
+		return
+	}
+	v.Outcome = &o
+	if o.HasTrade {
+		v.TradeRatio = fmt.Sprintf("%.2f", o.TradeRatio())
+		v.TradeWon = o.TradeRatio() < 1
+	}
+	if o.HasArmy && o.OurArmyPeak > 0 {
+		v.ArmyRatio = fmt.Sprintf("%.1f", float64(o.EnemyArmySeenPeak)/float64(o.OurArmyPeak))
+	}
+
+	items, err := loadRuleItems()
+	if err != nil {
+		slog.Warn("no rule items", "error", err)
+		return
+	}
+	prices, err := enginePrices(s.engineRules)
+	if err != nil {
+		// Currie runs from anywhere; without the engine checkout there are no
+		// prices, and an unpriced spend is worse than none.
+		slog.Warn("no engine prices", "dir", s.engineRules, "error", err)
+		return
+	}
+	sp := computeSpend(rep.Firings, prices, items, o.Earned)
+	if sp.Total > 0 {
+		v.Spend = &sp
+	}
 }
 
 func firstParams(rep *Replay) map[string]float64 {
@@ -270,7 +314,8 @@ func (s *server) startSweep(id int64, rep *Replay, knobs []string) {
 		defer close(job.done)
 		started := time.Now()
 		run := func(params map[string]float64, i int) (report, error) {
-			return blameStates(params, rep.Windows_[i].Raw, s.rulesDir, s.bin)
+			r, _, err := blameStates(params, rep.Windows_[i].Raw, s.rulesDir, s.bin)
+			return r, err
 		}
 		job.sweeps, job.err = sweep(knobs, rep.Windows_, run)
 		if job.err != nil {
