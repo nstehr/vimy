@@ -95,6 +95,15 @@ func writeLedger(w io.Writer, o store.Outcome) {
 		fmt.Fprintf(w, "  losses     %d infantry, %d vehicles (%d forward, %d at home)\n",
 			o.InfantryLost, o.VehiclesLost, o.VehiclesLostForward, o.VehiclesLostAtHome())
 	}
+	if o.HasStrikes {
+		total := o.StrikeBlockedUnclumped + o.StrikeBlockedNoTarget +
+			o.StrikeBlockedNotBuilding + o.StrikeBlockedOutOfReach
+		if total > 0 {
+			fmt.Fprintf(w, "  no strike  unclumped %d, no target %d, target not a building %d, out of reach %d\n",
+				o.StrikeBlockedUnclumped, o.StrikeBlockedNoTarget,
+				o.StrikeBlockedNotBuilding, o.StrikeBlockedOutOfReach)
+		}
+	}
 	if o.HasHarvesters && o.HarvesterSamples() > 0 {
 		fmt.Fprintf(w, "  harvesters mining %d%%, travelling %d%%, at refinery %d%%, idle %d%%"+
 			"  (mean haul %.1f cells)\n",

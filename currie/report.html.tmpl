@@ -226,6 +226,15 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
         <div class="led-sub">ours {{.OurArmyPeak}}, theirs {{.EnemyArmySeenPeak}} &mdash; seen, so a floor</div>
       </div>
       {{end}}
+      {{if .HasStrikes}}
+      <div class="led">
+        <div class="led-n bad">{{.StrikeBlockedUnclumped}}</div>
+        <div class="led-l">strikes lost to a strung-out squad</div>
+        <div class="led-sub">no target {{.StrikeBlockedNoTarget}} &middot;
+          best target not a building {{.StrikeBlockedNotBuilding}} &middot;
+          out of reach {{.StrikeBlockedOutOfReach}}</div>
+      </div>
+      {{end}}
       {{if .HasHarvesters}}
       <div class="led">
         <div class="led-n">{{$.Outcome.HarvesterShare .HarvesterMining}}%</div>

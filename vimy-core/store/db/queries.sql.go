@@ -74,6 +74,8 @@ const getGameOutcome = `-- name: GetGameOutcome :one
 SELECT id, duration_ticks, won, our_faction, opponent_faction,
        harvester_idle, harvester_mining, harvester_travelling,
        harvester_at_refinery, harvester_haul_distance,
+       strike_blocked_unclumped, strike_blocked_no_target,
+       strike_blocked_not_building, strike_blocked_out_of_reach,
        engine_kills_cost, engine_deaths_cost, engine_buildings_killed,
        engine_earned, our_army_peak, enemy_army_seen_peak,
        infantry_lost, vehicles_lost, infantry_lost_forward, vehicles_lost_forward
@@ -81,26 +83,30 @@ FROM games WHERE id = ?
 `
 
 type GetGameOutcomeRow struct {
-	ID                    int64           `json:"id"`
-	DurationTicks         int64           `json:"duration_ticks"`
-	Won                   int64           `json:"won"`
-	OurFaction            string          `json:"our_faction"`
-	OpponentFaction       sql.NullString  `json:"opponent_faction"`
-	HarvesterIdle         sql.NullInt64   `json:"harvester_idle"`
-	HarvesterMining       sql.NullInt64   `json:"harvester_mining"`
-	HarvesterTravelling   sql.NullInt64   `json:"harvester_travelling"`
-	HarvesterAtRefinery   sql.NullInt64   `json:"harvester_at_refinery"`
-	HarvesterHaulDistance sql.NullFloat64 `json:"harvester_haul_distance"`
-	EngineKillsCost       sql.NullInt64   `json:"engine_kills_cost"`
-	EngineDeathsCost      sql.NullInt64   `json:"engine_deaths_cost"`
-	EngineBuildingsKilled sql.NullInt64   `json:"engine_buildings_killed"`
-	EngineEarned          sql.NullInt64   `json:"engine_earned"`
-	OurArmyPeak           sql.NullInt64   `json:"our_army_peak"`
-	EnemyArmySeenPeak     sql.NullInt64   `json:"enemy_army_seen_peak"`
-	InfantryLost          sql.NullInt64   `json:"infantry_lost"`
-	VehiclesLost          sql.NullInt64   `json:"vehicles_lost"`
-	InfantryLostForward   sql.NullInt64   `json:"infantry_lost_forward"`
-	VehiclesLostForward   sql.NullInt64   `json:"vehicles_lost_forward"`
+	ID                       int64           `json:"id"`
+	DurationTicks            int64           `json:"duration_ticks"`
+	Won                      int64           `json:"won"`
+	OurFaction               string          `json:"our_faction"`
+	OpponentFaction          sql.NullString  `json:"opponent_faction"`
+	HarvesterIdle            sql.NullInt64   `json:"harvester_idle"`
+	HarvesterMining          sql.NullInt64   `json:"harvester_mining"`
+	HarvesterTravelling      sql.NullInt64   `json:"harvester_travelling"`
+	HarvesterAtRefinery      sql.NullInt64   `json:"harvester_at_refinery"`
+	HarvesterHaulDistance    sql.NullFloat64 `json:"harvester_haul_distance"`
+	StrikeBlockedUnclumped   sql.NullInt64   `json:"strike_blocked_unclumped"`
+	StrikeBlockedNoTarget    sql.NullInt64   `json:"strike_blocked_no_target"`
+	StrikeBlockedNotBuilding sql.NullInt64   `json:"strike_blocked_not_building"`
+	StrikeBlockedOutOfReach  sql.NullInt64   `json:"strike_blocked_out_of_reach"`
+	EngineKillsCost          sql.NullInt64   `json:"engine_kills_cost"`
+	EngineDeathsCost         sql.NullInt64   `json:"engine_deaths_cost"`
+	EngineBuildingsKilled    sql.NullInt64   `json:"engine_buildings_killed"`
+	EngineEarned             sql.NullInt64   `json:"engine_earned"`
+	OurArmyPeak              sql.NullInt64   `json:"our_army_peak"`
+	EnemyArmySeenPeak        sql.NullInt64   `json:"enemy_army_seen_peak"`
+	InfantryLost             sql.NullInt64   `json:"infantry_lost"`
+	VehiclesLost             sql.NullInt64   `json:"vehicles_lost"`
+	InfantryLostForward      sql.NullInt64   `json:"infantry_lost_forward"`
+	VehiclesLostForward      sql.NullInt64   `json:"vehicles_lost_forward"`
 }
 
 func (q *Queries) GetGameOutcome(ctx context.Context, id int64) (GetGameOutcomeRow, error) {
@@ -117,6 +123,10 @@ func (q *Queries) GetGameOutcome(ctx context.Context, id int64) (GetGameOutcomeR
 		&i.HarvesterTravelling,
 		&i.HarvesterAtRefinery,
 		&i.HarvesterHaulDistance,
+		&i.StrikeBlockedUnclumped,
+		&i.StrikeBlockedNoTarget,
+		&i.StrikeBlockedNotBuilding,
+		&i.StrikeBlockedOutOfReach,
 		&i.EngineKillsCost,
 		&i.EngineDeathsCost,
 		&i.EngineBuildingsKilled,
@@ -174,47 +184,53 @@ INSERT INTO games (
     engine_army_value, engine_earned,
     our_army_peak, our_army_mean, enemy_army_seen_peak, enemy_army_seen_mean,
     harvester_idle, harvester_mining, harvester_travelling,
-    harvester_at_refinery, harvester_haul_distance
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    harvester_at_refinery, harvester_haul_distance,
+    strike_blocked_unclumped, strike_blocked_no_target,
+    strike_blocked_not_building, strike_blocked_out_of_reach
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id
 `
 
 type InsertGameParams struct {
-	PlayedAt              int64           `json:"played_at"`
-	OurFaction            string          `json:"our_faction"`
-	OpponentFaction       sql.NullString  `json:"opponent_faction"`
-	MapWidth              int64           `json:"map_width"`
-	MapHeight             int64           `json:"map_height"`
-	DurationTicks         int64           `json:"duration_ticks"`
-	Won                   int64           `json:"won"`
-	QualityTag            sql.NullString  `json:"quality_tag"`
-	ReviewJson            sql.NullString  `json:"review_json"`
-	ExportPath            sql.NullString  `json:"export_path"`
-	Directive             sql.NullString  `json:"directive"`
-	EnemyUnitsKilled      sql.NullInt64   `json:"enemy_units_killed"`
-	EnemyBuildingsKilled  sql.NullInt64   `json:"enemy_buildings_killed"`
-	EnemyUnitsPresumed    sql.NullInt64   `json:"enemy_units_presumed"`
-	InfantryLost          sql.NullInt64   `json:"infantry_lost"`
-	VehiclesLost          sql.NullInt64   `json:"vehicles_lost"`
-	InfantryLostForward   sql.NullInt64   `json:"infantry_lost_forward"`
-	VehiclesLostForward   sql.NullInt64   `json:"vehicles_lost_forward"`
-	EngineUnitsKilled     sql.NullInt64   `json:"engine_units_killed"`
-	EngineUnitsDead       sql.NullInt64   `json:"engine_units_dead"`
-	EngineBuildingsKilled sql.NullInt64   `json:"engine_buildings_killed"`
-	EngineBuildingsDead   sql.NullInt64   `json:"engine_buildings_dead"`
-	EngineKillsCost       sql.NullInt64   `json:"engine_kills_cost"`
-	EngineDeathsCost      sql.NullInt64   `json:"engine_deaths_cost"`
-	EngineArmyValue       sql.NullInt64   `json:"engine_army_value"`
-	EngineEarned          sql.NullInt64   `json:"engine_earned"`
-	OurArmyPeak           sql.NullInt64   `json:"our_army_peak"`
-	OurArmyMean           sql.NullInt64   `json:"our_army_mean"`
-	EnemyArmySeenPeak     sql.NullInt64   `json:"enemy_army_seen_peak"`
-	EnemyArmySeenMean     sql.NullInt64   `json:"enemy_army_seen_mean"`
-	HarvesterIdle         sql.NullInt64   `json:"harvester_idle"`
-	HarvesterMining       sql.NullInt64   `json:"harvester_mining"`
-	HarvesterTravelling   sql.NullInt64   `json:"harvester_travelling"`
-	HarvesterAtRefinery   sql.NullInt64   `json:"harvester_at_refinery"`
-	HarvesterHaulDistance sql.NullFloat64 `json:"harvester_haul_distance"`
+	PlayedAt                 int64           `json:"played_at"`
+	OurFaction               string          `json:"our_faction"`
+	OpponentFaction          sql.NullString  `json:"opponent_faction"`
+	MapWidth                 int64           `json:"map_width"`
+	MapHeight                int64           `json:"map_height"`
+	DurationTicks            int64           `json:"duration_ticks"`
+	Won                      int64           `json:"won"`
+	QualityTag               sql.NullString  `json:"quality_tag"`
+	ReviewJson               sql.NullString  `json:"review_json"`
+	ExportPath               sql.NullString  `json:"export_path"`
+	Directive                sql.NullString  `json:"directive"`
+	EnemyUnitsKilled         sql.NullInt64   `json:"enemy_units_killed"`
+	EnemyBuildingsKilled     sql.NullInt64   `json:"enemy_buildings_killed"`
+	EnemyUnitsPresumed       sql.NullInt64   `json:"enemy_units_presumed"`
+	InfantryLost             sql.NullInt64   `json:"infantry_lost"`
+	VehiclesLost             sql.NullInt64   `json:"vehicles_lost"`
+	InfantryLostForward      sql.NullInt64   `json:"infantry_lost_forward"`
+	VehiclesLostForward      sql.NullInt64   `json:"vehicles_lost_forward"`
+	EngineUnitsKilled        sql.NullInt64   `json:"engine_units_killed"`
+	EngineUnitsDead          sql.NullInt64   `json:"engine_units_dead"`
+	EngineBuildingsKilled    sql.NullInt64   `json:"engine_buildings_killed"`
+	EngineBuildingsDead      sql.NullInt64   `json:"engine_buildings_dead"`
+	EngineKillsCost          sql.NullInt64   `json:"engine_kills_cost"`
+	EngineDeathsCost         sql.NullInt64   `json:"engine_deaths_cost"`
+	EngineArmyValue          sql.NullInt64   `json:"engine_army_value"`
+	EngineEarned             sql.NullInt64   `json:"engine_earned"`
+	OurArmyPeak              sql.NullInt64   `json:"our_army_peak"`
+	OurArmyMean              sql.NullInt64   `json:"our_army_mean"`
+	EnemyArmySeenPeak        sql.NullInt64   `json:"enemy_army_seen_peak"`
+	EnemyArmySeenMean        sql.NullInt64   `json:"enemy_army_seen_mean"`
+	HarvesterIdle            sql.NullInt64   `json:"harvester_idle"`
+	HarvesterMining          sql.NullInt64   `json:"harvester_mining"`
+	HarvesterTravelling      sql.NullInt64   `json:"harvester_travelling"`
+	HarvesterAtRefinery      sql.NullInt64   `json:"harvester_at_refinery"`
+	HarvesterHaulDistance    sql.NullFloat64 `json:"harvester_haul_distance"`
+	StrikeBlockedUnclumped   sql.NullInt64   `json:"strike_blocked_unclumped"`
+	StrikeBlockedNoTarget    sql.NullInt64   `json:"strike_blocked_no_target"`
+	StrikeBlockedNotBuilding sql.NullInt64   `json:"strike_blocked_not_building"`
+	StrikeBlockedOutOfReach  sql.NullInt64   `json:"strike_blocked_out_of_reach"`
 }
 
 func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (int64, error) {
@@ -254,6 +270,10 @@ func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (int64, 
 		arg.HarvesterTravelling,
 		arg.HarvesterAtRefinery,
 		arg.HarvesterHaulDistance,
+		arg.StrikeBlockedUnclumped,
+		arg.StrikeBlockedNoTarget,
+		arg.StrikeBlockedNotBuilding,
+		arg.StrikeBlockedOutOfReach,
 	)
 	var id int64
 	err := row.Scan(&id)

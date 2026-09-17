@@ -63,3 +63,43 @@ func (e RuleEnv) AssaultPhase(squad string) string {
 	}
 	return ""
 }
+
+// Why a squad that was told to attack did not shoot a building.
+//
+// Game 131 was the first in which the army actually went out: it formed 76
+// squads, issued 121 base attacks, and started dying forward rather than at
+// home. It also made 34 assault-phase transitions and reached `strike` ZERO
+// times, destroying no buildings for the fifth game running.
+//
+// Four separate things can stop it, with four different fixes, and the phase
+// log cannot tell them apart — it records where the squad got to, not what
+// turned it back. Counting them was the lesson of the harvester tracker: a
+// mechanism guessed at here was wrong once already this session.
+const (
+	// The squad was too strung out, so it was sent to re-gather and never
+	// looked for a target at all.
+	StrikeBlockedUnclumped = "unclumped"
+	// Nothing of theirs was visible from the squad to score.
+	StrikeBlockedNoTarget = "no-target"
+	// Something was visible and the best of it was a unit, not a building.
+	// Mobile units score 1.0 against a building's 3 to 12, so this means no
+	// building was in view at all rather than a unit outranking one.
+	StrikeBlockedNotBuilding = "not-building"
+	// A building was the best target and the squad was still too far from it.
+	StrikeBlockedOutOfReach = "out-of-reach"
+)
+
+// recordStrikeBlocked tallies one reason a strike did not happen.
+//
+// Counted per squad per reason, in memory, and read out at game end. Cheap
+// enough to run on every evaluation, which matters: the interesting case is
+// the one that happens thousands of times.
+func recordStrikeBlocked(env RuleEnv, reason string) {
+	counts := memoryMap[string, int](env.Memory, "strikeBlocked")
+	counts[reason]++
+}
+
+// StrikeBlockers reports why strikes did not happen, by reason.
+func (e RuleEnv) StrikeBlockers() map[string]int {
+	return memoryMap[string, int](e.Memory, "strikeBlocked")
+}

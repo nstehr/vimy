@@ -597,3 +597,19 @@ func sampleIncome(env RuleEnv) {
 	env.Memory["incomeSampleTick"] = tick
 	env.Memory["incomeSampleCash"] = cash
 }
+
+// StrikeBlockedCounts is why squads told to attack never shot a building,
+// copied out under the memory lock so the caller is not reading a live map.
+//
+// Nil-safe and a copy: the retrospective runs asynchronously and Reset wipes
+// memory behind it.
+func (e *Engine) StrikeBlockedCounts() map[string]int {
+	e.LockMemory()
+	defer e.UnlockMemory()
+	src := memoryMap[string, int](e.Memory, "strikeBlocked")
+	out := make(map[string]int, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}

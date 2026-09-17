@@ -2632,13 +2632,19 @@ func squadStructureTarget(env RuleEnv, name string) *model.Enemy {
 		return nil
 	}
 	target := env.BestGroundTargetFrom(cx, cy)
-	if target == nil || !IsKnownBuildingType(target.Type) {
+	if target == nil {
+		recordStrikeBlocked(env, StrikeBlockedNoTarget)
+		return nil
+	}
+	if !IsKnownBuildingType(target.Type) {
+		recordStrikeBlocked(env, StrikeBlockedNotBuilding)
 		return nil
 	}
 	mw, mh := float64(env.State.MapWidth), float64(env.State.MapHeight)
 	reach := math.Sqrt(mw*mw+mh*mh) * structureStrikeFraction
 	dx, dy := float64(target.X-cx), float64(target.Y-cy)
 	if dx*dx+dy*dy > reach*reach {
+		recordStrikeBlocked(env, StrikeBlockedOutOfReach)
 		return nil // still a walk away; keep moving
 	}
 	return target
@@ -2674,6 +2680,7 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 				if ok {
 					aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: false, LastTick: env.State.Tick}
 					recordAssaultPhase(env, name, phaseRally, "")
+					recordStrikeBlocked(env, StrikeBlockedUnclumped)
 					return sendAttackMove(env, conn, ids, cx, cy)
 				}
 				aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: true, LastTick: env.State.Tick}

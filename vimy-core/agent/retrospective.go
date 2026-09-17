@@ -26,6 +26,7 @@ type retrospectiveSnapshot struct {
 	losses          lossTracker
 	army            armyValueTracker
 	harvesters      harvesterTracker
+	strikeBlocked   map[string]int
 	engineStats     model.Player
 	store           *store.Store
 	// Where this game's states were written, for replay. Empty without
@@ -64,6 +65,7 @@ func (s *Strategist) snapshotForReview(won bool, exportPath string) *retrospecti
 		losses:          s.losses,
 		army:            s.army,
 		harvesters:      s.harvesters,
+		strikeBlocked:   s.engine.StrikeBlockedCounts(),
 		store:           s.store,
 		exportPath:      exportPath,
 		directive:       s.directive,
@@ -203,6 +205,11 @@ func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveRev
 			HarvesterTravelling: snap.harvesters.Travelling,
 			HarvesterAtRefinery: snap.harvesters.AtRefinery,
 			HarvesterHaulDist:   snap.harvesters.MeanHaulDistance(),
+
+			StrikeBlockedUnclumped:   snap.strikeBlocked[rules.StrikeBlockedUnclumped],
+			StrikeBlockedNoTarget:    snap.strikeBlocked[rules.StrikeBlockedNoTarget],
+			StrikeBlockedNotBuilding: snap.strikeBlocked[rules.StrikeBlockedNotBuilding],
+			StrikeBlockedOutOfReach:  snap.strikeBlocked[rules.StrikeBlockedOutOfReach],
 
 			OurArmyPeak:       snap.army.OursPeak,
 			EnemyArmySeenPeak: snap.army.TheirsPeak,

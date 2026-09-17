@@ -73,6 +73,11 @@ type GameContext struct {
 	HarvesterAtRefinery int
 	HarvesterHaulDist   float64
 
+	StrikeBlockedUnclumped   int
+	StrikeBlockedNoTarget    int
+	StrikeBlockedNotBuilding int
+	StrikeBlockedOutOfReach  int
+
 	OurArmyPeak       int
 	OurArmyMean       int
 	EnemyArmySeenPeak int
@@ -321,6 +326,11 @@ func (s *Store) ArchiveGame(
 		HarvesterTravelling:   sql.NullInt64{Int64: int64(gameCtx.HarvesterTravelling), Valid: true},
 		HarvesterAtRefinery:   sql.NullInt64{Int64: int64(gameCtx.HarvesterAtRefinery), Valid: true},
 		HarvesterHaulDistance: sql.NullFloat64{Float64: gameCtx.HarvesterHaulDist, Valid: true},
+
+		StrikeBlockedUnclumped:   sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedUnclumped), Valid: true},
+		StrikeBlockedNoTarget:    sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedNoTarget), Valid: true},
+		StrikeBlockedNotBuilding: sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedNotBuilding), Valid: true},
+		StrikeBlockedOutOfReach:  sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedOutOfReach), Valid: true},
 
 		OurArmyPeak:       sql.NullInt64{Int64: int64(gameCtx.OurArmyPeak), Valid: true},
 		OurArmyMean:       sql.NullInt64{Int64: int64(gameCtx.OurArmyMean), Valid: true},
@@ -781,10 +791,15 @@ type Outcome struct {
 	// ore near the base is gone.
 	HarvesterHaulDistance float64
 
+	// Why squads told to attack never shot a building. Four reasons, four
+	// different fixes; the assault phase log cannot tell them apart.
+	StrikeBlockedUnclumped, StrikeBlockedNoTarget     int
+	StrikeBlockedNotBuilding, StrikeBlockedOutOfReach int
+
 	// Which fields the row actually carried. Games predating a migration have
 	// NULL, which is not zero: "destroyed no buildings" and "was not counting
 	// buildings" are different findings.
-	HasTrade, HasArmy, HasLosses, HasHarvesters bool
+	HasTrade, HasArmy, HasLosses, HasHarvesters, HasStrikes bool
 }
 
 // HarvesterSamples is the denominator for the four shares.
@@ -846,6 +861,12 @@ func (s *Store) GameOutcome(ctx context.Context, id int64) (Outcome, error) {
 		HarvesterAtRefinery:   int(r.HarvesterAtRefinery.Int64),
 		HarvesterHaulDistance: r.HarvesterHaulDistance.Float64,
 
+		StrikeBlockedUnclumped:   int(r.StrikeBlockedUnclumped.Int64),
+		StrikeBlockedNoTarget:    int(r.StrikeBlockedNoTarget.Int64),
+		StrikeBlockedNotBuilding: int(r.StrikeBlockedNotBuilding.Int64),
+		StrikeBlockedOutOfReach:  int(r.StrikeBlockedOutOfReach.Int64),
+
+		HasStrikes:    r.StrikeBlockedUnclumped.Valid,
 		HasHarvesters: r.HarvesterMining.Valid,
 		HasTrade:      r.EngineKillsCost.Valid && r.EngineDeathsCost.Valid,
 		HasArmy:       r.OurArmyPeak.Valid && r.EnemyArmySeenPeak.Valid,

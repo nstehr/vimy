@@ -11,8 +11,10 @@ INSERT INTO games (
     engine_army_value, engine_earned,
     our_army_peak, our_army_mean, enemy_army_seen_peak, enemy_army_seen_mean,
     harvester_idle, harvester_mining, harvester_travelling,
-    harvester_at_refinery, harvester_haul_distance
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    harvester_at_refinery, harvester_haul_distance,
+    strike_blocked_unclumped, strike_blocked_no_target,
+    strike_blocked_not_building, strike_blocked_out_of_reach
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id;
 
 -- name: InsertDoctrine :one
@@ -135,6 +137,8 @@ GROUP BY f.rule_name;
 SELECT id, duration_ticks, won, our_faction, opponent_faction,
        harvester_idle, harvester_mining, harvester_travelling,
        harvester_at_refinery, harvester_haul_distance,
+       strike_blocked_unclumped, strike_blocked_no_target,
+       strike_blocked_not_building, strike_blocked_out_of_reach,
        engine_kills_cost, engine_deaths_cost, engine_buildings_killed,
        engine_earned, our_army_peak, enemy_army_seen_peak,
        infantry_lost, vehicles_lost, infantry_lost_forward, vehicles_lost_forward
