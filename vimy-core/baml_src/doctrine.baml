@@ -112,7 +112,7 @@ class Doctrine {
   vehicle_weight float @description("0.0-1.0: vehicle production preference")
   air_weight float @description("0.0-1.0: air unit production preference")
   naval_weight float @description("0.0-1.0: naval unit production preference")
-  ground_attack_group_size int @description("Minimum ground units (infantry+vehicles) before launching a ground attack (3-15)")
+  ground_attack_group_size int @description("Minimum ground units (infantry+vehicles) before launching a ground attack (3-15). MEASURED, not theoretical: this bot has never assembled a large one. Forming needs three tenths of this value simultaneously IDLE and unassigned, and across two full games that count ran a median of 0 and a maximum of 6, because defensive rules repossess units continuously. Sizes of 10 or more were set in 19 consecutive losing games and formed a squad in 0 percent of sampled states. A value that never forms a squad is worse than a small one that does, because the army then never attacks at all. Prefer 4-7 unless you have specific evidence this game is different, and treat 10+ as a claim you can support, not a default.")
   air_attack_group_size int @description("Minimum combat aircraft before launching an air strike (1-8)")
   naval_attack_group_size int @description("Minimum naval units before launching a naval attack (2-10)")
   scout_priority float @description("0.0-1.0: reconnaissance investment")
@@ -309,7 +309,7 @@ function GenerateDoctrine(directive: string, situation: GameSituation, faction: 
     - Your directive is STRATEGIC INTENT, not a rigid constraint. Adapt to battlefield reality.
     - If recent_events show "strategy_countered", you MUST change your doctrine — do not repeat the same failing strategy.
     - If combat_stats show sustained high losses in one domain (e.g., 20+ infantry lost), that domain is being hard-countered.
-    - When infantry dies to static defenses (tesla coils, flame towers), shift weight to vehicles (0.5+) or air (0.3+) to break through, OR increase ground_attack_group_size to 10+ to overwhelm with numbers.
+    - When infantry dies to static defenses (tesla coils, flame towers), shift weight to vehicles (0.5+) or air (0.3+) to break through. Do NOT reach for a bigger ground_attack_group_size to overwhelm with numbers — see the note on that field before setting it.
     - When vehicles are countered by tesla coils, shift to air strikes or build up tech for mammoth tanks.
     - CAUTIONARY-AWARE OPENER: This rule applies ONLY to the opening doctrine of a match (situation.tick is small — roughly under 5000 — AND recent_doctrines is empty or has fewer than 2 entries). When cautionary_patterns are present whose failure_reason or failed_pattern explicitly mentions base raids, harvester harassment / harvester_lost, critical_building_lost, or low ground_def correlated with infrastructure damage — that opponent has a demonstrated raid game. The opener MUST set ground_defense_priority >= 0.6 and economy_priority >= 0.6, even if the directive emphasizes aggression. The directive's offensive intent can resume in subsequent doctrines once the base is hardened. This is not a generic default — only fires when the cautionaries you were given specifically warn about base/economy harassment for this matchup. Without this, by the time reactive evals raise ground_def, the first critical building has already been lost (game 20 vs russia: opener gd=0.35, lost critical building at tick 16510 despite 4 cautionaries warning about exactly this pattern).
     - CONVERGENCE BREAK: If recent_doctrines shows 4+ attempts with a similar dominant axis (e.g., air_weight >= 0.55 repeatedly) AND recent_events include 'strategy_countered' or repeated harvester_under_attack / critical_building_lost, the repeated shape is failing. You MUST pick a doctrine whose DOMINANT axis differs — e.g., drop the previously-dominant weight to <= 0.25 and raise a different axis (vehicle_weight or ground_defense_priority) to > 0.5. Rationale-on-top pivots ("still air-heavy, but now with more ground") do NOT satisfy this rule. The goal is a structurally different plan, not a reskin. The directive is strategic intent, not a prohibition on pivoting — if the directive's preferred approach is being hard-countered, the correct response is to pivot and prove the counter wrong by a different route. Explicitly note the pivot in your rationale.
@@ -323,7 +323,7 @@ function GenerateDoctrine(directive: string, situation: GameSituation, faction: 
 
     Based on the directive and current situation, produce a strategic doctrine.
     All weight values must be between 0.0 and 1.0.
-    ground_attack_group_size must be between 3 and 15.
+    ground_attack_group_size must be between 3 and 15, and see its field note: values at the top of that range have never successfully formed a squad in this codebase.
     air_attack_group_size must be between 1 and 8.
     naval_attack_group_size must be between 2 and 10.
 

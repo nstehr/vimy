@@ -8,6 +8,8 @@ def retreat-threshold() = lerpf(0.5, 0.15, aggression)
 def retreat-priority() = lerp(380, 450, 1.0 - aggression)
 def leash() = lerpf(0.25, 0.5, aggression)
 
+def harvester-danger() = round2(lerpf(0.025, 0.05, economy-priority))
+
 rule retreat-damaged-units {
   priority retreat-priority()
   category micro
@@ -77,10 +79,11 @@ rule squad-focus-fire {
 rule flee-harvesters {
   priority lerp(150, 300, economy-priority)
   category micro
-  do flee-harvesters(lerpf(0.05, 0.15, economy-priority))
+  because "the radius is what a harvester can be SHOT from, not what it can see. At lerpf(0.05, 0.15, ..) an economy doctrine fled anything within 0.13 of the map diagonal — 24 cells on a 128 map, a quarter of the width — and game 129 fled 436 times in 57340 ticks, once every 130 ticks, against only 121 orders sent to resume harvesting. It kept 11 harvesters and 9 refineries alive and earned 1.68 credits a tick, a fraction of what that infrastructure should return, because the harvesters spent the game running rather than hauling. Vimy was broke for it: the war factory stood idle 47 percent of the game and could afford a tank in only 31 percent of it, so the army never compounded past 6 vehicles. Ground weapons reach 4 to 7 cells, so 0.045 of the diagonal is about 8 cells on a 128 map — close enough to be in real danger, far enough to get clear. Losing a harvester sometimes is the price, and a harvester is 1100 against an economy this was costing far more than that"
+  do flee-harvesters(harvester-danger())
   require economy-priority > 0.1
   require enemies-visible
-  require count(harvesters-in-danger(round2(lerpf(0.05, 0.15, economy-priority)))) > 0
+  require count(harvesters-in-danger(round2(harvester-danger()))) > 0
 }
 
 rule scout-with-scouts {
@@ -105,7 +108,7 @@ rule scramble-to-harvesters {
   priority lerp(362, 432, economy-priority)
   category harvester-defense
   because "the built-in AI lists harvesters first in ProtectionTypes and answers a raid out of its general squad pool, paying nothing until something is attacked. Vimy pre-committed a harvester-guard squad instead, reserved so the attack rules could not poach it back, to cover six harvesters at separate ore patches: the one win saw 26 flee events against 97 and 126 in the losses either side. This replaced it and then subsumed it — the compiler found guard-harvesters could never fire, since this sits above it in the same exclusive category on strictly weaker conditions, so the squad had no consumer left and form-harvester-guard was sequestering 2-4 ground units from an army already outvalued 2:1. Both are gone. This pulls the NEAREST combat units from the whole army and holds them only long enough to arrive and fight, so whatever squad they came from reclaims them when the hold lapses"
-  do scramble-to-harvesters(lerpf(0.05, 0.15, economy-priority), lerp(2, 8, economy-priority))
+  do scramble-to-harvesters(harvester-danger(), lerp(2, 8, economy-priority))
   require economy-priority > 0.3
-  require count(harvesters-in-danger(round2(lerpf(0.05, 0.15, economy-priority)))) > 0
+  require count(harvesters-in-danger(round2(harvester-danger()))) > 0
 }

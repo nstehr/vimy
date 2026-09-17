@@ -22,7 +22,7 @@ def reserves(cost: int) =
        or not has-role(tech-center) or cash >= cost + min(cost * 3, 2500))
 
 def activation() =
-  min(0.5, select(commit-ratio > 0.0, commit-ratio, lerpf(0.6, 1.0, 1.0 - aggression)))
+  min(0.25, select(commit-ratio > 0.0, commit-ratio, lerpf(0.6, 1.0, 1.0 - aggression)))
 
 def force-scale() =
   select(force-size > 0.0, lerpf(1.0, 2.5, force-size), 1.0)

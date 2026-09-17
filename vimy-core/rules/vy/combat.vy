@@ -14,7 +14,7 @@ def attack-priority() = lerp(200, 400, aggression)
 
 def defend-priority() = lerp(350, 500, ground-defense-priority)
 
-def ground-form-threshold() = trunc(max(3.0, ground-attack-group-size * 6 / 10))
+def ground-form-threshold() = trunc(max(2.0, ground-attack-group-size * 3 / 10))
 
 def defense-floor-holds() =
   base-defense-floor <= 0
@@ -64,6 +64,7 @@ rule defend-base-air {
 rule form-ground-attack {
   priority attack-priority() + 5
   category squad-form
+  because "the threshold is how many unassigned idle ground units Vimy ever HAS at one instant, not what a war party ought to number. At six tenths of a group size the strategist pins near eleven, forming demanded six simultaneously idle — and unassigned-idle-ground ran a median of 0 and a maximum of 6 across games 127 and 129, so the gate held in 0 of 1364 sampled states. Not rarely: never. Three tenths asks for three and holds in about one state in ten. The reason idle is always near zero is that defensive rules repossess the army continuously — emergency base defense fired 42 times and recall-stray-units 37 in one game — so a rendezvous condition counted on simultaneity was the wrong shape for this army whatever number it carried"
   do form-squad(ground-attack, Ground, ground-attack-group-size, Attack)
   require (not squad-exists(ground-attack)
            and count(unassigned-idle-ground) >= ground-form-threshold())
@@ -73,6 +74,7 @@ rule form-ground-attack {
 rule squad-attack {
   priority attack-priority()
   category ground-attack-choice exclusive
+  because "activation() caps the readiness demand, and the cap comes from the measured distribution rather than from the strategist, which asks for 0.76 to 0.80 every game. squad-ready-ratio counts squad members flagged IDLE, so a squad walking to its target reads as zero ready — which is why game 129's assault phases cycled approach, rally, approach, rally without once reaching strike. Game 127 peaked at 0.40 across 111510 ticks and never launched at all. At 0.5 the gate held in 0 percent of game 127's states and 7 percent of game 129's; at 0.25, 1 and 17 percent. Still tight, and deliberately so: the honest fix is that readiness should not mean standing still, and until it does not, this is a calibration and not a cure"
   do squad-attack-move(ground-attack)
   require squad-exists(ground-attack)
   require squad-ready-ratio(ground-attack) >= round2(activation())
