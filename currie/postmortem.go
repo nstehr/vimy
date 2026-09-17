@@ -130,6 +130,12 @@ func (s *server) writeSpend(w io.Writer, rep *Replay, o store.Outcome) {
 	if len(sp.Unpriced) > 0 {
 		fmt.Fprintf(w, "    unpriced, omitted from the total: %s\n", strings.Join(sp.Unpriced, " "))
 	}
+	if sp.Overstated {
+		fmt.Fprintf(w, "    !! the total is %.2fx everything earned, so it is WRONG. An act is a\n"+
+			"       produce envelope, resent every %d ticks until the item appears, so one\n"+
+			"       unit counts many times. Read the shares; do not read the credits.\n",
+			sp.Inflation, 100)
+	}
 }
 
 func writeWarnings(w io.Writer, warnings []Warning) {

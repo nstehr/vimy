@@ -267,6 +267,11 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     {{if .Unpriced}}
     <p class="clean">No engine price found for: {{range .Unpriced}}<code>{{.}}</code> {{end}}&mdash; these are missing from the total.</p>
     {{end}}
+    {{if .Overstated}}
+    <ul class="warns"><li>The total is {{printf "%.2f" .Inflation}}&times; everything this game earned, so it is WRONG, not surprising.
+      An act is a produce envelope, resent every 100 ticks until the item appears, so one unit is counted many times.
+      <span class="w-scope">Every producing rule inflates alike, so the SHARES above still hold. The credit totals do not &mdash; do not reason from them.</span></li></ul>
+    {{end}}
   </section>
   {{end}}
 

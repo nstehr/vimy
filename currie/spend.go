@@ -41,6 +41,22 @@ type Spend struct {
 	// Counted rather than dropped: a total that silently omits a line is worse
 	// than one that says it is short.
 	Unpriced []string
+
+	// True when the estimate exceeds what the engine says was earned, which is
+	// impossible and so proves the estimate wrong rather than surprising.
+	//
+	// It is wrong the same way every time: an act is a produce envelope sent,
+	// and the sidecar resends one every produceResendTicks until the item
+	// appears, so a single unit can be counted many times. Games 127, 128 and
+	// 129 came out at 2.20x, 1.46x and 1.97x of everything earned. The SHARES
+	// survive this, since every producing rule is inflated alike; the absolute
+	// credits do not. Surfaced rather than silently corrected — the correction
+	// factor is not known, only that there is one, and a plausible wrong number
+	// is worse than an obviously wrong one. A kill tracker that over-counted
+	// 2.9x drove two days of work before anyone checked it against the engine.
+	Overstated bool
+	// How many times over the estimate exceeds earnings. Zero when it does not.
+	Inflation float64
 }
 
 // SpendKind is one bucket: armour, economy, infantry and so on.
@@ -167,5 +183,9 @@ func computeSpend(firings map[string]store.Firing, prices map[string]int, items 
 		s.Unpriced = append(s.Unpriced, item)
 	}
 	sort.Strings(s.Unpriced)
+	if earned > 0 && s.Total > earned {
+		s.Overstated = true
+		s.Inflation = float64(s.Total) / float64(earned)
+	}
 	return s
 }

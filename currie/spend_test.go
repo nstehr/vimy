@@ -170,3 +170,33 @@ func TestPreemptedNamesTheMostFrequentWinnerFirst(t *testing.T) {
 		t.Errorf("lost to %v, want usual-winner first", got[0].LostTo)
 	}
 }
+
+// A spend estimate larger than the game's earnings is proof the estimate is
+// wrong, not a finding about the game. Act counts include produce resends, so
+// one unit is counted many times; games 127, 128 and 129 came out at 2.20x,
+// 1.46x and 1.97x of everything earned and were quoted as fact for a whole
+// session before anyone divided one by the other.
+func TestSpendFlagsItselfWhenItExceedsEarnings(t *testing.T) {
+	items := map[string]ruleItem{"produce-vehicle": {Item: "2tnk", Kind: "armour"}}
+	prices := map[string]int{"2tnk": 850}
+	firings := map[string]store.Firing{"produce-vehicle": {Acted: 123}}
+
+	over := computeSpend(firings, prices, items, 96262) // game 129
+	if !over.Overstated {
+		t.Fatal("104550 spent against 96262 earned must be flagged")
+	}
+	if over.Inflation < 1.08 || over.Inflation > 1.09 {
+		t.Errorf("inflation = %.3f, want ~1.086", over.Inflation)
+	}
+
+	// Plausible totals must stay unflagged, or the warning means nothing.
+	ok := computeSpend(firings, prices, items, 500000)
+	if ok.Overstated || ok.Inflation != 0 {
+		t.Errorf("104550 against 500000 earned must not be flagged: %+v", ok)
+	}
+	// No earnings recorded is not evidence of anything either way.
+	none := computeSpend(firings, prices, items, 0)
+	if none.Overstated {
+		t.Error("an unknown earned figure must not flag the estimate")
+	}
+}
