@@ -95,6 +95,13 @@ func writeLedger(w io.Writer, o store.Outcome) {
 		fmt.Fprintf(w, "  losses     %d infantry, %d vehicles (%d forward, %d at home)\n",
 			o.InfantryLost, o.VehiclesLost, o.VehiclesLostForward, o.VehiclesLostAtHome())
 	}
+	if o.HasHarvesters && o.HarvesterSamples() > 0 {
+		fmt.Fprintf(w, "  harvesters mining %d%%, travelling %d%%, at refinery %d%%, idle %d%%"+
+			"  (mean haul %.1f cells)\n",
+			o.HarvesterShare(o.HarvesterMining), o.HarvesterShare(o.HarvesterTravelling),
+			o.HarvesterShare(o.HarvesterAtRefinery), o.HarvesterShare(o.HarvesterIdle),
+			o.HarvesterHaulDistance)
+	}
 }
 
 func (s *server) writeSpend(w io.Writer, rep *Replay, o store.Outcome) {

@@ -49,7 +49,7 @@ type GameContext struct {
 	ExportPath string
 	// The directive the weights were chosen from — a post mortem that stops at
 	// the weights stops one step short.
-	Directive string
+	Directive    string
 	InfantryLost int
 	VehiclesLost int
 	// Only the forward half; home is the subtraction from the totals above.
@@ -67,6 +67,12 @@ type GameContext struct {
 	EngineEarned          int
 
 	// What the two armies were worth while the game was live, not at the end.
+	HarvesterIdle       int
+	HarvesterMining     int
+	HarvesterTravelling int
+	HarvesterAtRefinery int
+	HarvesterHaulDist   float64
+
 	OurArmyPeak       int
 	OurArmyMean       int
 	EnemyArmySeenPeak int
@@ -309,6 +315,12 @@ func (s *Store) ArchiveGame(
 		EngineDeathsCost:      sql.NullInt64{Int64: int64(gameCtx.EngineDeathsCost), Valid: true},
 		EngineArmyValue:       sql.NullInt64{Int64: int64(gameCtx.EngineArmyValue), Valid: true},
 		EngineEarned:          sql.NullInt64{Int64: int64(gameCtx.EngineEarned), Valid: true},
+
+		HarvesterIdle:         sql.NullInt64{Int64: int64(gameCtx.HarvesterIdle), Valid: true},
+		HarvesterMining:       sql.NullInt64{Int64: int64(gameCtx.HarvesterMining), Valid: true},
+		HarvesterTravelling:   sql.NullInt64{Int64: int64(gameCtx.HarvesterTravelling), Valid: true},
+		HarvesterAtRefinery:   sql.NullInt64{Int64: int64(gameCtx.HarvesterAtRefinery), Valid: true},
+		HarvesterHaulDistance: sql.NullFloat64{Float64: gameCtx.HarvesterHaulDist, Valid: true},
 
 		OurArmyPeak:       sql.NullInt64{Int64: int64(gameCtx.OurArmyPeak), Valid: true},
 		OurArmyMean:       sql.NullInt64{Int64: int64(gameCtx.OurArmyMean), Valid: true},
@@ -759,10 +771,34 @@ type Outcome struct {
 	InfantryLost, VehiclesLost               int
 	InfantryLostForward, VehiclesLostForward int
 
+	// Where harvester time went, in harvester-samples: one harvester in one
+	// state. Shares of these answer what three separate economy changes were
+	// guessing at — whether the harvesters are idle, working, walking, or
+	// queued at a refinery.
+	HarvesterIdle, HarvesterMining           int
+	HarvesterTravelling, HarvesterAtRefinery int
+	// Mean cells from the nearest refinery while travelling. Rising means the
+	// ore near the base is gone.
+	HarvesterHaulDistance float64
+
 	// Which fields the row actually carried. Games predating a migration have
 	// NULL, which is not zero: "destroyed no buildings" and "was not counting
 	// buildings" are different findings.
-	HasTrade, HasArmy, HasLosses bool
+	HasTrade, HasArmy, HasLosses, HasHarvesters bool
+}
+
+// HarvesterSamples is the denominator for the four shares.
+func (o Outcome) HarvesterSamples() int {
+	return o.HarvesterIdle + o.HarvesterMining + o.HarvesterTravelling + o.HarvesterAtRefinery
+}
+
+// HarvesterShare is one phase as a percentage of harvester time.
+func (o Outcome) HarvesterShare(n int) int {
+	total := o.HarvesterSamples()
+	if total == 0 {
+		return 0
+	}
+	return n * 100 / total
 }
 
 // VehiclesLostAtHome is the complement of the forward count.
@@ -804,9 +840,16 @@ func (s *Store) GameOutcome(ctx context.Context, id int64) (Outcome, error) {
 		InfantryLostForward: int(r.InfantryLostForward.Int64),
 		VehiclesLostForward: int(r.VehiclesLostForward.Int64),
 
-		HasTrade:  r.EngineKillsCost.Valid && r.EngineDeathsCost.Valid,
-		HasArmy:   r.OurArmyPeak.Valid && r.EnemyArmySeenPeak.Valid,
-		HasLosses: r.VehiclesLost.Valid && r.VehiclesLostForward.Valid,
+		HarvesterIdle:         int(r.HarvesterIdle.Int64),
+		HarvesterMining:       int(r.HarvesterMining.Int64),
+		HarvesterTravelling:   int(r.HarvesterTravelling.Int64),
+		HarvesterAtRefinery:   int(r.HarvesterAtRefinery.Int64),
+		HarvesterHaulDistance: r.HarvesterHaulDistance.Float64,
+
+		HasHarvesters: r.HarvesterMining.Valid,
+		HasTrade:      r.EngineKillsCost.Valid && r.EngineDeathsCost.Valid,
+		HasArmy:       r.OurArmyPeak.Valid && r.EnemyArmySeenPeak.Valid,
+		HasLosses:     r.VehiclesLost.Valid && r.VehiclesLostForward.Valid,
 	}
 	return o, nil
 }

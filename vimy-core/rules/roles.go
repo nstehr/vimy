@@ -475,6 +475,10 @@ var nonCombatUnits = map[string]bool{
 // OpenRA's faction variant naming.
 func IsHarvester(actorType string) bool { return matchesType(actorType, Harvester) }
 
+// IsRefinery reports whether an actor type is an ore refinery, allowing for
+// OpenRA's faction variant naming, as IsHarvester does.
+func IsRefinery(actorType string) bool { return matchesType(actorType, Refinery) }
+
 // IsCombatUnit reports whether an actor type is something that fights.
 //
 // Used to tell the strategist what share of its force is ore trucks. It was

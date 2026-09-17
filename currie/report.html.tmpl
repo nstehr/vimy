@@ -226,6 +226,16 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
         <div class="led-sub">ours {{.OurArmyPeak}}, theirs {{.EnemyArmySeenPeak}} &mdash; seen, so a floor</div>
       </div>
       {{end}}
+      {{if .HasHarvesters}}
+      <div class="led">
+        <div class="led-n">{{$.Outcome.HarvesterShare .HarvesterMining}}%</div>
+        <div class="led-l">harvester time spent mining</div>
+        <div class="led-sub">travelling {{$.Outcome.HarvesterShare .HarvesterTravelling}}% &middot;
+          at refinery {{$.Outcome.HarvesterShare .HarvesterAtRefinery}}% &middot;
+          idle {{$.Outcome.HarvesterShare .HarvesterIdle}}% &middot;
+          mean haul {{printf "%.1f" .HarvesterHaulDistance}} cells</div>
+      </div>
+      {{end}}
       {{if .HasLosses}}
       <div class="led">
         <div class="led-n">{{.VehiclesLostForward}} / {{.VehiclesLostAtHome}}</div>
