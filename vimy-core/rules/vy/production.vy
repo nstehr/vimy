@@ -313,9 +313,9 @@ rule produce-scout-vehicle {
 }
 
 rule produce-siege-vehicle {
-  priority trunc(select(siege-vehicle-first > 0, 485.0, 460.0))
+  priority trunc(select(siege-vehicle-first > 0, 485.0, 482.0))
   category produce-vehicle exclusive
-  because "when stand-off is the plan, siege has to beat generic vehicles to the queue"
+  because "siege has to beat generic vehicles to the queue whether or not it is the plan, because in an exclusive category the loser does not build later, it does not build at all. At 460 it sat below produce-vehicle's 480 and game 127 measured the result: conditions satisfiable in 213 of 691 sampled states, preempted in all 213, ZERO artillery in 111510 ticks, 67 percent of a 189914-credit economy spent on 323 plain tanks, and 2 enemy buildings destroyed. The flood this priority once caused — game 96 built 49 artillery and 0 medium tanks — is held off by the cap below, not by the ordering: six siege against produce-vehicle's twenty-four. Staying FIRST when the doctrine asks for it keeps the two branches distinguishable"
   do produce-siege-vehicle
   require vehicle-weight > 0.2
   require has-role(war-factory)
