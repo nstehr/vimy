@@ -1,8 +1,8 @@
 {
   "_comment": [
     "What each producing rule actually buys, and which bucket it counts in.",
-    "Read by currie (embedded) and by tools/postmortem.py, so the two cannot",
-    "drift into disagreeing about what a game spent.",
+    "Embedded by currie. Kept as data rather than a Go map so the table can be",
+    "read and edited without a rebuild, and diffed as a table.",
     "Rules that build several things name the representative one; the totals",
     "are an estimate and every view that prints them says so.",
     "Prices are NOT here - they are read from the engine's own yaml, because",

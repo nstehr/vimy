@@ -25,5 +25,22 @@ Four things, in the order a reader needs them:
 
 Prices come from `-engine-rules` (default `../engine/mods/ra/rules`), parsed
 rather than transcribed so they track the mod. Which rule buys what lives in
-`rule-items.json`, which `tools/postmortem.py` reads too — one table, so the
-terminal and the web view cannot disagree about what a game spent.
+`rule-items.json`.
+
+## Without a browser
+
+The same four analyses print to stdout, for the moment after a game ends:
+
+```
+currie -game latest        the newest game that recorded an export
+currie -game 127           a particular one
+currie -game 127 -top 40   more of the blame than the default eight
+```
+
+One code path, two renderings: `-game` replays through the same `replayGame`
+and prices through the same `computeSpend` as the page, so the two cannot
+disagree. This replaced a Python script that took the same shape and got the
+blame wrong — it blamed every sampled state against **one** of the game's
+doctrines, and game 127 ran 121 of them. Pairing each state to the doctrine
+that was actually running is the point of the replay, so a second tool that
+skipped it was not a convenience; it was a wrong answer that looked right.

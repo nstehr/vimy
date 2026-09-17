@@ -6,11 +6,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/nstehr/vimy/vimy-core/store"
 )
@@ -29,6 +31,8 @@ func run() error {
 		"the engine's rule yaml, for pricing what a game spent")
 	bin := flag.String("vimyc", "vimyc", "the vimyc binary")
 	addr := flag.String("addr", ":8090", "listen address")
+	game := flag.String("game", "", "print one game's post mortem to stdout and exit: an id, or \"latest\"")
+	top := flag.Int("top", 8, "how many blamed rules to list with -game")
 	flag.Parse()
 
 	st, err := store.New(expand(*dir))
@@ -53,6 +57,41 @@ func run() error {
 	}
 	defer srv.Close()
 
+	// One game to a terminal, no server. The same replay and the same prices as
+	// the page; only the rendering differs.
+	if *game != "" {
+		ctx := context.Background()
+		id, err := resolveGame(ctx, st, *game)
+		if err != nil {
+			return err
+		}
+		return srv.postmortem(ctx, os.Stdout, id, *top)
+	}
+
 	slog.Info("currie listening", "addr", *addr, "dir", expand(*dir))
 	return http.ListenAndServe(*addr, srv.routes())
+}
+
+// resolveGame turns the -game value into an id.
+//
+// "latest" is the newest game that recorded an export, not the newest game:
+// one without an export cannot be replayed at all, and failing on it would be
+// a worse answer than reporting the most recent game there is something to say
+// about.
+func resolveGame(ctx context.Context, st *store.Store, arg string) (int64, error) {
+	if arg != "latest" {
+		id, err := strconv.ParseInt(arg, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("-game: %q is not an id or \"latest\"", arg)
+		}
+		return id, nil
+	}
+	games, err := st.ReplayableGames(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if len(games) == 0 {
+		return 0, fmt.Errorf("-game latest: no game has recorded an export")
+	}
+	return games[0].ID, nil
 }
