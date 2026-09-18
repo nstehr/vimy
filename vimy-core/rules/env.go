@@ -429,9 +429,22 @@ func (e RuleEnv) IsHarvesterHarassed() bool {
 	return v
 }
 
-// SquadClumped reports whether ≥80% of living members are within radiusCells of
+// SquadClumped reports whether enough living members are within radiusCells of
 // the centroid. Gates squad-attack on the squad having actually assembled: a
 // strung-out squad is picked off one unit at a time.
+//
+// "Enough" is 80% rounded DOWN, which is not what the obvious integer test
+// gives. near*10 >= len*8 rounds up, and for a squad of four that demands
+// 4 of 4 — for two or three it demands all of them too. Vimy's squads
+// averaged 3.5 members at the moment they were told to re-gather, so the gate
+// it was actually applying was "every single unit within 8 cells", and one
+// straggler anywhere blocked the assault permanently. Games 132 and 133 put
+// 110 of 165 failed strikes on this check and reached `strike` zero times.
+//
+// So the rule is 80%, capped at one straggler's worth of slack: a squad of
+// four needs three, of six needs five, of ten needs eight. A squad of two
+// still needs both — at that size there is no minority, and a lone unit
+// walking into a base is the piecemeal death this check exists to prevent.
 func (e RuleEnv) SquadClumped(name string, radiusCells int) bool {
 	squads, ok := e.Memory["squads"].(map[string]*Squad)
 	if !ok {
@@ -446,21 +459,24 @@ func (e RuleEnv) SquadClumped(name string, radiusCells int) bool {
 	for _, id := range sq.UnitIDs {
 		ids[id] = true
 	}
-	var sumX, sumY int
 	var members []model.Unit
 	for _, u := range e.State.Units {
 		if !ids[u.ID] {
 			continue
 		}
-		sumX += u.X
-		sumY += u.Y
 		members = append(members, u)
 	}
 	if len(members) < 2 {
 		return true // one unit is trivially clumped
 	}
-	cx := sumX / len(members)
-	cy := sumY / len(members)
+	// Median, not mean. A mean is dragged by the very stragglers this check is
+	// meant to tolerate: three units at x=50, 50 and 100 have a mean of 66, so
+	// the two standing together are 16 cells from their own "centre" and the
+	// squad scores ZERO within an 8-cell radius. Allowing a straggler is
+	// meaningless while one straggler can disqualify everybody. The median
+	// sits with the cluster and ignores the outlier, which is the question
+	// being asked: are most of them together?
+	cx, cy := medianXY(members)
 
 	radiusSq := radiusCells * radiusCells
 	near := 0
@@ -471,7 +487,31 @@ func (e RuleEnv) SquadClumped(name string, radiusCells int) bool {
 			near++
 		}
 	}
-	return near*10 >= len(members)*8
+	// The 80% figure, but never so strict that it demands everyone: one unit
+	// may always lag. Plain flooring was the first attempt and drifts too far
+	// the other way — it would let two of six straggle, where 80% permits one.
+	need := (len(members)*8 + 9) / 10 // ceil(0.8n)
+	if max := len(members) - 1; need > max {
+		need = max
+	}
+	if need < 2 {
+		need = 2
+	}
+	return near >= need
+}
+
+// medianXY is the per-axis median position of a set of units. Per-axis rather
+// than a true geometric median: it is cheap, robust to outliers, and lands
+// inside the cluster, which is all this needs.
+func medianXY(units []model.Unit) (int, int) {
+	xs := make([]int, len(units))
+	ys := make([]int, len(units))
+	for i, u := range units {
+		xs[i], ys[i] = u.X, u.Y
+	}
+	slices.Sort(xs)
+	slices.Sort(ys)
+	return xs[len(xs)/2], ys[len(ys)/2]
 }
 
 // AxisBurned reports an axis the doctrine has repeatedly pivoted to and been
