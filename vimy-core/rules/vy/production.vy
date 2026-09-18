@@ -203,10 +203,10 @@ rule produce-attack-dog {
 
 rule produce-spy {
   priority 438
-  because "below the capture-defense rifles, which are cheaper and hold what was taken"
+  because "below the capture-defense rifles, which are cheaper and hold what was taken. The scout-priority escape is gone: a spy is nominally dual-use, infiltration or stealthy recon, and NEITHER is implemented — there is no infiltrate action in the rule set or in the mod, and designateScout picks dogs and never a spy. So the escape was the reason this fired and there was no code behind the justification. scout-priority sits near 0.69 every game, so the gate was permanently open, and game 135's infantry line spent 60 percent of its sampled time building spies at 500 credits against a rifleman's 100 — rebuilt on every death, because role-count(spy) < 1 caps it at one alive. Capture alone now gates it, which means effectively never until something uses a spy, and that is the honest state of it"
   category produce-infantry exclusive
   do produce-spy
-  require capture-priority > 0.2 or scout-priority > 0.3
+  require capture-priority > 0.2
   require has-role(barracks)
   require has-role(radar)
   require not queue-busy(Infantry)

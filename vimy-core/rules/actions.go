@@ -2482,7 +2482,7 @@ func SquadAttackMove(name string) ActionFunc {
 		if enemy == nil {
 			return nil
 		}
-		ids := squadIdleActorIDs(env, name)
+		ids := squadAssaultActorIDs(env, name)
 		if len(ids) == 0 {
 			return nil
 		}
@@ -2669,7 +2669,7 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 		if base == nil {
 			return nil
 		}
-		ids := squadIdleActorIDs(env, name)
+		ids := squadAssaultActorIDs(env, name)
 		if len(ids) == 0 {
 			return nil
 		}
@@ -2830,7 +2830,7 @@ func SquadDefend(name string) ActionFunc {
 		if enemy == nil {
 			return nil
 		}
-		ids := squadIdleActorIDs(env, name)
+		ids := squadAssaultActorIDs(env, name)
 		if len(ids) == 0 {
 			return nil
 		}
@@ -2941,7 +2941,37 @@ func squadCommittableActorIDs(env RuleEnv, name string) []uint32 {
 	return ids
 }
 
+// squadAssaultActorIDs is every member an assault may command: in the squad,
+// present, not retreating, and not inside a disengage hold.
+//
+// NOT filtered on Idle, and that is the whole point. Idle is actor.IsIdle —
+// "has no current order" — so a squad executing the order it was just given
+// does not satisfy it. Filtering assaults on idleness meant the attack could
+// only ever command the members that happened to be doing nothing: game 135
+// measured 1.3 of 4.0 members reachable, across 763 rallies. Two thirds of
+// every squad never received the order it was then judged against by
+// SquadClumped, which counts all of them — so the squad could never gather
+// what it had already sent, and reached `strike` zero times in 135 phase
+// transitions while razing 25 buildings on the engine's own target choices.
+//
+// Safe to widen because sendAttackMove already skips any actor holding an
+// identical order less than attackMoveResend ticks old, so re-commanding a
+// unit that is already doing the right thing sends nothing. That throttle is
+// what makes this a one-line change rather than a rewrite.
+//
+// squadCommittableActorIDs is the same idea for harvester defence and predates
+// this; it omits the disengage hold deliberately, because a withdrawal must be
+// able to command units it has already pulled back. An assault must not, or
+// disengaging would mean nothing.
+func squadAssaultActorIDs(env RuleEnv, name string) []uint32 {
+	return squadActorIDs(env, name, false)
+}
+
 func squadIdleActorIDs(env RuleEnv, name string) []uint32 {
+	return squadActorIDs(env, name, true)
+}
+
+func squadActorIDs(env RuleEnv, name string, onlyIdle bool) []uint32 {
 	squads := getSquads(env.Memory)
 	sq, ok := squads[name]
 	if !ok {
@@ -2968,9 +2998,13 @@ func squadIdleActorIDs(env RuleEnv, name string) []uint32 {
 			}
 			delete(held, id)
 		}
-		if idleSet[id] && !isRetreating {
-			ids = append(ids, uint32(id))
+		if isRetreating {
+			continue
 		}
+		if onlyIdle && !idleSet[id] {
+			continue
+		}
+		ids = append(ids, uint32(id))
 	}
 	return ids
 }
@@ -3275,7 +3309,7 @@ func SquadFocusFire(name string) ActionFunc {
 		if target == nil {
 			return nil
 		}
-		ids := squadIdleActorIDs(env, name)
+		ids := squadAssaultActorIDs(env, name)
 		if len(ids) == 0 {
 			return nil
 		}
