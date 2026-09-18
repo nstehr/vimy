@@ -1,6 +1,9 @@
 package rules
 
-import "log/slog"
+import (
+	"log/slog"
+	"math"
+)
 
 // The base assault is already a state machine; it has just never said so. Its
 // state lives in four memory maps — squadAttackState.Attacking, the hunt step,
@@ -112,4 +115,72 @@ func recordStrikeBlocked(env RuleEnv, reason string) {
 // StrikeBlockers reports why strikes did not happen, by reason.
 func (e RuleEnv) StrikeBlockers() map[string]int {
 	return memoryMap[string, int](e.Memory, "strikeBlocked")
+}
+
+// The shape of a squad at the moment it was told to re-gather.
+//
+// Games 132 and 133 put 110 of 165 failed strikes on `unclumped`, and zero on
+// every other cause. So the squad is never assembling — but "the radius is too
+// tight" and "the rally cannot reach most of the squad" are different faults
+// with different fixes, and the counter cannot tell them apart.
+//
+// The suspicion is the second. squadIdleActorIDs sends the rally only to IDLE
+// members, SquadClumped counts ALL of them, and Idle means actor.IsIdle —
+// "has no current order". So issuing the rally makes its recipients non-idle
+// and drops them from the next one, while they still count against the 80%.
+// If that is right, the idle count here will be a small fraction of members,
+// persistently.
+//
+// Three numbers decide it:
+//
+//	members ~= idle          the rally reaches everyone; the radius is the fault
+//	idle much lower          the rally cannot reach the squad; the predicate is
+//	spread very large        the squad is scattered, not merely untidy
+type rallyShape struct {
+	Rallies    int
+	MembersSum int
+	IdleSum    int
+	SpreadSum  int
+}
+
+// recordRallyShape notes one rally: how many members the squad had, how many
+// of them could actually be commanded, and how far the furthest had strayed
+// from the centroid.
+func recordRallyShape(env RuleEnv, members, idle, spread int) {
+	s, _ := env.Memory["rallyShape"].(*rallyShape)
+	if s == nil {
+		s = &rallyShape{}
+		env.Memory["rallyShape"] = s
+	}
+	s.Rallies++
+	s.MembersSum += members
+	s.IdleSum += idle
+	s.SpreadSum += spread
+}
+
+// squadSpread is the distance from the centroid to the furthest member, in
+// cells. Max rather than mean: the 80% rule is about stragglers, and a mean
+// hides the one unit holding the whole squad back.
+func squadSpread(env RuleEnv, name string, cx, cy int) (members, spread int) {
+	squads := getSquads(env.Memory)
+	sq, ok := squads[name]
+	if !ok {
+		return 0, 0
+	}
+	ids := make(map[int]bool, len(sq.UnitIDs))
+	for _, id := range sq.UnitIDs {
+		ids[id] = true
+	}
+	worst := 0
+	for _, u := range env.State.Units {
+		if !ids[u.ID] {
+			continue
+		}
+		members++
+		dx, dy := u.X-cx, u.Y-cy
+		if d := dx*dx + dy*dy; d > worst {
+			worst = d
+		}
+	}
+	return members, int(math.Sqrt(float64(worst)))
 }

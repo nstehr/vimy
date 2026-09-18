@@ -236,6 +236,15 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
           out of reach {{.StrikeBlockedOutOfReach}}</div>
       </div>
       {{end}}
+      {{if .HasRallies}}
+      <div class="led">
+        <div class="led-n">{{printf "%.1f" $.Outcome.MeanRallyCommandable}} / {{printf "%.1f" $.Outcome.MeanRallyMembers}}</div>
+        <div class="led-l">squad members the rally could command</div>
+        <div class="led-sub">{{.RallyCount}} rallies &middot;
+          furthest member {{printf "%.0f" $.Outcome.MeanRallySpread}} cells out, clump needs 8 &middot;
+          well below means the rally cannot reach the squad, not that the radius is tight</div>
+      </div>
+      {{end}}
       {{if .HasHarvesters}}
       <div class="led">
         <div class="led-n">{{$.Outcome.HarvesterShare .HarvesterMining}}%</div>

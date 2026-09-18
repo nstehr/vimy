@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face {
+        font-family: "VimyMono";
+        src: url("assets/fonts/Hack-Regular.ttf") format("truetype");
+        font-weight: 400;
+        font-style: normal;
+        font-display: block;
+      }
+
+      @font-face {
+        font-family: "VimyMono";
+        src: url("assets/fonts/Hack-Bold.ttf") format("truetype");
+        font-weight: 700;
+        font-style: normal;
+        font-display: block;
+      }
+
+      /* Palette lifted from vimy-core/server/views/layout.templ + components.templ.
+         layout.templ: body { background: #030712; color: #f3f4f6 }
+         components.templ: emerald-400/500 accents, amber-400 for `excl`. */
+      :root {
+        --bg: #030712;
+        --panel: #0f1629;
+        --inset: #0a1020;
+        --border: #1f2937;
+        --fg: #f3f4f6;
+        --dim: #d1d5db;
+        --muted: #9ca3af;
+        --meta: #94a3b8;
+        --accent: #34d399;
+        --accent-strong: #10b981;
+        --amber: #fbbf24;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: var(--bg);
+      }
+
+      #root {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: system-ui, sans-serif;
+      }
+
+      .mono {
+        font-family: "VimyMono", monospace;
+      }
+
+      /* ---------------------------------------------------------------
+         Background layers. Untimed, so they need their own positioning —
+         the runtime only auto-lays-out elements carrying data-start.
+         --------------------------------------------------------------- */
+      .bg {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      #bg-grid {
+        background-image:
+          linear-gradient(to right, rgba(52, 211, 153, 0.05) 2px, transparent 2px),
+          linear-gradient(to bottom, rgba(148, 163, 184, 0.04) 2px, transparent 2px);
+        background-size: 160px 160px;
+      }
+
+      /* Radial, not linear: full-screen linear gradients band under H.264. */
+      #bg-glow {
+        background: radial-gradient(
+          900px 700px at 16% 22%,
+          rgba(16, 185, 129, 0.22),
+          rgba(3, 7, 18, 0) 72%
+        );
+      }
+
+      #bg-glow-2 {
+        background: radial-gradient(
+          760px 620px at 88% 82%,
+          rgba(52, 211, 153, 0.13),
+          rgba(3, 7, 18, 0) 70%
+        );
+      }
+
+      /* Decorative tick rail — deliberately not text, so it can sit at
+         decorative opacity without failing the WCAG pass. */
+      #bg-ghost {
+        position: absolute;
+        right: 44px;
+        top: 150px;
+        width: 54px;
+        height: 780px;
+        background-image:
+          linear-gradient(to bottom, rgba(52, 211, 153, 0.22) 3px, transparent 3px),
+          linear-gradient(to bottom, rgba(148, 163, 184, 0.14) 3px, transparent 3px);
+        background-size:
+          54px 120px,
+          26px 24px;
+        background-position:
+          right top,
+          right top;
+        background-repeat: repeat-y;
+      }
+
+      #bg-scanline {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 3px;
+        background: linear-gradient(
+          to right,
+          rgba(52, 211, 153, 0) 0%,
+          rgba(52, 211, 153, 0.5) 50%,
+          rgba(52, 211, 153, 0) 100%
+        );
+      }
+
+      /* ---------------------------------------------------------------
+         Persistent dashboard chrome (scenes 1-4)
+         --------------------------------------------------------------- */
+      #chrome-nav {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 104px;
+        padding: 0 110px;
+        display: flex;
+        align-items: center;
+        gap: 26px;
+        border-bottom: 2px solid var(--border);
+      }
+
+      #chrome-wordmark {
+        font-size: 46px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: var(--accent);
+      }
+
+      #chrome-sub {
+        font-size: 28px;
+        color: var(--muted);
+      }
+
+      #chrome-tick {
+        margin-left: auto;
+        font-size: 26px;
+        color: var(--meta);
+        letter-spacing: 0.08em;
+      }
+
+      #chrome-rail {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        height: 78px;
+        padding: 0 110px;
+        display: flex;
+        align-items: center;
+        border-top: 2px solid var(--border);
+        font-family: "VimyMono", monospace;
+        font-size: 24px;
+        color: var(--meta);
+        letter-spacing: 0.04em;
+      }
+
+      #chrome-rail .right {
+        margin-left: auto;
+      }
+
+      .live-dot {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border-radius: 999px;
+        background: var(--accent);
+        margin-right: 14px;
+        vertical-align: 1px;
+      }
+
+      /* ---------------------------------------------------------------
+         Shared scene furniture
+         --------------------------------------------------------------- */
+      .scene {
+        position: absolute;
+        inset: 0;
+        padding: 150px 110px 110px;
+      }
+
+      .overline {
+        font-size: 34px;
+        color: var(--muted);
+        letter-spacing: 0.01em;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 2px solid var(--border);
+        border-radius: 22px;
+      }
+
+      .pill {
+        display: inline-block;
+        font-size: 24px;
+        font-weight: 600;
+        padding: 9px 22px;
+        border-radius: 999px;
+        letter-spacing: 0.02em;
+      }
+
+      .pill-emerald {
+        color: var(--accent);
+        background: rgba(52, 211, 153, 0.14);
+      }
+
+      .pill-amber {
+        color: var(--amber);
+        background: rgba(251, 191, 36, 0.14);
+      }
+
+      /* ---------------------------------------------------------------
+         Scene 1 — Directive
+         --------------------------------------------------------------- */
+      #s1-panel {
+        margin-top: 58px;
+        padding: 52px 56px 44px;
+      }
+
+      #s1-label {
+        font-size: 42px;
+        font-weight: 700;
+      }
+
+      #s1-box {
+        margin-top: 34px;
+        min-height: 296px;
+        padding: 40px 44px;
+        background: var(--inset);
+        border: 2px solid var(--border);
+        border-radius: 14px;
+        font-size: 38px;
+        line-height: 1.52;
+        color: var(--fg);
+      }
+
+      #s1-caret {
+        display: inline-block;
+        width: 5px;
+        height: 42px;
+        background: var(--accent);
+        vertical-align: -7px;
+        margin-left: 5px;
+      }
+
+      #s1-actions {
+        margin-top: 34px;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 34px;
+      }
+
+      #s1-button {
+        position: relative;
+        font-size: 34px;
+        font-weight: 700;
+        color: #032015;
+        background: var(--accent-strong);
+        padding: 20px 52px;
+        border-radius: 14px;
+      }
+
+      /* Pointer drawn in CSS so nothing is fetched at render time. */
+      #s1-cursor {
+        position: absolute;
+        left: 1512px;
+        top: 762px;
+        width: 30px;
+        height: 42px;
+        background: var(--fg);
+        clip-path: polygon(0 0, 0 100%, 27% 78%, 44% 100%, 62% 88%, 46% 66%, 100% 62%);
+      }
+
+      /* ---------------------------------------------------------------
+         Scene 2 — Doctrine
+         --------------------------------------------------------------- */
+      #s2-panel {
+        margin-top: 50px;
+        padding: 46px 56px 52px;
+      }
+
+      #s2-head {
+        display: flex;
+        align-items: flex-start;
+        gap: 40px;
+      }
+
+      #s2-title {
+        font-size: 58px;
+        font-weight: 700;
+        color: var(--accent);
+        letter-spacing: -0.01em;
+      }
+
+      #s2-meta {
+        margin-left: auto;
+        text-align: right;
+      }
+
+      #s2-tick {
+        font-size: 26px;
+        color: var(--meta);
+        letter-spacing: 0.08em;
+      }
+
+      #s2-rows {
+        margin-top: 46px;
+      }
+
+      .wrow {
+        display: flex;
+        align-items: center;
+        gap: 36px;
+        height: 62px;
+      }
+
+      .wrow + .wrow {
+        margin-top: 22px;
+      }
+
+      .wrow .wlabel {
+        width: 260px;
+        font-size: 34px;
+        color: var(--dim);
+      }
+
+      .wtrack {
+        flex: 1;
+        height: 26px;
+        border-radius: 999px;
+        background: #1b2537;
+        overflow: hidden;
+      }
+
+      .wfill {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border-radius: 999px;
+        background: var(--accent-strong);
+        transform-origin: left center;
+      }
+
+      .wval {
+        width: 140px;
+        text-align: right;
+        font-family: "VimyMono", monospace;
+        font-size: 36px;
+        color: var(--fg);
+      }
+
+      /* ---------------------------------------------------------------
+         Scene 3 — Compilation
+         --------------------------------------------------------------- */
+      #s3-carry {
+        margin-top: 46px;
+        display: flex;
+        align-items: center;
+        gap: 40px;
+        height: 86px;
+      }
+
+      #s3-carry .wlabel {
+        width: 260px;
+        font-size: 38px;
+        color: var(--dim);
+      }
+
+      #s3-carry .wtrack {
+        max-width: 700px;
+      }
+
+      #s3-carryval {
+        font-family: "VimyMono", monospace;
+        font-size: 64px;
+        color: var(--accent);
+      }
+
+      #s3-arrow {
+        margin-left: 26px;
+        font-size: 40px;
+        color: var(--meta);
+      }
+
+      #s3-code {
+        position: relative;
+        margin-top: 42px;
+        padding: 44px 52px;
+        background: var(--inset);
+        border: 2px solid var(--border);
+        border-radius: 18px;
+      }
+
+      #s3-badges {
+        position: absolute;
+        right: 40px;
+        top: 34px;
+        display: flex;
+        gap: 16px;
+      }
+
+      .code {
+        font-family: "VimyMono", monospace;
+        font-size: 34px;
+        line-height: 1.62;
+        color: #e5e7eb;
+        white-space: pre;
+      }
+
+      .k {
+        color: var(--accent);
+      }
+
+      .n {
+        color: var(--amber);
+      }
+
+      .c {
+        color: var(--meta);
+      }
+
+      #s3-line-cap {
+        display: block;
+        border-radius: 6px;
+      }
+
+      /* Fixed width so seating the value never reflows the line. */
+      #s3-slot {
+        position: relative;
+        display: inline-block;
+        width: 82.5px;
+        height: 42px;
+        vertical-align: -8px;
+      }
+
+      #s3-fly {
+        position: absolute;
+        left: 0;
+        top: 0;
+        font-family: "VimyMono", monospace;
+        font-size: 34px;
+        line-height: 42px;
+        color: var(--accent);
+        transform-origin: left top;
+        white-space: nowrap;
+      }
+
+      /* ---------------------------------------------------------------
+         Scene 4 — Compiled rules
+         --------------------------------------------------------------- */
+      #s4-panel {
+        margin-top: 46px;
+        padding: 42px 52px 40px;
+      }
+
+      #s4-head {
+        display: flex;
+        align-items: center;
+        gap: 26px;
+      }
+
+      #s4-title {
+        font-size: 46px;
+        font-weight: 700;
+      }
+
+      #s4-cat {
+        margin-top: 30px;
+        display: flex;
+        align-items: center;
+        padding: 18px 28px;
+        border-radius: 12px;
+        background: #131c2e;
+        font-family: "VimyMono", monospace;
+        font-size: 30px;
+        color: var(--dim);
+      }
+
+      #s4-cat .count {
+        margin-left: auto;
+        color: var(--meta);
+      }
+
+      .rrow {
+        padding: 22px 8px 20px 28px;
+        border-bottom: 2px solid #17202f;
+      }
+
+      .rrow .top {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+      }
+
+      .rrow .pri {
+        width: 78px;
+        text-align: right;
+        font-family: "VimyMono", monospace;
+        font-size: 28px;
+        color: var(--meta);
+      }
+
+      .rrow .rname {
+        font-size: 34px;
+        color: var(--fg);
+      }
+
+      .rrow .cond {
+        margin-top: 10px;
+        margin-left: 100px;
+        font-family: "VimyMono", monospace;
+        font-size: 24px;
+        color: var(--meta);
+      }
+
+      #s4-stats {
+        margin-top: 30px;
+        font-family: "VimyMono", monospace;
+        font-size: 28px;
+        color: var(--meta);
+      }
+
+      #s4-stats .hot {
+        color: var(--accent);
+      }
+
+      /* ---------------------------------------------------------------
+         Scene 5 — Mark
+         --------------------------------------------------------------- */
+      #s5 {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 0;
+      }
+
+      #s5-mark {
+        font-size: 208px;
+        font-weight: 800;
+        letter-spacing: -0.035em;
+        color: var(--accent);
+        line-height: 1;
+      }
+
+      #s5-rule {
+        width: 260px;
+        height: 3px;
+        margin: 48px 0 44px;
+        background: var(--accent-strong);
+        transform-origin: center;
+      }
+
+      #s5-tag {
+        font-size: 42px;
+        color: var(--dim);
+      }
+
+      #s5-url {
+        margin-top: 40px;
+        font-family: "VimyMono", monospace;
+        font-size: 28px;
+        color: var(--meta);
+        letter-spacing: 0.06em;
+      }
+    </style>
+  </head>
+  <body>
+    <div data-hf-id="hf-ez57" id="root" data-composition-id="main" data-start="0" data-duration="24.9" data-width="1920" data-height="1080" data-fps="30">
+      <!-- background depth: untimed, self-positioned -->
+      <div data-hf-id="hf-j5jf" id="bg-grid" class="bg"></div>
+      <div data-hf-id="hf-mxfo" id="bg-glow" class="bg"></div>
+      <div data-hf-id="hf-whbd" id="bg-glow-2" class="bg"></div>
+      <div data-hf-id="hf-ghza" id="bg-ghost"></div>
+      <div data-hf-id="hf-qatg" id="bg-scanline"></div>
+
+      <!-- dashboard chrome, present for scenes 1-4 -->
+      <div data-hf-id="hf-cf44" id="chrome" class="clip" data-start="0" data-duration="21.3" data-track-index="0">
+        <div data-hf-id="hf-gcy3" id="chrome-nav">
+          <span data-hf-id="hf-9qil" id="chrome-wordmark">VIMY</span>
+          <span data-hf-id="hf-ruu7" id="chrome-sub">Doctrine Dashboard</span>
+          <span data-hf-id="hf-ukyf" id="chrome-tick" class="mono">TICK <span data-hf-id="hf-wgdb" id="tickval">18420</span></span>
+        </div>
+        <div data-hf-id="hf-0ido" id="chrome-rail">
+          <span data-hf-id="hf-67fn"><span data-hf-id="hf-d399" class="live-dot"></span>unix socket · length-prefixed JSON</span>
+          <span data-hf-id="hf-v2id" class="right">OpenRA release-20250330</span>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 1 — Directive ============ -->
+      <div data-hf-id="hf-6p3y" id="s1" class="clip scene" data-start="0" data-duration="5.8" data-track-index="1">
+        <div data-hf-id="hf-3ap2" id="s1-over" class="overline">You write one sentence.</div>
+        <div data-hf-id="hf-w0wt" id="s1-panel" class="panel">
+          <div data-hf-id="hf-2my9" id="s1-label">Directive</div>
+          <div data-hf-id="hf-vnup" id="s1-box"><span data-hf-id="hf-xajh" id="s1-typed"></span><span data-hf-id="hf-eet0" id="s1-caret"></span></div>
+          <div data-hf-id="hf-dn2v" id="s1-actions">
+            <div data-hf-id="hf-2ltf" id="s1-button">Update</div>
+          </div>
+        </div>
+        <div data-hf-id="hf-3who" id="s1-cursor"></div>
+      </div>
+
+      <!-- ============ SCENE 2 — Doctrine ============ -->
+      <div data-hf-id="hf-0509" id="s2" class="clip scene" data-start="5.8" data-duration="5.6" data-track-index="2">
+        <div data-hf-id="hf-fbvr" id="s2-over" class="overline">The model answers with weights. Not moves.</div>
+        <div data-hf-id="hf-94hi" id="s2-panel" class="panel">
+          <div data-hf-id="hf-f9ll" id="s2-head">
+            <div data-hf-id="hf-n5ll" id="s2-title">Naval First, Mechanized Followthrough</div>
+            <div data-hf-id="hf-p83k" id="s2-meta">
+              <div data-hf-id="hf-kauy" id="s2-tick" class="mono">Tick 19070</div>
+              <div data-hf-id="hf-epdk" style="margin-top: 14px"><span data-hf-id="hf-xrqw" class="pill pill-emerald">Enemy Located</span></div>
+            </div>
+          </div>
+          <div data-hf-id="hf-ycwo" id="s2-rows">
+            <div data-hf-id="hf-w5jl" class="wrow" id="row-eco">
+              <div data-hf-id="hf-u3yt" class="wlabel">Economy</div>
+              <div data-hf-id="hf-f164" class="wtrack"><span data-hf-id="hf-n1yb" class="wfill"></span></div>
+              <div data-hf-id="hf-dgxy" class="wval">0.00</div>
+            </div>
+            <div data-hf-id="hf-87gn" class="wrow" id="row-inf">
+              <div data-hf-id="hf-5f22" class="wlabel">Infantry</div>
+              <div data-hf-id="hf-s3lw" class="wtrack"><span data-hf-id="hf-j0rn" class="wfill"></span></div>
+              <div data-hf-id="hf-12x6" class="wval">0.00</div>
+            </div>
+            <div data-hf-id="hf-u8sf" class="wrow" id="row-veh">
+              <div data-hf-id="hf-t6id" class="wlabel">Vehicle</div>
+              <div data-hf-id="hf-qwot" class="wtrack"><span data-hf-id="hf-imgm" class="wfill"></span></div>
+              <div data-hf-id="hf-1h87" class="wval">0.00</div>
+            </div>
+            <div data-hf-id="hf-b2sl" class="wrow" id="row-nav">
+              <div data-hf-id="hf-ja19" class="wlabel">Naval</div>
+              <div data-hf-id="hf-razu" class="wtrack"><span data-hf-id="hf-i85l" class="wfill"></span></div>
+              <div data-hf-id="hf-1vj8" class="wval">0.00</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 3 — Compilation ============ -->
+      <div data-hf-id="hf-5ybo" id="s3" class="clip scene" data-start="11.4" data-duration="4.9" data-track-index="3">
+        <div data-hf-id="hf-nbs3" id="s3-over" class="overline">A compiler turns weights into rules.</div>
+        <div data-hf-id="hf-1985" id="s3-carry">
+          <div data-hf-id="hf-t1t5" class="wlabel">Vehicle</div>
+          <div data-hf-id="hf-taiz" class="wtrack"><span data-hf-id="hf-h08q" class="wfill" id="s3-carryfill"></span></div>
+          <div data-hf-id="hf-ohws" id="s3-carryval" class="mono" data-layout-allow-overlap="true">0.55</div>
+          <div data-hf-id="hf-o2o0" id="s3-arrow">↓</div>
+        </div>
+        <div data-hf-id="hf-lr54" id="s3-code" class="panel">
+          <div data-hf-id="hf-40gg" id="s3-badges">
+            <span data-hf-id="hf-9cbl" class="pill pill-amber">excl</span>
+            <span data-hf-id="hf-zfnf" class="pill pill-emerald" id="s3-rulecount">68 rules</span>
+          </div>
+          <div data-hf-id="hf-9lbt" class="code" id="s3-codetext"><span data-hf-id="hf-85re" class="k">rule</span> produce-heavy-vehicle {
+  <span data-hf-id="hf-8of0" class="k">priority</span> <span data-hf-id="hf-o4r3" class="n">475</span>
+  <span data-hf-id="hf-qv0s" class="k">category</span> produce-vehicle <span data-hf-id="hf-i064" class="k">exclusive</span>
+  <span data-hf-id="hf-fpl9" class="k">do</span> produce-heavy-vehicle
+  <span data-hf-id="hf-fz8r" class="k">require</span> vehicle-weight &gt; <span data-hf-id="hf-4iyy" class="n">0.1</span>
+  <span data-hf-id="hf-c6bv" class="k">require</span> has-role(war-factory)
+<span data-hf-id="hf-zu5r" id="s3-line-cap">  <span data-hf-id="hf-bs0u" class="k">require</span> heavy-vehicle-count &lt; army-cap(<span data-hf-id="hf-dxcm" class="n">1.0</span>, <span data-hf-id="hf-adbp" class="n">8.0</span>, <span data-hf-id="hf-54n6" id="s3-slot" data-layout-allow-overflow="true"><span data-hf-id="hf-7pp0" id="s3-fly">0.55</span></span>)</span>}</div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 4 — Compiled rules ============ -->
+      <div data-hf-id="hf-tvie" id="s4" class="clip scene" data-start="16.3" data-duration="5" data-track-index="4">
+        <div data-hf-id="hf-stmh" id="s4-over" class="overline">
+          Rules execute at game speed. The model never sees a unit.
+        </div>
+        <div data-hf-id="hf-1fys" id="s4-panel" class="panel">
+          <div data-hf-id="hf-fgxb" id="s4-head">
+            <div data-hf-id="hf-0cad" id="s4-title">Compiled Rules</div>
+            <span data-hf-id="hf-14mr" class="pill pill-emerald">68 rules</span>
+          </div>
+          <div data-hf-id="hf-bwqw" id="s4-cat" class="mono">produce_vehicle<span data-hf-id="hf-m58f" class="count">7</span></div>
+          <div data-hf-id="hf-s3j5" class="rrow" id="rr1">
+            <div data-hf-id="hf-sijt" class="top">
+              <span data-hf-id="hf-hknz" class="pri mono">480</span>
+              <span data-hf-id="hf-yfol" class="rname">produce-vehicle</span>
+              <span data-hf-id="hf-92ut" class="pill pill-amber">excl</span>
+            </div>
+            <div data-hf-id="hf-dnen" class="cond">HasRole("war_factory") &amp;&amp; !QueueBusy("Vehicle") &amp;&amp; Cash() &gt;= 800</div>
+          </div>
+          <div data-hf-id="hf-w1n6" class="rrow" id="rr2">
+            <div data-hf-id="hf-8kpp" class="top">
+              <span data-hf-id="hf-1hl3" class="pri mono">475</span>
+              <span data-hf-id="hf-jhtz" class="rname">produce-heavy-vehicle</span>
+              <span data-hf-id="hf-a9rw" class="pill pill-amber">excl</span>
+            </div>
+            <div data-hf-id="hf-1axa" class="cond">HasRole("tech_center") &amp;&amp; CanBuildRole("heavy_tank") &amp;&amp; Cash() &gt;= 1200</div>
+          </div>
+          <div data-hf-id="hf-zzr7" class="rrow" id="rr3">
+            <div data-hf-id="hf-9rms" class="top">
+              <span data-hf-id="hf-48s1" class="pri mono">460</span>
+              <span data-hf-id="hf-fhkn" class="rname">produce-siege-vehicle</span>
+              <span data-hf-id="hf-9vgv" class="pill pill-amber">excl</span>
+            </div>
+            <div data-hf-id="hf-jkco" class="cond">HasRole("radar") &amp;&amp; CanBuildRole("artillery") &amp;&amp; Cash() &gt;= 900</div>
+          </div>
+          <div data-hf-id="hf-nj3o" id="s4-stats">
+            68 rules available · <span data-hf-id="hf-mvya" class="hot" id="s4-fired">0</span> fired ·
+            <span data-hf-id="hf-8800" id="s4-matched">0</span> matched
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 5 — Mark ============ -->
+      <div data-hf-id="hf-wo12" id="s5" class="clip scene" data-start="21.3" data-duration="3.6" data-track-index="5">
+        <div data-hf-id="hf-6oqu" id="s5-mark">VIMY</div>
+        <div data-hf-id="hf-u43o" id="s5-rule"></div>
+        <div data-hf-id="hf-d57n" id="s5-tag">LLM-written doctrine. Deterministic execution.</div>
+        <div data-hf-id="hf-h2ae" id="s5-url" class="mono">nstehr.github.io/vimy</div>
+      </div>
+
+      <!-- ===================== AUDIO ===================== -->
+      <audio data-hf-id="hf-u9z3" id="bgm" src="assets/music/happy-beats-business-moves-vol-11-by-ende-dot-app.mp3" data-start="0" data-duration="24.9" data-track-index="40" data-volume="1"></audio>
+
+      <!-- Scene 1: directive typing (24 ticks, 0.15s apart, cycling 6 keypresses) -->
+      <audio data-hf-id="hf-8bcn" id="kp01" src="assets/sfx/keyboard/keypress-003.wav" data-start="0.86" data-duration="0.25" data-track-index="41" data-volume="0.2"></audio>
+      <audio data-hf-id="hf-ozhi" id="kp02" src="assets/sfx/keyboard/keypress-007.wav" data-start="1.01" data-duration="0.25" data-track-index="42" data-volume="0.18"></audio>
+      <audio data-hf-id="hf-50ah" id="kp03" src="assets/sfx/keyboard/keypress-011.wav" data-start="1.16" data-duration="0.25" data-track-index="43" data-volume="0.21"></audio>
+      <audio data-hf-id="hf-df8d" id="kp04" src="assets/sfx/keyboard/keypress-015.wav" data-start="1.31" data-duration="0.25" data-track-index="44" data-volume="0.19"></audio>
+      <audio data-hf-id="hf-x9on" id="kp05" src="assets/sfx/keyboard/keypress-019.wav" data-start="1.46" data-duration="0.25" data-track-index="45" data-volume="0.2"></audio>
+      <audio data-hf-id="hf-imja" id="kp06" src="assets/sfx/keyboard/keypress-023.wav" data-start="1.61" data-duration="0.25" data-track-index="46" data-volume="0.18"></audio>
+      <audio data-hf-id="hf-p0l6" id="kp07" src="assets/sfx/keyboard/keypress-007.wav" data-start="1.76" data-duration="0.25" data-track-index="47" data-volume="0.21"></audio>
+      <audio data-hf-id="hf-8qn2" id="kp08" src="assets/sfx/keyboard/keypress-003.wav" data-start="1.91" data-duration="0.25" data-track-index="48" data-volume="0.19"></audio>
+      <audio data-hf-id="hf-9mh8" id="kp09" src="assets/sfx/keyboard/keypress-015.wav" data-start="2.06" data-duration="0.25" data-track-index="49" data-volume="0.2"></audio>
+      <audio data-hf-id="hf-k6b6" id="kp10" src="assets/sfx/keyboard/keypress-011.wav" data-start="2.21" data-duration="0.25" data-track-index="50" data-volume="0.18"></audio>
+      <audio data-hf-id="hf-68xz" id="kp11" src="assets/sfx/keyboard/keypress-023.wav" data-start="2.36" data-duration="0.25" data-track-index="51" data-volume="0.21"></audio>
+      <audio data-hf-id="hf-hefc" id="kp12" src="assets/sfx/keyboard/keypress-019.wav" data-start="2.51" data-duration="0.25" data-track-index="52" data-volume="0.19"></audio>
+      <audio data-hf-id="hf-17mn" id="kp13" src="assets/sfx/keyboard/keypress-003.wav" data-start="2.66" data-duration="0.25" data-track-index="53" data-volume="0.2"></audio>
+      <audio data-hf-id="hf-siqw" id="kp14" src="assets/sfx/keyboard/keypress-011.wav" data-start="2.81" data-duration="0.25" data-track-index="54" data-volume="0.18"></audio>
+      <audio data-hf-id="hf-i5wr" id="kp15" src="assets/sfx/keyboard/keypress-007.wav" data-start="2.96" data-duration="0.25" data-track-index="55" data-volume="0.21"></audio>
+      <audio data-hf-id="hf-r6xj" id="kp16" src="assets/sfx/keyboard/keypress-015.wav" data-start="3.11" data-duration="0.25" data-track-index="56" data-volume="0.19"></audio>
+      <audio data-hf-id="hf-njqc" id="kp17" src="assets/sfx/keyboard/keypress-023.wav" data-start="3.26" data-duration="0.25" data-track-index="57" data-volume="0.2"></audio>
+      <audio data-hf-id="hf-wmh3" id="kp18" src="assets/sfx/keyboard/keypress-019.wav" data-start="3.41" data-duration="0.25" data-track-index="58" data-volume="0.18"></audio>
+      <audio data-hf-id="hf-w5o1" id="kp19" src="assets/sfx/keyboard/keypress-011.wav" data-start="3.56" data-duration="0.25" data-track-index="59" data-volume="0.21"></audio>
+      <audio data-hf-id="hf-hdqe" id="kp20" src="assets/sfx/keyboard/keypress-003.wav" data-start="3.71" data-duration="0.25" data-track-index="60" data-volume="0.19"></audio>
+      <audio data-hf-id="hf-3z9t" id="kp21" src="assets/sfx/keyboard/keypress-015.wav" data-start="3.86" data-duration="0.25" data-track-index="61" data-volume="0.2"></audio>
+      <audio data-hf-id="hf-wjqh" id="kp22" src="assets/sfx/keyboard/keypress-007.wav" data-start="4.01" data-duration="0.25" data-track-index="62" data-volume="0.18"></audio>
+      <audio data-hf-id="hf-z416" id="kp23" src="assets/sfx/keyboard/keypress-019.wav" data-start="4.16" data-duration="0.25" data-track-index="63" data-volume="0.21"></audio>
+      <audio data-hf-id="hf-8gkl" id="kp24" src="assets/sfx/keyboard/keypress-023.wav" data-start="4.31" data-duration="0.25" data-track-index="64" data-volume="0.19"></audio>
+
+      <!-- beat-locked: 5.80s strong cue — Update press + cut to doctrine -->
+      <audio data-hf-id="hf-6x4s" id="sfx-click" src="assets/sfx/ui/click2.ogg" data-start="5.78" data-duration="0.055" data-track-index="65" data-volume="0.55"></audio>
+
+      <!-- beat-grid: weight bars settle at 6.86 / 7.91 / 8.96 / 10.01 -->
+      <audio data-hf-id="hf-vp5p" id="sfx-bar1" src="assets/sfx/impact/impactSoft_medium_000.ogg" data-start="6.86" data-duration="0.118" data-track-index="66" data-volume="0.3"></audio>
+      <audio data-hf-id="hf-v93c" id="sfx-bar2" src="assets/sfx/impact/impactSoft_medium_000.ogg" data-start="7.91" data-duration="0.118" data-track-index="67" data-volume="0.3"></audio>
+      <audio data-hf-id="hf-x1mo" id="sfx-bar3" src="assets/sfx/impact/impactSoft_medium_000.ogg" data-start="8.96" data-duration="0.118" data-track-index="68" data-volume="0.34"></audio>
+      <audio data-hf-id="hf-emor" id="sfx-bar4" src="assets/sfx/impact/impactSoft_medium_000.ogg" data-start="10.01" data-duration="0.118" data-track-index="69" data-volume="0.3"></audio>
+
+      <!-- beat-locked: 12.65s strong cue — 0.55 seats into army-cap() -->
+      <audio data-hf-id="hf-5zax" id="sfx-seat" src="assets/sfx/impact/impactSoft_medium_001.ogg" data-start="12.65" data-duration="0.183" data-track-index="70" data-volume="0.55"></audio>
+      <audio data-hf-id="hf-wdtn" id="sfx-badge1" src="assets/sfx/ui/rollover2.ogg" data-start="12.95" data-duration="0.057" data-track-index="71" data-volume="0.22"></audio>
+      <audio data-hf-id="hf-zlm4" id="sfx-badge2" src="assets/sfx/ui/rollover2.ogg" data-start="13.15" data-duration="0.057" data-track-index="72" data-volume="0.22"></audio>
+
+      <!-- beat-grid: rule rows at 17.91 (strong) / 18.96 / 20.02 -->
+      <audio data-hf-id="hf-c0fp" id="sfx-rr1" src="assets/sfx/ui/click2.ogg" data-start="17.91" data-duration="0.055" data-track-index="73" data-volume="0.3"></audio>
+      <audio data-hf-id="hf-ia25" id="sfx-rr2" src="assets/sfx/ui/click2.ogg" data-start="18.96" data-duration="0.055" data-track-index="74" data-volume="0.3"></audio>
+      <audio data-hf-id="hf-5a13" id="sfx-rr3" src="assets/sfx/ui/click2.ogg" data-start="20.02" data-duration="0.055" data-track-index="75" data-volume="0.3"></audio>
+
+      <!-- beat-locked: 22.65s strong cue — VIMY lands -->
+      <audio data-hf-id="hf-gezx" id="sfx-mark" src="assets/sfx/impact/impactBell_heavy_000.ogg" data-start="22.65" data-duration="1.48" data-track-index="76" data-volume="0.6"></audio>
+    </div>
+
+    <script src="audio-data.js"></script>
+    <script>
+      (function () {
+        var tl = gsap.timeline({ paused: true });
+        var DUR = 24.9;
+
+        // ---------------------------------------------------------------
+        // Persistent chrome: the tick counter runs the whole way through.
+        // ---------------------------------------------------------------
+        var tickEl = document.getElementById("tickval");
+        var tickState = { v: 18420 };
+        tl.to(
+          tickState,
+          {
+            v: 19412,
+            duration: 21.3,
+            ease: "none",
+            onUpdate: function () {
+              tickEl.textContent = Math.round(tickState.v);
+            },
+          },
+          0
+        );
+
+        // Scanline sweep — one slow ambient pass down the frame.
+        tl.fromTo(
+          "#bg-scanline",
+          { y: 104, opacity: 0 },
+          { y: 1000, opacity: 0.55, duration: 10, ease: "sine.inOut" },
+          0.4
+        );
+        tl.to("#bg-scanline", { y: 104, opacity: 0.2, duration: 9, ease: "sine.inOut" }, 11.2);
+
+        // Tick rail drifts slowly the whole video.
+        tl.fromTo("#bg-ghost", { y: -48 }, { y: 48, duration: DUR, ease: "none" }, 0);
+
+        // Music: the tweens carry the absolute level (data-volume stays 1),
+        // so the bed sits at 0.32 and fades out under the mark.
+        tl.fromTo("#bgm", { volume: 0 }, { volume: 0.32, duration: 0.9, ease: "sine.out" }, 0);
+        tl.to("#bgm", { volume: 0, duration: 1.4, ease: "power2.in" }, 23.4);
+
+        // ---------------------------------------------------------------
+        // Scene 1 — Directive (0 → 5.8)
+        // ---------------------------------------------------------------
+        tl.fromTo("#chrome-nav", { opacity: 0, y: -22 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 0.15);
+        tl.fromTo("#chrome-rail", { opacity: 0 }, { opacity: 1, duration: 0.7, ease: "sine.out" }, 0.4);
+        tl.fromTo("#s1-over", { opacity: 0, x: -26 }, { opacity: 1, x: 0, duration: 0.55, ease: "power2.out" }, 0.3);
+        tl.fromTo("#s1-panel", { opacity: 0, y: 34 }, { opacity: 1, y: 0, duration: 0.6, ease: "expo.out" }, 0.45);
+
+        // Typing: an object tween drives the slice, so every frame is a
+        // pure function of time.
+        var DIRECTIVE =
+          "Naval superiority. Build up ships that can attack land first, then get sea dominance.";
+        var typedEl = document.getElementById("s1-typed");
+        var typeState = { n: 0 };
+        tl.to(
+          typeState,
+          {
+            n: DIRECTIVE.length,
+            duration: 3.6,
+            ease: "none",
+            onUpdate: function () {
+              typedEl.textContent = DIRECTIVE.slice(0, Math.round(typeState.n));
+            },
+          },
+          0.8
+        );
+
+        // Caret blink — finite repeat count, never -1.
+        var blinkCycle = 0.8;
+        tl.to(
+          "#s1-caret",
+          {
+            opacity: 0,
+            duration: blinkCycle / 2,
+            ease: "steps(1)",
+            yoyo: true,
+            repeat: Math.max(0, Math.floor(5.2 / blinkCycle) - 1),
+          },
+          0.6
+        );
+
+        // Cursor travels to Update once typing settles, then presses.
+        // beat-locked: 5.80s (strong cue) — press and cut land together.
+        tl.fromTo(
+          "#s1-cursor",
+          { opacity: 0, x: 120, y: 90 },
+          { opacity: 1, x: 0, y: 0, duration: 0.75, ease: "power2.inOut" },
+          4.55
+        );
+        tl.to("#s1-button", { scale: 0.955, duration: 0.12, ease: "power1.in" }, 5.68);
+        tl.to("#s1-cursor", { scale: 0.86, duration: 0.12, ease: "power1.in" }, 5.68);
+
+        // ---------------------------------------------------------------
+        // Scene 2 — Doctrine (5.8 → 11.4)
+        // ---------------------------------------------------------------
+        tl.fromTo("#s2-over", { opacity: 0, y: -18 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 5.85);
+        tl.fromTo("#s2-panel", { opacity: 0, scale: 0.985 }, { opacity: 1, scale: 1, duration: 0.5, ease: "expo.out" }, 5.88);
+        tl.fromTo("#s2-title", { opacity: 0, x: -34 }, { opacity: 1, x: 0, duration: 0.6, ease: "power4.out" }, 5.98);
+        tl.fromTo("#s2-meta", { opacity: 0 }, { opacity: 1, duration: 0.5, ease: "sine.out" }, 6.25);
+
+        // beat-grid: bar 1 at 6.86s, bar 2 at 7.91s, bar 3 at 8.96s, bar 4 at 10.01s
+        // (every OTHER beat at 114.84 BPM — each row carries a readable value)
+        var WROWS = [
+          { sel: "#row-eco", at: 6.86, val: 0.8 },
+          { sel: "#row-inf", at: 7.91, val: 0.15 },
+          { sel: "#row-veh", at: 8.96, val: 0.55 },
+          { sel: "#row-nav", at: 10.01, val: 0.65 },
+        ];
+        var EASES = ["power3.out", "expo.out", "power4.out", "back.out(1.3)"];
+
+        WROWS.forEach(function (row, i) {
+          var el = document.querySelector(row.sel);
+          var fill = el.querySelector(".wfill");
+          var valEl = el.querySelector(".wval");
+          var lead = row.at - 0.3;
+
+          tl.fromTo(el, { opacity: 0, x: -20 }, { opacity: 1, x: 0, duration: 0.3, ease: "power2.out" }, lead);
+          tl.fromTo(fill, { scaleX: 0 }, { scaleX: row.val, duration: 0.55, ease: EASES[i] }, lead);
+
+          var counter = { v: 0 };
+          tl.to(
+            counter,
+            {
+              v: row.val,
+              duration: 0.55,
+              ease: EASES[i],
+              onUpdate: function () {
+                valEl.textContent = counter.v.toFixed(2);
+              },
+            },
+            lead
+          );
+        });
+
+        // Resolve: everything but Vehicle recedes, so Scene 3 has a subject.
+        tl.to("#row-eco, #row-inf, #row-nav", { opacity: 0.38, duration: 0.5, ease: "sine.inOut" }, 10.75);
+        tl.to("#row-veh .wval", { color: "#34d399", duration: 0.4, ease: "sine.out" }, 10.75);
+
+        // ---------------------------------------------------------------
+        // Scene 3 — Compilation (11.4 → 16.3)
+        // ---------------------------------------------------------------
+        tl.fromTo("#s3-over", { opacity: 0, y: -18 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 11.5);
+        tl.fromTo("#s3-carry", { opacity: 0, y: -26 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 11.45);
+        tl.fromTo("#s3-carryfill", { scaleX: 0.55 }, { scaleX: 0.55, duration: 0.01, ease: "none" }, 11.45);
+        tl.fromTo("#s3-code", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.65, ease: "expo.out" }, 11.75);
+
+        // The weight physically becomes the rule's argument.
+        // beat-locked: 12.65s (strong cue)
+        tl.to("#s3-carryval", { opacity: 0, duration: 0.16, ease: "sine.in" }, 12.2);
+        tl.fromTo(
+          "#s3-fly",
+          { x: -60, y: -488, scale: 1.88, opacity: 0 },
+          { opacity: 1, duration: 0.14, ease: "none" },
+          12.16
+        );
+        tl.to("#s3-fly", { x: 0, y: 0, scale: 1, duration: 0.49, ease: "power3.inOut" }, 12.16);
+        tl.fromTo(
+          "#s3-line-cap",
+          { backgroundColor: "rgba(52,211,153,0)" },
+          { backgroundColor: "rgba(52,211,153,0.2)", duration: 0.16, ease: "power2.out" },
+          12.65
+        );
+        tl.to("#s3-line-cap", { backgroundColor: "rgba(52,211,153,0)", duration: 0.85, ease: "sine.out" }, 12.81);
+
+        tl.fromTo(".pill-amber", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)" }, 12.95);
+        tl.fromTo("#s3-rulecount", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.3, ease: "back.out(2)" }, 13.15);
+
+        // Breathe: the code panel settles with one slow push.
+        tl.fromTo("#s3-codetext", { scale: 1 }, { scale: 1.012, duration: 2.6, ease: "sine.inOut" }, 13.4);
+
+        // ---------------------------------------------------------------
+        // Scene 4 — Compiled rules (16.3 → 21.3)
+        // ---------------------------------------------------------------
+        tl.fromTo("#s4-over", { opacity: 0, y: -18 }, { opacity: 1, y: 0, duration: 0.45, ease: "power2.out" }, 16.4);
+        tl.fromTo("#s4-panel", { opacity: 0, y: 34 }, { opacity: 1, y: 0, duration: 0.55, ease: "expo.out" }, 16.45);
+        tl.fromTo("#s4-head", { opacity: 0, x: -24 }, { opacity: 1, x: 0, duration: 0.45, ease: "power3.out" }, 16.65);
+        tl.fromTo("#s4-cat", { opacity: 0, scaleY: 0.6 }, { opacity: 1, scaleY: 1, duration: 0.4, ease: "power2.out" }, 16.95);
+
+        // beat-grid: rule 1 at 17.91s (strong cue), rule 2 at 18.96s, rule 3 at 20.02s
+        [
+          { sel: "#rr1", at: 17.91, ease: "power3.out" },
+          { sel: "#rr2", at: 18.96, ease: "expo.out" },
+          { sel: "#rr3", at: 20.02, ease: "power2.out" },
+        ].forEach(function (r) {
+          tl.fromTo(r.sel, { opacity: 0, x: 44 }, { opacity: 1, x: 0, duration: 0.42, ease: r.ease }, r.at);
+        });
+
+        var firedEl = document.getElementById("s4-fired");
+        var matchedEl = document.getElementById("s4-matched");
+        var stats = { fired: 0, matched: 0 };
+        tl.fromTo("#s4-stats", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "sine.out" }, 17.3);
+        tl.to(
+          stats,
+          {
+            fired: 41,
+            matched: 1284,
+            duration: 3.4,
+            ease: "power1.out",
+            onUpdate: function () {
+              firedEl.textContent = Math.round(stats.fired);
+              matchedEl.textContent = Math.round(stats.matched).toLocaleString("en-US");
+            },
+          },
+          17.4
+        );
+
+        // ---------------------------------------------------------------
+        // Scene 5 — Mark (21.3 → 24.9)
+        // ---------------------------------------------------------------
+        // beat-locked: 22.65s (strong cue) — the wordmark lands.
+        tl.fromTo(
+          "#s5-mark",
+          { opacity: 0, scale: 1.14, y: 26 },
+          { opacity: 1, scale: 1, y: 0, duration: 0.7, ease: "expo.out" },
+          22.65
+        );
+        tl.fromTo("#s5-rule", { scaleX: 0 }, { scaleX: 1, duration: 0.55, ease: "power4.out" }, 22.92);
+        tl.fromTo("#s5-tag", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.55, ease: "power2.out" }, 23.17);
+        tl.fromTo("#s5-url", { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "sine.out" }, 23.6);
+
+        // ---------------------------------------------------------------
+        // Audio-reactive: pre-extracted RMS/bass breathes the ambient glow
+        // and the ghost type. Per-frame sampling, no runtime analysis.
+        // ---------------------------------------------------------------
+        var glow = document.getElementById("bg-glow");
+        var glow2 = document.getElementById("bg-glow-2");
+        var ghost = document.getElementById("bg-ghost");
+
+        function applyEnergy(rms, bass) {
+          glow.style.opacity = (0.72 + rms * 0.28).toFixed(3);
+          glow.style.transform = "scale(" + (1 + bass * 0.06).toFixed(4) + ")";
+          glow2.style.opacity = (0.6 + bass * 0.4).toFixed(3);
+          ghost.style.opacity = (0.72 + rms * 0.28).toFixed(3);
+        }
+
+        for (var f = 0; f < AUDIO_DATA.totalFrames; f++) {
+          var t = f / AUDIO_DATA.fps;
+          if (t > DUR) break;
+          tl.call(
+            (function (row) {
+              return function () {
+                applyEnergy(row[0], row[1]);
+              };
+            })(AUDIO_DATA.frames[f]),
+            [],
+            t
+          );
+        }
+
+        window.__timelines["main"] = tl;
+        tl.seek(0);
+      })();
+    </script>
+  </body>
+</html>

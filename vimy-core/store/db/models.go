@@ -61,6 +61,10 @@ type Game struct {
 	StrikeBlockedOutOfReach  sql.NullInt64   `json:"strike_blocked_out_of_reach"`
 	StrikeBlockedBlindAtBase sql.NullInt64   `json:"strike_blocked_blind_at_base"`
 	StrikeBlockedEnRoute     sql.NullInt64   `json:"strike_blocked_en_route"`
+	RallyCount               sql.NullInt64   `json:"rally_count"`
+	RallyMembersSum          sql.NullInt64   `json:"rally_members_sum"`
+	RallyIdleSum             sql.NullInt64   `json:"rally_idle_sum"`
+	RallySpreadSum           sql.NullInt64   `json:"rally_spread_sum"`
 }
 
 type Lesson struct {

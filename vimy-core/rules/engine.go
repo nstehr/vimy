@@ -613,3 +613,19 @@ func (e *Engine) StrikeBlockedCounts() map[string]int {
 	}
 	return out
 }
+
+// RallyShapeCounts is how squads looked when told to re-gather: how many
+// members they had, how many could be commanded, and how far the furthest had
+// strayed. Summed, with a rally count to divide by.
+//
+// Copied under the memory lock, like StrikeBlockedCounts, because the
+// retrospective runs asynchronously and Reset wipes memory behind it.
+func (e *Engine) RallyShapeCounts() (rallies, membersSum, idleSum, spreadSum int) {
+	e.LockMemory()
+	defer e.UnlockMemory()
+	s, _ := e.Memory["rallyShape"].(*rallyShape)
+	if s == nil {
+		return 0, 0, 0, 0
+	}
+	return s.Rallies, s.MembersSum, s.IdleSum, s.SpreadSum
+}

@@ -200,3 +200,25 @@ func TestSpendFlagsItselfWhenItExceedsEarnings(t *testing.T) {
 		t.Error("an unknown earned figure must not flag the estimate")
 	}
 }
+
+// The three rally numbers exist to separate two faults, so the means must be
+// per-rally and must not divide by zero for a game that never rallied.
+func TestRallyMeansSeparateTheTwoFaults(t *testing.T) {
+	// 10 rallies: squads of 6, only 2 commandable, furthest 20 cells out.
+	// That shape indicts the predicate, not the 8-cell radius.
+	o := store.Outcome{RallyCount: 10, RallyMembersSum: 60, RallyIdleSum: 20, RallySpreadSum: 200}
+	if got := o.MeanRallyMembers(); got != 6 {
+		t.Errorf("members = %.1f, want 6", got)
+	}
+	if got := o.MeanRallyCommandable(); got != 2 {
+		t.Errorf("commandable = %.1f, want 2", got)
+	}
+	if got := o.MeanRallySpread(); got != 20 {
+		t.Errorf("spread = %.1f, want 20", got)
+	}
+
+	var never store.Outcome
+	if never.MeanRallyMembers() != 0 || never.MeanRallySpread() != 0 {
+		t.Error("a game with no rallies must report zero, not divide by zero")
+	}
+}

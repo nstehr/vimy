@@ -2694,6 +2694,10 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 					aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: false, LastTick: env.State.Tick}
 					recordAssaultPhase(env, name, phaseRally, "")
 					recordStrikeBlocked(env, StrikeBlockedUnclumped)
+					// ids is the IDLE members — the ones this order can reach.
+					// members is all of them, which is what SquadClumped judges.
+					members, spread := squadSpread(env, name, cx, cy)
+					recordRallyShape(env, members, len(ids), spread)
 					return sendAttackMove(env, conn, ids, cx, cy)
 				}
 				aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: true, LastTick: env.State.Tick}

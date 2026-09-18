@@ -105,6 +105,11 @@ func writeLedger(w io.Writer, o store.Outcome) {
 				o.StrikeBlockedNotBuilding, o.StrikeBlockedOutOfReach)
 		}
 	}
+	if o.HasRallies {
+		fmt.Fprintf(w, "  rallies    %d, squad had %.1f members and %.1f were commandable, "+
+			"furthest %.0f cells out (clump needs 8)\n",
+			o.RallyCount, o.MeanRallyMembers(), o.MeanRallyCommandable(), o.MeanRallySpread())
+	}
 	if o.HasHarvesters && o.HarvesterSamples() > 0 {
 		fmt.Fprintf(w, "  harvesters mining %d%%, travelling %d%%, at refinery %d%%, idle %d%%"+
 			"  (mean haul %.1f cells)\n",

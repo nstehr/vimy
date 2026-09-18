@@ -27,6 +27,10 @@ type retrospectiveSnapshot struct {
 	army            armyValueTracker
 	harvesters      harvesterTracker
 	strikeBlocked   map[string]int
+	rallyCount      int
+	rallyMembers    int
+	rallyIdle       int
+	rallySpread     int
 	engineStats     model.Player
 	store           *store.Store
 	// Where this game's states were written, for replay. Empty without
@@ -56,6 +60,8 @@ func (s *Strategist) snapshotForReview(won bool, exportPath string) *retrospecti
 		s.history[n-1].RuleStats = finalStats
 	}
 
+	rc, rm, ri, rs := s.engine.RallyShapeCounts()
+
 	snap := &retrospectiveSnapshot{
 		ourFaction:      s.faction,
 		opponentFaction: s.opponentFaction,
@@ -66,6 +72,10 @@ func (s *Strategist) snapshotForReview(won bool, exportPath string) *retrospecti
 		army:            s.army,
 		harvesters:      s.harvesters,
 		strikeBlocked:   s.engine.StrikeBlockedCounts(),
+		rallyCount:      rc,
+		rallyMembers:    rm,
+		rallyIdle:       ri,
+		rallySpread:     rs,
 		store:           s.store,
 		exportPath:      exportPath,
 		directive:       s.directive,
@@ -209,6 +219,11 @@ func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveRev
 			StrikeBlockedUnclumped:   snap.strikeBlocked[rules.StrikeBlockedUnclumped],
 			StrikeBlockedBlindAtBase: snap.strikeBlocked[rules.StrikeBlockedBlindAtBase],
 			StrikeBlockedEnRoute:     snap.strikeBlocked[rules.StrikeBlockedNoTargetEnRoute],
+
+			RallyCount:               snap.rallyCount,
+			RallyMembersSum:          snap.rallyMembers,
+			RallyIdleSum:             snap.rallyIdle,
+			RallySpreadSum:           snap.rallySpread,
 			StrikeBlockedNotBuilding: snap.strikeBlocked[rules.StrikeBlockedNotBuilding],
 			StrikeBlockedOutOfReach:  snap.strikeBlocked[rules.StrikeBlockedOutOfReach],
 

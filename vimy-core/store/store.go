@@ -76,8 +76,10 @@ type GameContext struct {
 	StrikeBlockedUnclumped   int
 	StrikeBlockedBlindAtBase int
 	StrikeBlockedEnRoute     int
-	StrikeBlockedNotBuilding int
-	StrikeBlockedOutOfReach  int
+
+	RallyCount, RallyMembersSum, RallyIdleSum, RallySpreadSum int
+	StrikeBlockedNotBuilding                                  int
+	StrikeBlockedOutOfReach                                   int
 
 	OurArmyPeak       int
 	OurArmyMean       int
@@ -331,6 +333,11 @@ func (s *Store) ArchiveGame(
 		StrikeBlockedUnclumped:   sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedUnclumped), Valid: true},
 		StrikeBlockedBlindAtBase: sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedBlindAtBase), Valid: true},
 		StrikeBlockedEnRoute:     sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedEnRoute), Valid: true},
+
+		RallyCount:               sql.NullInt64{Int64: int64(gameCtx.RallyCount), Valid: true},
+		RallyMembersSum:          sql.NullInt64{Int64: int64(gameCtx.RallyMembersSum), Valid: true},
+		RallyIdleSum:             sql.NullInt64{Int64: int64(gameCtx.RallyIdleSum), Valid: true},
+		RallySpreadSum:           sql.NullInt64{Int64: int64(gameCtx.RallySpreadSum), Valid: true},
 		StrikeBlockedNotBuilding: sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedNotBuilding), Valid: true},
 		StrikeBlockedOutOfReach:  sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedOutOfReach), Valid: true},
 
@@ -801,10 +808,33 @@ type Outcome struct {
 	StrikeBlockedEnRoute                              int
 	StrikeBlockedNotBuilding, StrikeBlockedOutOfReach int
 
+	// How squads looked when told to re-gather. Means, not sums, via the
+	// accessors below.
+	RallyCount, RallyMembersSum, RallyIdleSum, RallySpreadSum int
+
 	// Which fields the row actually carried. Games predating a migration have
 	// NULL, which is not zero: "destroyed no buildings" and "was not counting
 	// buildings" are different findings.
-	HasTrade, HasArmy, HasLosses, HasHarvesters, HasStrikes bool
+	HasTrade, HasArmy, HasLosses, HasHarvesters, HasStrikes, HasRallies bool
+}
+
+// MeanRallyMembers is how many units a squad had when told to re-gather.
+func (o Outcome) MeanRallyMembers() float64 { return o.rallyMean(o.RallyMembersSum) }
+
+// MeanRallyCommandable is how many of them the rally order could actually
+// reach. Well below MeanRallyMembers means the predicate is the fault, not the
+// radius.
+func (o Outcome) MeanRallyCommandable() float64 { return o.rallyMean(o.RallyIdleSum) }
+
+// MeanRallySpread is how far the furthest member had strayed, in cells,
+// against SquadClumped's 8.
+func (o Outcome) MeanRallySpread() float64 { return o.rallyMean(o.RallySpreadSum) }
+
+func (o Outcome) rallyMean(sum int) float64 {
+	if o.RallyCount == 0 {
+		return 0
+	}
+	return float64(sum) / float64(o.RallyCount)
 }
 
 // HarvesterSamples is the denominator for the four shares.
@@ -872,6 +902,12 @@ func (s *Store) GameOutcome(ctx context.Context, id int64) (Outcome, error) {
 		StrikeBlockedNotBuilding: int(r.StrikeBlockedNotBuilding.Int64),
 		StrikeBlockedOutOfReach:  int(r.StrikeBlockedOutOfReach.Int64),
 
+		RallyCount:      int(r.RallyCount.Int64),
+		RallyMembersSum: int(r.RallyMembersSum.Int64),
+		RallyIdleSum:    int(r.RallyIdleSum.Int64),
+		RallySpreadSum:  int(r.RallySpreadSum.Int64),
+
+		HasRallies:    r.RallyCount.Valid && r.RallyCount.Int64 > 0,
 		HasStrikes:    r.StrikeBlockedUnclumped.Valid,
 		HasHarvesters: r.HarvesterMining.Valid,
 		HasTrade:      r.EngineKillsCost.Valid && r.EngineDeathsCost.Valid,

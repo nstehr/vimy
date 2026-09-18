@@ -1,0 +1,1 @@
+Vimy plays Red Alert without the LLM ever touching a unit. The model writes a doctrine — just weights — and a compiler turns those weights into deterministic rules that run at game speed. Go sidecar, OpenRA mod, and a rule language of its own.
