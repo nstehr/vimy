@@ -934,6 +934,18 @@ func ActionDefendCriticalBuilding(env RuleEnv, conn *ipc.Connection) error {
 
 // ActionEmergencyDefendBase covers the case where nothing is idle but nearby
 // units are sitting on stale orders while the base is attacked.
+//
+// It prefers units not committed to an offensive. NearBaseGroundUnits reaches
+// 0.20 of the map diagonal — 36 cells on a 128 map — which covers the ground a
+// squad rallies on and sets out across, so this used to sweep up the assault
+// itself. Game 136 fired it 311 times against the assault's 133, and the squad
+// was commanded to gather and dragged home twice as often as it was told to
+// go: fully commandable at 4.8 of 4.8 members, and still 22 cells apart
+// against a required 8.
+//
+// The fallback to everything is deliberate and is the original intent: when
+// the attack squad IS all there is, a base under attack still has to be
+// answered, and losing the base loses the game whatever the squad was doing.
 func ActionEmergencyDefendBase(env RuleEnv, conn *ipc.Connection) error {
 	enemy := env.NearestEnemy()
 	if enemy == nil {
@@ -943,12 +955,39 @@ func ActionEmergencyDefendBase(env RuleEnv, conn *ipc.Connection) error {
 	if len(nearby) == 0 {
 		return nil
 	}
+	if free := withoutAttackSquads(env, nearby); len(free) > 0 {
+		nearby = free
+	}
 	ids := make([]uint32, len(nearby))
 	for i, u := range nearby {
 		ids[i] = uint32(u.ID)
 	}
 	slog.Info("emergency base defense — recalling nearby units", "count", len(ids), "target", enemy.ID)
 	return sendAttackMove(env, conn, ids, enemy.X, enemy.Y)
+}
+
+// withoutAttackSquads drops units rostered to a squad with the attack role, so
+// a base alarm draws on the garrison before the offensive.
+func withoutAttackSquads(env RuleEnv, units []model.Unit) []model.Unit {
+	committed := make(map[int]bool)
+	for _, sq := range getSquads(env.Memory) {
+		if !strings.EqualFold(sq.Role, "attack") {
+			continue
+		}
+		for _, id := range sq.UnitIDs {
+			committed[id] = true
+		}
+	}
+	if len(committed) == 0 {
+		return units
+	}
+	out := make([]model.Unit, 0, len(units))
+	for _, u := range units {
+		if !committed[u.ID] {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 func ActionNavalDefendBase(env RuleEnv, conn *ipc.Connection) error {

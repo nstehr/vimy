@@ -99,3 +99,59 @@ func TestRepeatedOrdersAreThrottledPerActor(t *testing.T) {
 		t.Error("a different destination must still be sent")
 	}
 }
+
+// A base alarm must draw on the garrison before the offensive. NearBaseGround
+// Units reaches 0.20 of the map diagonal, which covers the ground a squad
+// rallies on, so this used to sweep up the assault itself: game 136 fired the
+// emergency 311 times against the assault's 133.
+func TestEmergencyDefencePrefersTheGarrison(t *testing.T) {
+	env := RuleEnv{
+		Memory: map[string]any{
+			"squads": map[string]*Squad{
+				"ground-attack":  {Name: "ground-attack", Role: "attack", UnitIDs: []int{1, 2}},
+				"ground-defense": {Name: "ground-defense", Role: "defend", UnitIDs: []int{3}},
+			},
+		},
+	}
+	near := []model.Unit{
+		{ID: 1, Type: "2tnk"}, {ID: 2, Type: "2tnk"}, // committed to the assault
+		{ID: 3, Type: "e1"}, {ID: 4, Type: "e1"}, // garrison and unassigned
+	}
+
+	got := withoutAttackSquads(env, near)
+	if len(got) != 2 {
+		t.Fatalf("got %d units, want the 2 not in an attacking squad", len(got))
+	}
+	for _, u := range got {
+		if u.ID == 1 || u.ID == 2 {
+			t.Errorf("unit %d is committed to the assault and must not be recalled", u.ID)
+		}
+	}
+}
+
+// When the offensive IS all there is, a base under attack still has to be
+// answered — losing the base loses the game whatever the squad was doing.
+func TestEmergencyDefenceFallsBackToTheOffensive(t *testing.T) {
+	env := RuleEnv{
+		Memory: map[string]any{
+			"squads": map[string]*Squad{
+				"ground-attack": {Name: "ground-attack", Role: "attack", UnitIDs: []int{1, 2}},
+			},
+		},
+	}
+	near := []model.Unit{{ID: 1, Type: "2tnk"}, {ID: 2, Type: "2tnk"}}
+
+	// The helper returns nothing, and the caller is what falls back.
+	if got := withoutAttackSquads(env, near); len(got) != 0 {
+		t.Fatalf("got %d, want 0: every nearby unit is committed", len(got))
+	}
+}
+
+// No squads at all must not filter everything away.
+func TestEmergencyDefenceWithNoSquads(t *testing.T) {
+	env := RuleEnv{Memory: map[string]any{}}
+	near := []model.Unit{{ID: 1}, {ID: 2}}
+	if got := withoutAttackSquads(env, near); len(got) != 2 {
+		t.Errorf("got %d, want both units when no squad exists", len(got))
+	}
+}
