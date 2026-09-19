@@ -129,13 +129,18 @@ func NewStrategist(engine *rules.Engine, directive string, interval int) *Strate
 		directive = "balanced"
 	}
 	if interval <= 0 {
-		interval = 500
+		// Roughly two minutes of game time. The floor, not the cadence:
+		// replanWorthy events bring it forward when something real happens.
+		interval = 3000
 	}
 	return &Strategist{
 		engine:    engine,
 		directive: directive,
 		interval:  interval,
-		cooldown:  100,
+		// An event still has to wait this long. Even a real signal does not
+		// warrant re-planning twice inside half a minute — the previous plan
+		// has not had time to express itself.
+		cooldown: 600,
 		ready:     make(chan struct{}, 1),
 	}
 }
@@ -409,8 +414,12 @@ func (s *Strategist) UpdateState(gs model.GameState) {
 	s.prevSnap = &snap
 	s.pending = append(s.pending, events...)
 
+	// A timer floor, and events that are actually worth re-planning for. Both
+	// were far too eager: a 500-tick timer and ANY event on a 100-tick
+	// cooldown produced a complete new strategy every ~750 ticks, 30 seconds
+	// of game time, 53 times in game 139.
 	shouldSignal := first || (gs.Tick-s.lastTick >= s.interval)
-	if !shouldSignal && len(events) > 0 && (gs.Tick-s.lastTick >= s.cooldown) {
+	if !shouldSignal && replanWorthy(events) && (gs.Tick-s.lastTick >= s.cooldown) {
 		shouldSignal = true
 	}
 	s.mu.Unlock()

@@ -519,3 +519,35 @@ func formatEvents(events []Event) string {
 	}
 	return b.String()
 }
+
+// Whether an event is worth re-planning the whole strategy for.
+//
+// A doctrine is a complete 15-parameter strategy, and Vimy was writing a new
+// one every ~750 ticks — 53 in game 139, 297 in game 135. A human makes about
+// five strategic decisions in a game: the opening, the first scout, a tech
+// call, a composition change when something is plainly countered, and whether
+// to commit. Fifty re-rolls of a fifteen-dimensional vector is not adaptation,
+// it is drift, and it is why vehicle_weight flipped between 0.70 and 0.20
+// eleven times in a row.
+//
+// The cadence was never really the timer. Any event at all could force a
+// re-plan on a 100-tick cooldown, and two of these fire constantly:
+// harvester_under_attack 68 times in game 139 and first_contact 44. Those are
+// the weather. The rules already answer them — flee-harvesters,
+// scramble-to-harvesters, the defensive squads — and none of that needs a new
+// grand strategy.
+//
+// What remains is what a human would actually stop and re-think for: the plan
+// is being beaten, core infrastructure is gone, the army evaporated, the
+// economy failed, we found them, the game moved phase, or a superweapon came
+// online.
+func replanWorthy(events []Event) bool {
+	for _, e := range events {
+		switch e.Kind {
+		case EventHarvesterUnderAttack, EventFirstContact:
+			continue
+		}
+		return true
+	}
+	return false
+}

@@ -122,7 +122,7 @@ func main() {
 
 	var strategist *agent.Strategist
 	if directive != "" {
-		strategist = agent.NewStrategist(engine, directive, 500)
+		strategist = agent.NewStrategist(engine, directive, 3000)
 	}
 
 	// The only compiler there is, probed now rather than at the first doctrine
