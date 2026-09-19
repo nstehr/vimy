@@ -2834,6 +2834,9 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 		} else {
 			recordAssaultPhase(env, name, phaseHunt, "")
 		}
+		// Sampled here because this is the squad in transit: past the rally
+		// check, committed, and being sent at a target.
+		recordTransit(env, name, tx, ty)
 
 		// Wraps to 1, not 0 — the centroid is only worth the initial approach.
 		if state.Step >= maxStep {

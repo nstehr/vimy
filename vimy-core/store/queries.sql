@@ -15,8 +15,9 @@ INSERT INTO games (
     strike_blocked_unclumped, strike_blocked_no_target,
     strike_blocked_not_building, strike_blocked_out_of_reach,
     strike_blocked_blind_at_base, strike_blocked_en_route,
-    rally_count, rally_members_sum, rally_idle_sum, rally_spread_sum
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    rally_count, rally_members_sum, rally_idle_sum, rally_spread_sum,
+    transit_spread_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id;
 
 -- name: InsertDoctrine :one
@@ -143,6 +144,7 @@ SELECT id, duration_ticks, won, our_faction, opponent_faction,
        strike_blocked_not_building, strike_blocked_out_of_reach,
        strike_blocked_blind_at_base, strike_blocked_en_route,
        rally_count, rally_members_sum, rally_idle_sum, rally_spread_sum,
+       transit_spread_json,
        engine_kills_cost, engine_deaths_cost, engine_buildings_killed,
        engine_earned, our_army_peak, enemy_army_seen_peak,
        infantry_lost, vehicles_lost, infantry_lost_forward, vehicles_lost_forward

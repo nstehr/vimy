@@ -3,6 +3,8 @@ package rules
 import (
 	"log/slog"
 	"math"
+
+	"github.com/nstehr/vimy/vimy-core/model"
 )
 
 // The base assault is already a state machine; it has just never said so. Its
@@ -183,4 +185,122 @@ func squadSpread(env RuleEnv, name string, cx, cy int) (members, spread int) {
 		}
 	}
 	return members, int(math.Sqrt(float64(worst)))
+}
+
+// How a squad holds together on the way in.
+//
+// Game 141 marched the largest army Vimy has fielded at the enemy for 226600
+// ticks, traded 1.02, destroyed 19 buildings on the engine's own target
+// choices, outscored the winner — and reached `strike` zero times. Everything
+// that could stop a strike AT the base has been measured and eliminated:
+// target scoring, strike range, and blind targeting all came back zero across
+// five games. What is left is that the squad does not arrive together. Its
+// spread has sat at 22, 24, 16, 15, 19, 22 cells against a required 8 through
+// fixes to the clump arithmetic, the centroid, the order predicate and two
+// conscription paths.
+//
+// The open question is WHERE it comes apart, and the two answers want
+// different fixes:
+//
+//	tight when far, loose when near   they leave together and drift, so
+//	                                  something pulls them apart in transit —
+//	                                  speed differences, auto-engagement,
+//	                                  losses thinning the column
+//	loose at every range              they never form up at all, and the
+//	                                  rally is not doing its job
+//
+// Sampled in three bands of distance from the target rather than by journey
+// progress, because a squad's journey has no recorded start.
+type transitBand struct {
+	Samples    int
+	MembersSum int
+	// Members within the clump radius of the squad's median centre. The
+	// diagnostic number: spread says how far the worst straggler is, this says
+	// how much of the squad is actually together.
+	NearSum   int
+	SpreadSum int
+}
+
+type transitSpread struct {
+	Far  transitBand // beyond 0.35 of the map diagonal from the target
+	Mid  transitBand // 0.20 to 0.35
+	Near transitBand // inside 0.20, closing on them
+}
+
+// recordTransit samples one evaluation of a squad on its way to a target.
+func recordTransit(env RuleEnv, name string, tx, ty int) {
+	members, near, spread, ok := squadCohesion(env, name)
+	if !ok {
+		return
+	}
+	cx, cy, have := squadCentroid(env, name)
+	if !have {
+		return
+	}
+	mw, mh := float64(env.State.MapWidth), float64(env.State.MapHeight)
+	diag := math.Sqrt(mw*mw + mh*mh)
+	if diag <= 0 {
+		return
+	}
+	dx, dy := float64(tx-cx), float64(ty-cy)
+	frac := math.Sqrt(dx*dx+dy*dy) / diag
+
+	t, _ := env.Memory["transitSpread"].(*transitSpread)
+	if t == nil {
+		t = &transitSpread{}
+		env.Memory["transitSpread"] = t
+	}
+	band := &t.Near
+	switch {
+	case frac > 0.35:
+		band = &t.Far
+	case frac > 0.20:
+		band = &t.Mid
+	}
+	band.Samples++
+	band.MembersSum += members
+	band.NearSum += near
+	band.SpreadSum += spread
+}
+
+// squadCohesion reports the squad's size, how many sit within squadRallyRadius
+// of its median centre, and how far the furthest has strayed.
+func squadCohesion(env RuleEnv, name string) (members, near, spread int, ok bool) {
+	squads := getSquads(env.Memory)
+	sq, found := squads[name]
+	if !found || len(sq.UnitIDs) == 0 {
+		return 0, 0, 0, false
+	}
+	ids := make(map[int]bool, len(sq.UnitIDs))
+	for _, id := range sq.UnitIDs {
+		ids[id] = true
+	}
+	var present []model.Unit
+	for _, u := range env.State.Units {
+		if ids[u.ID] {
+			present = append(present, u)
+		}
+	}
+	if len(present) < 2 {
+		return 0, 0, 0, false
+	}
+	cx, cy := medianXY(present)
+	worst := 0
+	for _, u := range present {
+		dx, dy := u.X-cx, u.Y-cy
+		d := dx*dx + dy*dy
+		if d <= squadRallyRadius*squadRallyRadius {
+			near++
+		}
+		if d > worst {
+			worst = d
+		}
+	}
+	return len(present), near, int(math.Sqrt(float64(worst))), true
+}
+
+// TransitSpread reports how squads held together on the way in.
+func (e RuleEnv) TransitSpread() *transitSpread {
+	t, _ := e.Memory["transitSpread"].(*transitSpread)
+	return t
 }

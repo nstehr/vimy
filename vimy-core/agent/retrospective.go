@@ -31,6 +31,7 @@ type retrospectiveSnapshot struct {
 	rallyMembers    int
 	rallyIdle       int
 	rallySpread     int
+	transitSpread   string
 	engineStats     model.Player
 	store           *store.Store
 	// Where this game's states were written, for replay. Empty without
@@ -76,6 +77,7 @@ func (s *Strategist) snapshotForReview(won bool, exportPath string) *retrospecti
 		rallyMembers:    rm,
 		rallyIdle:       ri,
 		rallySpread:     rs,
+		transitSpread:   s.engine.TransitSpreadJSON(),
 		store:           s.store,
 		exportPath:      exportPath,
 		directive:       s.directive,

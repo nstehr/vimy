@@ -78,6 +78,7 @@ type GameContext struct {
 	StrikeBlockedEnRoute     int
 
 	RallyCount, RallyMembersSum, RallyIdleSum, RallySpreadSum int
+	TransitSpreadJSON                                         string
 	StrikeBlockedNotBuilding                                  int
 	StrikeBlockedOutOfReach                                   int
 
@@ -811,6 +812,8 @@ type Outcome struct {
 	// How squads looked when told to re-gather. Means, not sums, via the
 	// accessors below.
 	RallyCount, RallyMembersSum, RallyIdleSum, RallySpreadSum int
+	// Per-band squad cohesion on the way to a target, as JSON.
+	TransitSpreadJSON string
 
 	// Which fields the row actually carried. Games predating a migration have
 	// NULL, which is not zero: "destroyed no buildings" and "was not counting
@@ -906,6 +909,8 @@ func (s *Store) GameOutcome(ctx context.Context, id int64) (Outcome, error) {
 		RallyMembersSum: int(r.RallyMembersSum.Int64),
 		RallyIdleSum:    int(r.RallyIdleSum.Int64),
 		RallySpreadSum:  int(r.RallySpreadSum.Int64),
+
+		TransitSpreadJSON: r.TransitSpreadJson.String,
 
 		HasRallies:    r.RallyCount.Valid && r.RallyCount.Int64 > 0,
 		HasStrikes:    r.StrikeBlockedUnclumped.Valid,

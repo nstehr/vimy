@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -87,6 +88,67 @@ const (
 	harvesterHaulFloor = 2 * atRefineryCells
 )
 
+// transitBands mirrors the sidecar's rules.transitSpread.
+type transitBands struct {
+	Far  transitBand `json:"Far"`
+	Mid  transitBand `json:"Mid"`
+	Near transitBand `json:"Near"`
+}
+
+type transitBand struct {
+	Samples    int `json:"Samples"`
+	MembersSum int `json:"MembersSum"`
+	NearSum    int `json:"NearSum"`
+	SpreadSum  int `json:"SpreadSum"`
+}
+
+// writeTransit says where a squad comes apart on the way to a target.
+//
+// Tight far and loose near means they leave together and something pulls them
+// apart in transit. Loose at every range means they never formed up and the
+// rally is not doing its job. Those want different fixes, and the assault
+// phase log cannot tell them apart.
+func writeTransit(w io.Writer, o store.Outcome) {
+	if o.TransitSpreadJSON == "" {
+		return
+	}
+	var t transitBands
+	if err := json.Unmarshal([]byte(o.TransitSpreadJSON), &t); err != nil {
+		return
+	}
+	rows := []struct {
+		label string
+		b     transitBand
+	}{
+		{"far    (>0.35 of map)", t.Far},
+		{"mid    (0.20-0.35)   ", t.Mid},
+		{"near   (<0.20, closing)", t.Near},
+	}
+	any := false
+	for _, r := range rows {
+		if r.b.Samples > 0 {
+			any = true
+		}
+	}
+	if !any {
+		return
+	}
+	fmt.Fprintln(w, "  TRANSIT — squad cohesion by distance from the target")
+	for _, r := range rows {
+		if r.b.Samples == 0 {
+			fmt.Fprintf(w, "    %s  no samples\n", r.label)
+			continue
+		}
+		n := float64(r.b.Samples)
+		fmt.Fprintf(w, "    %s  %.1f members, %.1f within %d cells, furthest %.0f  (%d samples)\n",
+			r.label, float64(r.b.MembersSum)/n, float64(r.b.NearSum)/n,
+			squadRallyRadius, float64(r.b.SpreadSum)/n, r.b.Samples)
+	}
+}
+
+// Mirrors rules.squadRallyRadius, the radius SquadClumped judges against.
+const squadRallyRadius = 8
+
 func writeLedger(w io.Writer, o store.Outcome) {
 	if o.HasTrade {
 		fmt.Fprintf(w, "  trade      destroyed %d credits, lost %d  = 1:%.2f\n",
@@ -112,6 +174,7 @@ func writeLedger(w io.Writer, o store.Outcome) {
 				o.StrikeBlockedNotBuilding, o.StrikeBlockedOutOfReach)
 		}
 	}
+	writeTransit(w, o)
 	if o.HasRallies {
 		fmt.Fprintf(w, "  rallies    %d, squad had %.1f members and %.1f were commandable, "+
 			"furthest %.0f cells out (clump needs 8)\n",

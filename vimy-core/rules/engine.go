@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -628,4 +629,20 @@ func (e *Engine) RallyShapeCounts() (rallies, membersSum, idleSum, spreadSum int
 		return 0, 0, 0, 0
 	}
 	return s.Rallies, s.MembersSum, s.IdleSum, s.SpreadSum
+}
+
+// TransitSpreadJSON is how squads held together on the way in, serialised for
+// the archive. Empty when no squad ever set out.
+func (e *Engine) TransitSpreadJSON() string {
+	e.LockMemory()
+	defer e.UnlockMemory()
+	t, _ := e.Memory["transitSpread"].(*transitSpread)
+	if t == nil {
+		return ""
+	}
+	b, err := json.Marshal(t)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
