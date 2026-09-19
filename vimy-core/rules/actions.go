@@ -887,83 +887,113 @@ func ActionProduceAdvancedShip(env RuleEnv, conn *ipc.Connection) error {
 	return nil
 }
 
+// ActionDefendBase answers a threat at home, drawing on the least committed
+// units that will do.
+//
+// This replaces four rules that all did the same thing with different triggers
+// and different unit pools — scramble-base-defense, emergency-base-defense,
+// defend-base and squad-defend-base — plus defend-critical-building, which was
+// the same again with an override. One of them said so in its own because:
+// "above scramble-base-defense, which does the same thing with a looser
+// condition". Nobody designed that; it accreted.
+//
+// The cost was measurable. Game 143 spent 2143 defensive acts against 248
+// attack acts, 8.6 to 1, and a squad setting out lost a third of itself on the
+// way: 4.5 members far from the target, 3.2 at mid range with the furthest 41
+// cells adrift, 2.9 on arrival. Four separate rules were reaching into the
+// same pool with no idea the others existed, and narrowing any one of them
+// just widened the next — emergency-base-defense, then
+// defend-critical-building, then scramble-base-defense, three rounds of it.
+//
+// So the escalation lives in one place and is explicit. Take the garrison
+// first. Take unassigned units next. Break into a committed assault only when
+// core infrastructure is actually being hit, which is the one case where the
+// old override was right: losing the base loses the game whatever the squad
+// was doing.
 func ActionDefendBase(env RuleEnv, conn *ipc.Connection) error {
-	enemy := env.NearestEnemy()
+	// A damaged critical building picks the target and licenses the last tier.
+	critical := env.nearestEnemyAttackingCritical()
+	enemy := critical
+	if enemy == nil {
+		enemy = env.NearestEnemy()
+	}
 	if enemy == nil {
 		return nil
 	}
-	// Unassigned only. Squad members are reserved for the push; poaching them
-	// for every lone raider means the attack squad never deploys. Base defense
-	// belongs to the ground-defense squad.
-	idle := env.UnassignedIdleGround()
-	if len(idle) == 0 {
-		return nil
-	}
-	ids := make([]uint32, len(idle))
-	for i, u := range idle {
-		ids[i] = uint32(u.ID)
-	}
-	slog.Debug("defending base", "count", len(ids), "target", enemy.ID)
-	return conn.Send(ipc.TypeAttackMove, ipc.AttackMoveCommand{
-		ActorIDs: ids,
-		X:        enemy.X,
-		Y:        enemy.Y,
-	})
-}
 
-// ActionDefendCriticalBuilding pulls every nearby ground unit, squad members
-// included. This deliberately overrides the poach-prevention elsewhere: with
-// the CY or war factory actively burning, reserving a squad for a future push
-// costs more than it buys.
-func ActionDefendCriticalBuilding(env RuleEnv, conn *ipc.Connection) error {
-	enemy := env.nearestEnemyAttackingCritical()
-	if enemy == nil {
+	units, tier := defenders(env, critical != nil)
+	if len(units) == 0 {
 		return nil
 	}
-	nearby := env.NearBaseGroundUnits()
-	if len(nearby) == 0 {
-		return nil
-	}
-	ids := make([]uint32, len(nearby))
-	for i, u := range nearby {
+	ids := make([]uint32, len(units))
+	for i, u := range units {
 		ids[i] = uint32(u.ID)
 	}
-	slog.Info("defending critical building — engaging attacker", "count", len(ids), "target", enemy.ID, "targetType", enemy.Type)
+	slog.Info("defending base", "count", len(ids), "tier", tier,
+		"target", enemy.ID, "targetType", enemy.Type, "critical", critical != nil)
 	return sendAttackMove(env, conn, ids, enemy.X, enemy.Y)
 }
 
-// ActionEmergencyDefendBase covers the case where nothing is idle but nearby
-// units are sitting on stale orders while the base is attacked.
-//
-// It prefers units not committed to an offensive. NearBaseGroundUnits reaches
-// 0.20 of the map diagonal — 36 cells on a 128 map — which covers the ground a
-// squad rallies on and sets out across, so this used to sweep up the assault
-// itself. Game 136 fired it 311 times against the assault's 133, and the squad
-// was commanded to gather and dragged home twice as often as it was told to
-// go: fully commandable at 4.8 of 4.8 members, and still 22 cells apart
-// against a required 8.
-//
-// The fallback to everything is deliberate and is the original intent: when
-// the attack squad IS all there is, a base under attack still has to be
-// answered, and losing the base loses the game whatever the squad was doing.
-func ActionEmergencyDefendBase(env RuleEnv, conn *ipc.Connection) error {
-	enemy := env.NearestEnemy()
-	if enemy == nil {
+// defenders picks the least committed units that can answer a threat, and
+// names the tier it had to reach for so the log can say how bad it got.
+func defenders(env RuleEnv, criticalHit bool) ([]model.Unit, string) {
+	// 1. The garrison. This is what a ground-defense squad is for.
+	if squad := squadMembers(env, "ground-defense"); len(squad) > 0 {
+		return squad, "garrison"
+	}
+	near := env.NearBaseGroundUnits()
+	if len(near) == 0 {
+		return nil, "none"
+	}
+	// 2. Anything near the base that no squad has claimed.
+	if free := withoutAnySquad(env, near); len(free) > 0 {
+		return free, "unassigned"
+	}
+	// 3. Anything not committed to an offensive — defensive squads included.
+	if notAttacking := withoutAttackSquads(env, near); len(notAttacking) > 0 {
+		return notAttacking, "reserves"
+	}
+	// 4. The assault itself, and only for infrastructure actually being hit.
+	if criticalHit {
+		return near, "assault recalled"
+	}
+	return nil, "none"
+}
+
+// squadMembers is a named squad's living members.
+func squadMembers(env RuleEnv, name string) []model.Unit {
+	sq, ok := getSquads(env.Memory)[name]
+	if !ok || len(sq.UnitIDs) == 0 {
 		return nil
 	}
-	nearby := env.NearBaseGroundUnits()
-	if len(nearby) == 0 {
-		return nil
+	ids := make(map[int]bool, len(sq.UnitIDs))
+	for _, id := range sq.UnitIDs {
+		ids[id] = true
 	}
-	if free := withoutAttackSquads(env, nearby); len(free) > 0 {
-		nearby = free
+	var out []model.Unit
+	for _, u := range env.State.Units {
+		if ids[u.ID] {
+			out = append(out, u)
+		}
 	}
-	ids := make([]uint32, len(nearby))
-	for i, u := range nearby {
-		ids[i] = uint32(u.ID)
+	return out
+}
+
+// withoutAnySquad drops units rostered to any squad at all.
+func withoutAnySquad(env RuleEnv, units []model.Unit) []model.Unit {
+	claimed := make(map[int]bool)
+	for _, sq := range getSquads(env.Memory) {
+		for _, id := range sq.UnitIDs {
+			claimed[id] = true
+		}
 	}
-	slog.Info("emergency base defense — recalling nearby units", "count", len(ids), "target", enemy.ID)
-	return sendAttackMove(env, conn, ids, enemy.X, enemy.Y)
+	out := make([]model.Unit, 0, len(units))
+	for _, u := range units {
+		if !claimed[u.ID] {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 // withoutAttackSquads drops units rostered to a squad with the attack role, so

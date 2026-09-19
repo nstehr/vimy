@@ -326,22 +326,6 @@ rule rebuild-kennel {
   require cash >= 200
 }
 
-rule defend-critical-building {
-  priority 360
-  category combat
-  do defend-critical-building
-  require critical-building-under-attack()
-  require count(near-base-ground-units) > 0
-}
-
-rule scramble-base-defense {
-  priority 350
-  category combat
-  do defend-base
-  require base-under-attack()
-  require count(unassigned-idle-ground) > 0
-}
-
 rule scramble-naval-defense {
   priority 350
   category naval-combat
@@ -349,15 +333,6 @@ rule scramble-naval-defense {
   require map-has-water()
   require base-under-attack()
   require count(idle-naval-units) > 0
-}
-
-rule emergency-base-defense {
-  priority 349
-  category emergency-defense
-  because "the old guard, count(idle-ground-units) == 0, was written to mean we have no spare units so take what is nearby — and it never guarded anything. idle-ground-units counts units with NO CURRENT ORDER, which is zero whenever Vimy is doing something, so the clause was true on every tick and this fired on every tick the base was attacked: 311 acts in game 136 against the assault's 133. Removed rather than repaired, because there is nothing to repair — the action now prefers units not rostered to an attacking squad, which is what the guard was reaching for, and falls back to everything when the offensive is all there is"
-  do emergency-defend-base
-  require base-under-attack()
-  require count(near-base-ground-units) > 0
 }
 
 rule repair-buildings {

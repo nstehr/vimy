@@ -33,24 +33,13 @@ rule form-defense-squad {
        or (squad-needs-reinforcement(ground-defense) and count(unassigned-idle-ground) >= 1)
 }
 
-rule squad-defend-base {
-  priority defend-priority()
-  category combat
-  do squad-defend(ground-defense)
-  require ground-defense-priority > 0.3
-  require squad-exists(ground-defense)
-  require squad-idle-count(ground-defense) > 0
-  require base-under-attack()
-}
-
 rule defend-base {
   priority defend-priority() + 1
   category combat
-  because "no reserved squad at low defense priority, so scramble whatever is idle — above scramble-base-defense, which does the same thing with a looser condition"
+  because "one rule where there were five. scramble-base-defense, emergency-base-defense, defend-base, squad-defend-base and defend-critical-building all sent units at a threat near home, with five triggers and four different unit pools, and three of them called this same action. One said so in its own because: above scramble-base-defense, which does the same thing with a looser condition. Nobody designed that, it accreted, and the cost was measurable — game 143 spent 2143 defensive acts against 248 attack acts, 8.6 to 1, while a squad setting out lost a third of itself in transit. Narrowing any one of them widened the next, three rounds of it. The escalation now lives in the action and is explicit: garrison, then unassigned, then anything not on the offensive, and the assault itself only when core infrastructure is actually being hit"
   do defend-base
-  require ground-defense-priority <= 0.3
-  require base-under-attack()
-  require count(idle-ground-units) >= lerp(3, 1, ground-defense-priority)
+  require base-under-attack() or critical-building-under-attack()
+  require count(near-base-ground-units) > 0
 }
 
 rule defend-base-air {
