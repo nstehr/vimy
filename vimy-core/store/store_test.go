@@ -462,3 +462,81 @@ func TestArchiveGameRecordsBothAccountsOfTheSameGame(t *testing.T) {
 		t.Errorf("army %d earned %d, want 4200 / 88000", army, earned)
 	}
 }
+
+// Every measurement added this session has to survive the trip from the
+// sidecar's memory to the archive, and one did not: the transit spread was
+// sampled correctly, serialised correctly, snapshotted correctly, and then
+// dropped on the floor because two struct literals never set the field. The
+// migration applied, the build passed, the tests passed, and game 142 recorded
+// NULL.
+//
+// So this asserts the whole round trip for the fields the post mortem reads,
+// rather than that the code compiles.
+func TestOutcomeFieldsSurviveTheRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	in := GameContext{
+		OurFaction:      "france",
+		OpponentFaction: "russia",
+		DurationTicks:   34550,
+
+		EngineKillsCost:  38150,
+		EngineDeathsCost: 64800,
+		OurArmyPeak:      5050,
+
+		HarvesterMining:   500,
+		HarvesterIdle:     120,
+		HarvesterHaulDist: 4.9,
+
+		StrikeBlockedUnclumped:   10,
+		StrikeBlockedBlindAtBase: 3,
+		StrikeBlockedEnRoute:     111,
+
+		RallyCount:      10,
+		RallyMembersSum: 67,
+		RallyIdleSum:    63,
+		RallySpreadSum:  180,
+
+		TransitSpreadJSON: `{"Far":{"Samples":4,"MembersSum":20,"NearSum":18,"SpreadSum":40}}`,
+	}
+	id, err := s.ArchiveGame(ctx, in, "", "", nil)
+	if err != nil {
+		t.Fatalf("ArchiveGame: %v", err)
+	}
+
+	got, err := s.GameOutcome(ctx, id)
+	if err != nil {
+		t.Fatalf("GameOutcome: %v", err)
+	}
+
+	checks := []struct {
+		name      string
+		got, want int
+	}{
+		{"kills cost", got.KillsCost, in.EngineKillsCost},
+		{"deaths cost", got.DeathsCost, in.EngineDeathsCost},
+		{"army peak", got.OurArmyPeak, in.OurArmyPeak},
+		{"harvester mining", got.HarvesterMining, in.HarvesterMining},
+		{"harvester idle", got.HarvesterIdle, in.HarvesterIdle},
+		{"strike unclumped", got.StrikeBlockedUnclumped, in.StrikeBlockedUnclumped},
+		{"strike blind at base", got.StrikeBlockedBlindAtBase, in.StrikeBlockedBlindAtBase},
+		{"strike en route", got.StrikeBlockedEnRoute, in.StrikeBlockedEnRoute},
+		{"rally count", got.RallyCount, in.RallyCount},
+		{"rally members", got.RallyMembersSum, in.RallyMembersSum},
+		{"rally commandable", got.RallyIdleSum, in.RallyIdleSum},
+		{"rally spread", got.RallySpreadSum, in.RallySpreadSum},
+	}
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s = %d, want %d", c.name, c.got, c.want)
+		}
+	}
+	if got.HarvesterHaulDistance != in.HarvesterHaulDist {
+		t.Errorf("haul distance = %v, want %v", got.HarvesterHaulDistance, in.HarvesterHaulDist)
+	}
+	// The one that was actually broken.
+	if got.TransitSpreadJSON != in.TransitSpreadJSON {
+		t.Errorf("transit spread = %q, want %q", got.TransitSpreadJSON, in.TransitSpreadJSON)
+	}
+}

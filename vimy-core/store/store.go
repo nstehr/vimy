@@ -339,6 +339,7 @@ func (s *Store) ArchiveGame(
 		RallyMembersSum:          sql.NullInt64{Int64: int64(gameCtx.RallyMembersSum), Valid: true},
 		RallyIdleSum:             sql.NullInt64{Int64: int64(gameCtx.RallyIdleSum), Valid: true},
 		RallySpreadSum:           sql.NullInt64{Int64: int64(gameCtx.RallySpreadSum), Valid: true},
+		TransitSpreadJson:        sql.NullString{String: gameCtx.TransitSpreadJSON, Valid: gameCtx.TransitSpreadJSON != ""},
 		StrikeBlockedNotBuilding: sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedNotBuilding), Valid: true},
 		StrikeBlockedOutOfReach:  sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedOutOfReach), Valid: true},
 

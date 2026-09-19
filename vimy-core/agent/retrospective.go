@@ -226,6 +226,7 @@ func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveRev
 			RallyMembersSum:          snap.rallyMembers,
 			RallyIdleSum:             snap.rallyIdle,
 			RallySpreadSum:           snap.rallySpread,
+			TransitSpreadJSON:        snap.transitSpread,
 			StrikeBlockedNotBuilding: snap.strikeBlocked[rules.StrikeBlockedNotBuilding],
 			StrikeBlockedOutOfReach:  snap.strikeBlocked[rules.StrikeBlockedOutOfReach],
 
