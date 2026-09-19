@@ -80,6 +80,13 @@ func writeNeverRan(w io.Writer, rows []preemptedRule, top int) {
 	}
 }
 
+// Mirrors agent.atRefineryCells. Below twice this, a harvester on ore sits
+// inside the refinery radius and the mining/docking split is not meaningful.
+const (
+	atRefineryCells    = 2.0
+	harvesterHaulFloor = 2 * atRefineryCells
+)
+
 func writeLedger(w io.Writer, o store.Outcome) {
 	if o.HasTrade {
 		fmt.Fprintf(w, "  trade      destroyed %d credits, lost %d  = 1:%.2f\n",
@@ -116,6 +123,17 @@ func writeLedger(w io.Writer, o store.Outcome) {
 			o.HarvesterShare(o.HarvesterMining), o.HarvesterShare(o.HarvesterTravelling),
 			o.HarvesterShare(o.HarvesterAtRefinery), o.HarvesterShare(o.HarvesterIdle),
 			o.HarvesterHaulDistance)
+		// Mining and docking are separated by distance from a refinery, so the
+		// split stops meaning anything once the ore is as close as the radius.
+		// Three games were read as "the refineries are a bottleneck" before
+		// anyone compared these two numbers.
+		if haul := o.HarvesterHaulDistance; haul > 0 && haul < harvesterHaulFloor {
+			fmt.Fprintf(w, "    !! the haul is only %.1f cells, close to the %.0f-cell refinery\n"+
+				"       radius, so mining and docking are not reliably separable here.\n"+
+				"       Read mining+refinery as one figure: %d%% working.\n",
+				haul, atRefineryCells,
+				o.HarvesterShare(o.HarvesterMining+o.HarvesterAtRefinery))
+		}
 	}
 }
 

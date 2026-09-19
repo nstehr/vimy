@@ -52,11 +52,29 @@ type position struct{ x, y int }
 
 // atRefineryCells is how close counts as "at the refinery".
 //
-// A refinery is a 3x2 building and a harvester docks against its edge, so a
-// couple of cells of slack is the building's own footprint rather than a
-// tolerance. Generous enough to catch a harvester queueing beside one, which is
-// the case worth catching.
-const atRefineryCells = 4
+// Two, not four, and the difference matters more than it looks. A harvester
+// standing still is either unloading or mining, and the only thing separating
+// them here is distance from a refinery — so the radius has to be smaller than
+// the distance from a refinery to the ore. It was not:
+//
+//	game    mean haul   "at refinery"
+//	 135    6.1 cells        14%
+//	 136    3.9 cells        44%
+//	 137    3.7 cells        39%
+//	 138    4.4 cells        40%
+//
+// A perfect inverse correlation with haul distance, because at a radius of 4 a
+// harvester MINING on ore 4 cells from a refinery was filed as docked. Three
+// games of "harvesters are queueing" were mining, and the reading was used to
+// argue against decoupling harvesters from refineries.
+//
+// Two cells is roughly the footprint of the 3x2 building itself, so it catches
+// a harvester against the edge and little else. The residual limit is real and
+// unfixable by geometry: where ore sits within two cells of a refinery the two
+// states are genuinely indistinguishable from position alone. Read the mean
+// haul alongside the split — when it approaches this radius, the split is not
+// to be trusted.
+const atRefineryCells = 2
 
 func (h *harvesterTracker) reset() { *h = harvesterTracker{} }
 

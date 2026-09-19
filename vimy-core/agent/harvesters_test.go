@@ -50,9 +50,12 @@ func TestPhasesAreDistinguished(t *testing.T) {
 			phase: "travelling",
 		},
 		{
+			// Against the building's edge. 52,51 was here before and is 2.24
+			// cells out — ore range once the radius tightened to 2, which is
+			// the whole point of that change.
 			name:  "standing against a refinery is unloading or queued",
-			first: model.Unit{ID: 1, Type: "harv", X: 52, Y: 51},
-			then:  model.Unit{ID: 1, Type: "harv", X: 52, Y: 51},
+			first: model.Unit{ID: 1, Type: "harv", X: 51, Y: 51},
+			then:  model.Unit{ID: 1, Type: "harv", X: 51, Y: 51},
 			want:  func(h harvesterTracker) int { return h.AtRefinery },
 			phase: "at refinery",
 		},
@@ -141,5 +144,37 @@ func TestNoRefineryStillClassifies(t *testing.T) {
 	}
 	if h.MeanHaulDistance() != 0 {
 		t.Errorf("mean haul = %.1f, want 0", h.MeanHaulDistance())
+	}
+}
+
+// The refinery radius must be smaller than the distance from a refinery to the
+// ore, or mining is filed as docking. It was not: at a radius of 4, games with
+// hauls of 3.7 to 4.4 cells reported 39-44% "at refinery" against game 135's
+// 14% on a 6.1-cell haul — a perfect inverse correlation with haul distance,
+// and three games of "the refineries are a bottleneck" that were mining.
+func TestMiningNearARefineryIsNotDocking(t *testing.T) {
+	var h harvesterTracker
+	// Ore four cells from the refinery: the old radius swallowed this.
+	at := model.Unit{ID: 1, Type: "harv", X: 54, Y: 50}
+	h.observe(state(oneRefinery, at))
+	h.observe(state(oneRefinery, at))
+
+	if h.Mining != 1 {
+		t.Errorf("mining = %d, want 1: a harvester four cells out is on ore, not docked", h.Mining)
+	}
+	if h.AtRefinery != 0 {
+		t.Errorf("atRefinery = %d, want 0", h.AtRefinery)
+	}
+}
+
+// Still has to catch a harvester actually against the building.
+func TestDockedHarvesterIsStillDetected(t *testing.T) {
+	var h harvesterTracker
+	at := model.Unit{ID: 1, Type: "harv", X: 51, Y: 51}
+	h.observe(state(oneRefinery, at))
+	h.observe(state(oneRefinery, at))
+
+	if h.AtRefinery != 1 {
+		t.Errorf("atRefinery = %d, want 1: this one is on the building's edge", h.AtRefinery)
 	}
 }
