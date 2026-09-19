@@ -155,3 +155,49 @@ func TestEmergencyDefenceWithNoSquads(t *testing.T) {
 		t.Errorf("got %d, want both units when no squad exists", len(got))
 	}
 }
+
+// The harvester scramble was the last path that could poach a committed
+// assault. It pulls the NEAREST units by design, and a squad marching out
+// across its own territory is the nearest force to a raided harvester — it
+// matched 1320 times in game 144 and took units for 400 ticks each, which is
+// most of the third of itself a squad lost between setting out and arriving.
+func TestHarvesterScramblePrefersUncommittedUnits(t *testing.T) {
+	env := RuleEnv{
+		Memory: map[string]any{
+			"squads": map[string]*Squad{
+				"ground-attack":  {Name: "ground-attack", Role: "attack", UnitIDs: []int{1, 2}},
+				"ground-defense": {Name: "ground-defense", Role: "defend", UnitIDs: []int{3}},
+			},
+		},
+	}
+	pool := []model.Unit{
+		{ID: 1, Type: "2tnk"}, {ID: 2, Type: "2tnk"}, // marching on the enemy
+		{ID: 3, Type: "e1"}, {ID: 4, Type: "e1"}, // garrison and spare
+	}
+
+	got := withoutAttackSquads(env, pool)
+	if len(got) != 2 {
+		t.Fatalf("got %d units, want the 2 not on the offensive", len(got))
+	}
+	for _, u := range got {
+		if u.ID == 1 || u.ID == 2 {
+			t.Errorf("unit %d is marching on the enemy base and must not be scrambled", u.ID)
+		}
+	}
+}
+
+// But a raid still has to be answered when the offensive is all there is —
+// harvesters pay for the army.
+func TestHarvesterScrambleFallsBackToTheOffensive(t *testing.T) {
+	env := RuleEnv{
+		Memory: map[string]any{
+			"squads": map[string]*Squad{
+				"ground-attack": {Name: "ground-attack", Role: "attack", UnitIDs: []int{1, 2}},
+			},
+		},
+	}
+	pool := []model.Unit{{ID: 1, Type: "2tnk"}, {ID: 2, Type: "2tnk"}}
+	if got := withoutAttackSquads(env, pool); len(got) != 0 {
+		t.Fatalf("got %d, want 0 so the caller falls back to the whole pool", len(got))
+	}
+}

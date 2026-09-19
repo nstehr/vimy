@@ -3121,6 +3121,26 @@ func ScrambleToHarvesters(dangerPct float64, maxDefenders int) ActionFunc {
 			}
 			pool = append(pool, u)
 		}
+		// The same escalation the base defence uses, and for the same reason.
+		// This rule was written to pull the NEAREST units, squad members
+		// included — and a squad marching out across its own territory IS the
+		// nearest force to a raided harvester. It matched 1320 times in game
+		// 144 and acted 192, against 320 attack acts, holding each unit it
+		// took for harvesterScrambleHold ticks, during which the assault
+		// cannot command it. That is most of the third of itself a squad lost
+		// between setting out and arriving: 3.0 members far from the target,
+		// 2.4 at mid range, 2.0 on arrival.
+		//
+		// Harvester harassment is continuous, so this is a rule written for an
+		// exception firing as the weather. It now takes the garrison and the
+		// unassigned first and only reaches into an offensive when there is
+		// genuinely nothing else — which means harvesters will sometimes die
+		// that used to be saved. They are 48 to 65 percent productive and the
+		// economy has not been the binding constraint for several games; the
+		// assault has never once landed a strike.
+		if free := withoutAttackSquads(env, pool); len(free) > 0 {
+			pool = free
+		}
 		distSq := func(u model.Unit) int {
 			return (u.X-target.X)*(u.X-target.X) + (u.Y-target.Y)*(u.Y-target.Y)
 		}
