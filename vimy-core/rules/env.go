@@ -2186,10 +2186,27 @@ func (e RuleEnv) approachWaypointWithField(destX, destY int, field *model.Threat
 	return x, y, true
 }
 
-// CriticalBuildingUnderAttack reports whether core infrastructure is taking
-// damage or has an enemy in range. It is the gate that lets defend-critical-
+// CriticalBuildingUnderAttack reports whether core infrastructure has been hit
+// and the attacker is still in range. It is the gate that lets defend-critical-
 // building ignore squad reservations: without it, a mammoth tank sits idle in
 // the attack squad while rocket launchers take down the CY.
+//
+// Both halves are required, and the damage half used to be missing — the doc
+// claimed "taking damage or has an enemy in range" and the code only checked
+// range. Every enemy that drove within 10 cells of the construction yard
+// conscripted the entire army, which under raid pressure is permanent: game
+// 137 acted on this 536 times in 48460 ticks, once every 90, and it replaced
+// emergency-base-defense as the thing dragging the assault home the moment
+// that rule stopped poaching.
+//
+// Damage rather than a damage DELTA, because a delta needs a previous state
+// this has no access to. "Has been hit and they are still standing over it" is
+// the honest approximation: an undamaged building with an enemy passing is not
+// an emergency, and a scarred building with nobody near it is not either. The
+// cost is that the first shot must land before the whole army reacts. For a
+// rule that overrides every squad reservation in the set, reacting to hits
+// rather than to proximity is the right posture — the garrison answers
+// proximity, via emergency-base-defense.
 func (e RuleEnv) CriticalBuildingUnderAttack() bool {
 	return e.nearestEnemyAttackingCritical() != nil
 }
@@ -2206,6 +2223,10 @@ func (e RuleEnv) nearestEnemyAttackingCritical() *model.Enemy {
 	for i := range e.State.Buildings {
 		b := &e.State.Buildings[i]
 		if !isCriticalRepairType(b.Type) {
+			continue
+		}
+		// Unhit infrastructure is not an emergency, whatever is driving past.
+		if b.MaxHP <= 0 || b.HP >= b.MaxHP {
 			continue
 		}
 		for j := range e.State.Enemies {
