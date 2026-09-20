@@ -82,11 +82,11 @@ rule squad-reengage {
 }
 
 rule squad-attack-known-base {
-  priority trunc(select(aggression >= 0.6,
+  priority trunc(select(aggression >= 0.32,
                         attack-priority() + 5,
                         attack-priority() - 10))
   category ground-attack-choice exclusive
-  because "aggressive doctrines press the base and let base defenses handle raiders — but the threshold sat at 0.3, below anything the strategist ever chose, so this always won and squad-attack never fired in eighty games"
+  because "aggressive doctrines press the base and let base defenses handle raiders. This threshold has now been wrong in both directions. At 0.3 it sat below anything the strategist chose, so this always won and squad-attack never fired in eighty games — and it was moved to 0.6, which is ABOVE anything the strategist chooses: across 1079 doctrines since game 135 aggression ran 0.15 to 0.50, mean 0.31, and reached 0.6 exactly never. So the base assault was permanently demoted below squad-attack in the same exclusive category, and squad-attack holds whenever any enemy is in sight, which against an infantry swarm is always. Game 148 shows the result: the squad formed well and held together — 5.2 members with 4.4 inside 8 cells — and 76 of 81 transit samples were still FAR from the target, 5 at mid range, and not one within 0.20 of the enemy base across 118920 ticks. squad-attack acted 257 times against this rule's 151. 0.32 is the median of what the strategist actually picks, so roughly 41 percent of doctrines press the base and the rest hold the line: a contest rather than an always or a never"
   do squad-attack-known-base(ground-attack, aggression)
   require squad-exists(ground-attack)
   require squad-ready-ratio(ground-attack) >= round2(activation())
