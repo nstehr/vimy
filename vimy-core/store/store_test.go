@@ -498,7 +498,9 @@ func TestOutcomeFieldsSurviveTheRoundTrip(t *testing.T) {
 		RallyIdleSum:    63,
 		RallySpreadSum:  180,
 
-		TransitSpreadJSON: `{"Far":{"Samples":4,"MembersSum":20,"NearSum":18,"SpreadSum":40}}`,
+		TransitSpreadJSON:      `{"Far":{"Samples":4,"MembersSum":20,"NearSum":18,"SpreadSum":40}}`,
+		EnemyUnitsSeenJSON:     `{"mig":7,"3tnk":12}`,
+		EnemyBuildingsSeenJSON: `{"afld":3,"tsla":2}`,
 	}
 	id, err := s.ArchiveGame(ctx, in, "", "", nil)
 	if err != nil {
@@ -535,8 +537,16 @@ func TestOutcomeFieldsSurviveTheRoundTrip(t *testing.T) {
 	if got.HarvesterHaulDistance != in.HarvesterHaulDist {
 		t.Errorf("haul distance = %v, want %v", got.HarvesterHaulDistance, in.HarvesterHaulDist)
 	}
-	// The one that was actually broken.
-	if got.TransitSpreadJSON != in.TransitSpreadJSON {
-		t.Errorf("transit spread = %q, want %q", got.TransitSpreadJSON, in.TransitSpreadJSON)
+	// The JSON columns. The transit spread is the one that was actually
+	// broken: sampled, serialised, snapshotted, and then dropped because two
+	// struct literals never set it.
+	for _, c := range []struct{ name, got, want string }{
+		{"transit spread", got.TransitSpreadJSON, in.TransitSpreadJSON},
+		{"enemy units seen", got.EnemyUnitsSeenJSON, in.EnemyUnitsSeenJSON},
+		{"enemy buildings seen", got.EnemyBuildingsSeenJSON, in.EnemyBuildingsSeenJSON},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s = %q, want %q", c.name, c.got, c.want)
+		}
 	}
 }

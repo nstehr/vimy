@@ -32,6 +32,8 @@ type retrospectiveSnapshot struct {
 	rallyIdle       int
 	rallySpread     int
 	transitSpread   string
+	enemyUnits      string
+	enemyBuildings  string
 	engineStats     model.Player
 	store           *store.Store
 	// Where this game's states were written, for replay. Empty without
@@ -62,6 +64,7 @@ func (s *Strategist) snapshotForReview(won bool, exportPath string) *retrospecti
 	}
 
 	rc, rm, ri, rs := s.engine.RallyShapeCounts()
+	enemyUnitsSeen, enemyBuildingsSeen := s.engine.EnemySeenJSON()
 
 	snap := &retrospectiveSnapshot{
 		ourFaction:      s.faction,
@@ -78,6 +81,8 @@ func (s *Strategist) snapshotForReview(won bool, exportPath string) *retrospecti
 		rallyIdle:       ri,
 		rallySpread:     rs,
 		transitSpread:   s.engine.TransitSpreadJSON(),
+		enemyUnits:      enemyUnitsSeen,
+		enemyBuildings:  enemyBuildingsSeen,
 		store:           s.store,
 		exportPath:      exportPath,
 		directive:       s.directive,
@@ -227,6 +232,8 @@ func buildArchival(snap *retrospectiveSnapshot, review types.GameReview, haveRev
 			RallyIdleSum:             snap.rallyIdle,
 			RallySpreadSum:           snap.rallySpread,
 			TransitSpreadJSON:        snap.transitSpread,
+			EnemyUnitsSeenJSON:       snap.enemyUnits,
+			EnemyBuildingsSeenJSON:   snap.enemyBuildings,
 			StrikeBlockedNotBuilding: snap.strikeBlocked[rules.StrikeBlockedNotBuilding],
 			StrikeBlockedOutOfReach:  snap.strikeBlocked[rules.StrikeBlockedOutOfReach],
 

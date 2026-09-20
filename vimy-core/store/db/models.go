@@ -66,6 +66,8 @@ type Game struct {
 	RallyIdleSum             sql.NullInt64   `json:"rally_idle_sum"`
 	RallySpreadSum           sql.NullInt64   `json:"rally_spread_sum"`
 	TransitSpreadJson        sql.NullString  `json:"transit_spread_json"`
+	EnemyUnitsSeenJson       sql.NullString  `json:"enemy_units_seen_json"`
+	EnemyBuildingsSeenJson   sql.NullString  `json:"enemy_buildings_seen_json"`
 }
 
 type Lesson struct {

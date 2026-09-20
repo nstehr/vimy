@@ -79,6 +79,7 @@ type GameContext struct {
 
 	RallyCount, RallyMembersSum, RallyIdleSum, RallySpreadSum int
 	TransitSpreadJSON                                         string
+	EnemyUnitsSeenJSON, EnemyBuildingsSeenJSON                string
 	StrikeBlockedNotBuilding                                  int
 	StrikeBlockedOutOfReach                                   int
 
@@ -340,6 +341,8 @@ func (s *Store) ArchiveGame(
 		RallyIdleSum:             sql.NullInt64{Int64: int64(gameCtx.RallyIdleSum), Valid: true},
 		RallySpreadSum:           sql.NullInt64{Int64: int64(gameCtx.RallySpreadSum), Valid: true},
 		TransitSpreadJson:        sql.NullString{String: gameCtx.TransitSpreadJSON, Valid: gameCtx.TransitSpreadJSON != ""},
+		EnemyUnitsSeenJson:       sql.NullString{String: gameCtx.EnemyUnitsSeenJSON, Valid: gameCtx.EnemyUnitsSeenJSON != ""},
+		EnemyBuildingsSeenJson:   sql.NullString{String: gameCtx.EnemyBuildingsSeenJSON, Valid: gameCtx.EnemyBuildingsSeenJSON != ""},
 		StrikeBlockedNotBuilding: sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedNotBuilding), Valid: true},
 		StrikeBlockedOutOfReach:  sql.NullInt64{Int64: int64(gameCtx.StrikeBlockedOutOfReach), Valid: true},
 
@@ -815,6 +818,10 @@ type Outcome struct {
 	RallyCount, RallyMembersSum, RallyIdleSum, RallySpreadSum int
 	// Per-band squad cohesion on the way to a target, as JSON.
 	TransitSpreadJSON string
+	// What was actually faced, by type, cumulative. The opponent faction
+	// predicts survival better than anything Vimy does, and nothing recorded
+	// said what the opponent brought.
+	EnemyUnitsSeenJSON, EnemyBuildingsSeenJSON string
 
 	// Which fields the row actually carried. Games predating a migration have
 	// NULL, which is not zero: "destroyed no buildings" and "was not counting
@@ -911,7 +918,9 @@ func (s *Store) GameOutcome(ctx context.Context, id int64) (Outcome, error) {
 		RallyIdleSum:    int(r.RallyIdleSum.Int64),
 		RallySpreadSum:  int(r.RallySpreadSum.Int64),
 
-		TransitSpreadJSON: r.TransitSpreadJson.String,
+		TransitSpreadJSON:      r.TransitSpreadJson.String,
+		EnemyUnitsSeenJSON:     r.EnemyUnitsSeenJson.String,
+		EnemyBuildingsSeenJSON: r.EnemyBuildingsSeenJson.String,
 
 		HasRallies:    r.RallyCount.Valid && r.RallyCount.Int64 > 0,
 		HasStrikes:    r.StrikeBlockedUnclumped.Valid,

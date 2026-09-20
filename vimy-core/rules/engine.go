@@ -646,3 +646,17 @@ func (e *Engine) TransitSpreadJSON() string {
 	}
 	return string(b)
 }
+
+// EnemySeenJSON is what was observed of the enemy, by type, serialised for the
+// archive: units and buildings, cumulative over the game.
+func (e *Engine) EnemySeenJSON() (units, buildings string) {
+	e.LockMemory()
+	defer e.UnlockMemory()
+	if b, err := json.Marshal(GetEnemyUnitsSeen(e.Memory)); err == nil && len(b) > 2 {
+		units = string(b)
+	}
+	if b, err := json.Marshal(GetEnemyBuildingsSeen(e.Memory)); err == nil && len(b) > 2 {
+		buildings = string(b)
+	}
+	return units, buildings
+}

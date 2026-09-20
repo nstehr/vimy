@@ -79,6 +79,7 @@ SELECT id, duration_ticks, won, our_faction, opponent_faction,
        strike_blocked_blind_at_base, strike_blocked_en_route,
        rally_count, rally_members_sum, rally_idle_sum, rally_spread_sum,
        transit_spread_json,
+       enemy_units_seen_json, enemy_buildings_seen_json,
        engine_kills_cost, engine_deaths_cost, engine_buildings_killed,
        engine_earned, our_army_peak, enemy_army_seen_peak,
        infantry_lost, vehicles_lost, infantry_lost_forward, vehicles_lost_forward
@@ -107,6 +108,8 @@ type GetGameOutcomeRow struct {
 	RallyIdleSum             sql.NullInt64   `json:"rally_idle_sum"`
 	RallySpreadSum           sql.NullInt64   `json:"rally_spread_sum"`
 	TransitSpreadJson        sql.NullString  `json:"transit_spread_json"`
+	EnemyUnitsSeenJson       sql.NullString  `json:"enemy_units_seen_json"`
+	EnemyBuildingsSeenJson   sql.NullString  `json:"enemy_buildings_seen_json"`
 	EngineKillsCost          sql.NullInt64   `json:"engine_kills_cost"`
 	EngineDeathsCost         sql.NullInt64   `json:"engine_deaths_cost"`
 	EngineBuildingsKilled    sql.NullInt64   `json:"engine_buildings_killed"`
@@ -144,6 +147,8 @@ func (q *Queries) GetGameOutcome(ctx context.Context, id int64) (GetGameOutcomeR
 		&i.RallyIdleSum,
 		&i.RallySpreadSum,
 		&i.TransitSpreadJson,
+		&i.EnemyUnitsSeenJson,
+		&i.EnemyBuildingsSeenJson,
 		&i.EngineKillsCost,
 		&i.EngineDeathsCost,
 		&i.EngineBuildingsKilled,
@@ -206,8 +211,9 @@ INSERT INTO games (
     strike_blocked_not_building, strike_blocked_out_of_reach,
     strike_blocked_blind_at_base, strike_blocked_en_route,
     rally_count, rally_members_sum, rally_idle_sum, rally_spread_sum,
-    transit_spread_json
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    transit_spread_json,
+    enemy_units_seen_json, enemy_buildings_seen_json
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id
 `
 
@@ -258,6 +264,8 @@ type InsertGameParams struct {
 	RallyIdleSum             sql.NullInt64   `json:"rally_idle_sum"`
 	RallySpreadSum           sql.NullInt64   `json:"rally_spread_sum"`
 	TransitSpreadJson        sql.NullString  `json:"transit_spread_json"`
+	EnemyUnitsSeenJson       sql.NullString  `json:"enemy_units_seen_json"`
+	EnemyBuildingsSeenJson   sql.NullString  `json:"enemy_buildings_seen_json"`
 }
 
 func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (int64, error) {
@@ -308,6 +316,8 @@ func (q *Queries) InsertGame(ctx context.Context, arg InsertGameParams) (int64, 
 		arg.RallyIdleSum,
 		arg.RallySpreadSum,
 		arg.TransitSpreadJson,
+		arg.EnemyUnitsSeenJson,
+		arg.EnemyBuildingsSeenJson,
 	)
 	var id int64
 	err := row.Scan(&id)

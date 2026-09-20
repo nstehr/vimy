@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/nstehr/vimy/vimy-core/store"
@@ -87,6 +88,61 @@ const (
 	atRefineryCells    = 2.0
 	harvesterHaulFloor = 2 * atRefineryCells
 )
+
+// writeEnemySeen says what Vimy actually faced.
+//
+// The opponent faction predicts survival better than anything Vimy does —
+// against ukraine 9 of 10 games ended inside 50000 ticks, against russia the
+// average was 80000 — and Vimy's doctrine barely differs between them. Nothing
+// recorded said what the opponent brought, so "what beats us" could not be
+// asked across games at all.
+func writeEnemySeen(w io.Writer, o store.Outcome) {
+	units := topTypes(o.EnemyUnitsSeenJSON, 6)
+	buildings := topTypes(o.EnemyBuildingsSeenJSON, 5)
+	if units == "" && buildings == "" {
+		return
+	}
+	if units != "" {
+		fmt.Fprintf(w, "  they fielded  %s\n", units)
+	}
+	if buildings != "" {
+		fmt.Fprintf(w, "  they built    %s\n", buildings)
+	}
+}
+
+// topTypes renders the n most-seen types, dearest first by count.
+func topTypes(raw string, n int) string {
+	if raw == "" {
+		return ""
+	}
+	var m map[string]int
+	if err := json.Unmarshal([]byte(raw), &m); err != nil || len(m) == 0 {
+		return ""
+	}
+	type kv struct {
+		k string
+		v int
+	}
+	all := make([]kv, 0, len(m))
+	for k, v := range m {
+		all = append(all, kv{k, v})
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].v != all[j].v {
+			return all[i].v > all[j].v
+		}
+		return all[i].k < all[j].k
+	})
+	parts := make([]string, 0, n)
+	for i, e := range all {
+		if i == n {
+			parts = append(parts, fmt.Sprintf("(+%d more)", len(all)-n))
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%s %d", e.k, e.v))
+	}
+	return strings.Join(parts, ", ")
+}
 
 // transitBands mirrors the sidecar's rules.transitSpread.
 type transitBands struct {
@@ -174,6 +230,7 @@ func writeLedger(w io.Writer, o store.Outcome) {
 				o.StrikeBlockedNotBuilding, o.StrikeBlockedOutOfReach)
 		}
 	}
+	writeEnemySeen(w, o)
 	writeTransit(w, o)
 	if o.HasRallies {
 		fmt.Fprintf(w, "  rallies    %d, squad had %.1f members and %.1f were commandable, "+
