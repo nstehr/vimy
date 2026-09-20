@@ -257,7 +257,7 @@ func TestFormSquadNeedsAtLeastOneUnit(t *testing.T) {
 }
 
 // Formation never takes more than the target, however deep the pool.
-func TestFormSquadTakesNoMoreThanTargetSize(t *testing.T) {
+func TestFormSquadTakesTheForceNotAQuota(t *testing.T) {
 	memory := make(map[string]any)
 	units := make([]model.Unit, 0, 6)
 	for i := range 6 {
@@ -265,13 +265,31 @@ func TestFormSquadTakesNoMoreThanTargetSize(t *testing.T) {
 	}
 	env := RuleEnv{State: model.GameState{Units: units}, Memory: memory}
 
+	// The doctrine asks for three. Six are uncommitted, so it gets six.
+	//
+	// This used to assert exactly three, on the reasoning that "the surplus
+	// belongs to the other squads". Ordering is what protects them, not a cap:
+	// form-defense-squad runs at defend-priority()+5, around 475, against the
+	// attack's attack-priority()+5, around 265, and both sit in squad-form. The
+	// garrison has already taken what it needs by the time this runs, so what
+	// is left is genuinely uncommitted.
+	//
+	// The cap cost real games. ground_attack_group_size is a constant, 5 or 6
+	// in every doctrine the strategist has written, while the army runs from 7
+	// combat units to 27 at peak — so the squad shrank as a fraction of the
+	// army it was drawn from. Game 150 formed a full 6, held formation,
+	// reached 0.143 of the map diagonal, and arrived with TWO units against 16
+	// rocket soldiers and 10 APCs.
 	if err := FormSquad("test-squad", "ground", 3, "attack")(env, nil); err != nil {
 		t.Fatalf("FormSquad action returned error: %v", err)
 	}
 
 	sq := getSquads(memory)["test-squad"]
-	if len(sq.UnitIDs) != 3 {
-		t.Errorf("members = %d, want 3 — the surplus belongs to the other squads", len(sq.UnitIDs))
+	if len(sq.UnitIDs) != 6 {
+		t.Errorf("members = %d, want 6 — the doctrine size is a floor, not a quota", len(sq.UnitIDs))
+	}
+	if sq.TargetSize != 6 {
+		t.Errorf("target = %d, want 6 — it tracks the committable force", sq.TargetSize)
 	}
 }
 

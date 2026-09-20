@@ -201,3 +201,70 @@ func TestHarvesterScrambleFallsBackToTheOffensive(t *testing.T) {
 		t.Fatalf("got %d, want 0 so the caller falls back to the whole pool", len(got))
 	}
 }
+
+// The squad target must track the army, not freeze at what existed when it
+// formed. ground_attack_group_size is a constant — 5 or 6 in every game the
+// strategist has written — while the army runs from 7 combat units to 27 at
+// peak, and TargetSize was set once at formation and never revisited. Game 150
+// formed a full 6, held formation, reached 0.143 of the map diagonal, and
+// arrived with two units.
+func TestSquadTargetGrowsWithTheArmy(t *testing.T) {
+	env := RuleEnv{Memory: map[string]any{}, State: model.GameState{}}
+
+	// Four combat units and a doctrine asking for six: the floor wins.
+	for i := 1; i <= 4; i++ {
+		env.State.Units = append(env.State.Units, model.Unit{ID: i, Type: "2tnk"})
+	}
+	if got := squadTarget(env, "ground-attack", 6); got != 6 {
+		t.Errorf("target = %d, want the doctrine floor of 6", got)
+	}
+
+	// The army grows to twenty. The target must follow.
+	for i := 5; i <= 20; i++ {
+		env.State.Units = append(env.State.Units, model.Unit{ID: i, Type: "e1"})
+	}
+	if got := squadTarget(env, "ground-attack", 6); got != 20 {
+		t.Errorf("target = %d, want 20: the target must track the army", got)
+	}
+}
+
+// The garrison is not available to the offensive. Units rostered to another
+// squad are already spoken for — ground-defense absorbed 3604 defence acts on
+// its own without the offensive being touched.
+func TestSquadTargetExcludesOtherSquads(t *testing.T) {
+	env := RuleEnv{
+		Memory: map[string]any{
+			"squads": map[string]*Squad{
+				"ground-defense": {Name: "ground-defense", UnitIDs: []int{1, 2, 3}},
+			},
+		},
+		State: model.GameState{Units: []model.Unit{
+			{ID: 1, Type: "2tnk"}, {ID: 2, Type: "2tnk"}, {ID: 3, Type: "e1"},
+			{ID: 4, Type: "e1"}, {ID: 5, Type: "e1"}, {ID: 6, Type: "arty"},
+		}},
+	}
+	// Six combat units, three held by the garrison: three are committable, so
+	// the floor of 4 wins.
+	if got := squadTarget(env, "ground-attack", 4); got != 4 {
+		t.Errorf("target = %d, want 4: only three units are uncommitted", got)
+	}
+	// The squad's OWN members still count toward its target.
+	getSquads(env.Memory)["ground-attack"] = &Squad{Name: "ground-attack", UnitIDs: []int{4, 5}}
+	if got := squadTarget(env, "ground-attack", 2); got != 3 {
+		t.Errorf("target = %d, want 3: own members plus the unassigned one", got)
+	}
+}
+
+// Harvesters and aircraft are not the ground offensive.
+func TestSquadTargetCountsOnlyCombatGround(t *testing.T) {
+	env := RuleEnv{
+		Memory: map[string]any{},
+		State: model.GameState{Units: []model.Unit{
+			{ID: 1, Type: "2tnk"}, {ID: 2, Type: "e1"},
+			{ID: 3, Type: "harv"}, {ID: 4, Type: "mig"}, {ID: 5, Type: "harv"},
+		}},
+	}
+	if got := squadTarget(env, "ground-attack", 1); got != 2 {
+		t.Errorf("target = %d, want 2: harvesters and aircraft are not the offensive", got)
+	}
+}
