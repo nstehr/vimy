@@ -287,9 +287,10 @@ rule produce-rocket-soldier {
 }
 
 rule produce-heavy-vehicle {
-  priority 475
+  priority 481
   category produce-vehicle exclusive
   do produce-heavy-vehicle
+  because "481, above produce-vehicle at 480 and below the siege gate at 482. It sat at 475 and fired 0 times in 1866 evaluations of game 156, of which only 292 were category skips. In an exclusive category the highest-priority rule whose condition HOLDS wins outright, so a rule below produce-vehicle only gets a turn once combat-vehicle-count has saturated army-cap(3, 18, vehicle-weight) — and combat losses keep it under that ceiling essentially always. The loser here did not build late, it never built, and the doctrine had no way to ask for heavy armour at all. Its own gates are what should be doing the work and they are strict already: a tech centre standing, tech-priority above 0.3, 1200 in reserve and a cap of its own. When any of those fails, produce-vehicle still wins on the next rule down."
   require vehicle-weight > 0.1
   require tech-priority > 0.3
   require has-role(war-factory)
