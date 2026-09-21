@@ -204,6 +204,28 @@ var counterLossThresholds = map[string]int{
 	"aircraft": 2,
 }
 
+// minFieldedForCounter is the denominator this event was missing.
+//
+// The thresholds above are absolute, so an army of three vehicles trips
+// "vehicles are being countered" on exactly the same evidence as an army of
+// forty. Game 157 held vehicle_weight at 0.60 for twelve consecutive doctrines,
+// then lost three vehicles to a Yak and a MiG — three being its ENTIRE vehicle
+// force, because production had been cash-starved at zero all game — and the
+// next doctrine came back at 0.20, then oscillated 0.55, 0.20.
+//
+// Losing three of three is not evidence that vehicles are countered. It is
+// evidence that you had three vehicles. And the feedback is self-reinforcing
+// in the worst direction: the fewer of a domain you field, the more certain
+// you are to be told to stop fielding it, which is how a composition collapse
+// locks in and stays locked.
+//
+// Twice the loss threshold, so the claim needs a force in which the losses are
+// a real share rather than the whole thing: six vehicles, four infantry, four
+// aircraft. Deliberately a floor on the FORCE and not a fraction of it — a
+// fraction test would do the opposite of what is wanted here, firing hardest
+// on three-of-three and staying silent on three-of-thirty.
+func minFieldedForCounter(threshold int) int { return threshold * 2 }
+
 // Mid-game building types: real military production capability.
 var midGameBuildings = map[string]bool{
 	rules.WarFactory: true,
@@ -492,6 +514,11 @@ func detectEvents(gs model.GameState, memory map[string]any, prev *stateSnapshot
 				threshold = 3
 			}
 			if lost < threshold {
+				continue
+			}
+			// prevIDs is the high-water mark across the accumulation window, so
+			// it is how many of this domain existed to lose.
+			if len(c.prevIDs) < minFieldedForCounter(threshold) {
 				continue
 			}
 			threats := visibleThreats(gs.Enemies, c.threats)

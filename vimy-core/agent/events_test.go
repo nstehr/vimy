@@ -1131,10 +1131,11 @@ func TestVehiclesLostToAircraftCountAsCountered(t *testing.T) {
 	}
 	migOverhead := []model.Enemy{{ID: 90, Type: "mig", X: 50, Y: 50}}
 
-	prev := takeSnapshot(model.GameState{Tick: 1000, Units: tanks(1, 2, 3, 4), Enemies: migOverhead}, nil)
+	// Twelve fielded, three lost: enough force for the loss to mean something.
+	// Three of three would not, and must not — see the suppression test below.
+	prev := takeSnapshot(model.GameState{Tick: 1000, Units: tanks(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12), Enemies: migOverhead}, nil)
 	prev.lossBaselineTick = 1000
-	// Three of four gone, the MiG still overhead.
-	gs := model.GameState{Tick: 1100, Units: tanks(4), Enemies: migOverhead}
+	gs := model.GameState{Tick: 1100, Units: tanks(4, 5, 6, 7, 8, 9, 10, 11, 12), Enemies: migOverhead}
 
 	var got string
 	for _, e := range detectEvents(gs, nil, &prev) {
@@ -1168,12 +1169,12 @@ func TestAircraftSeenDuringTheWindowStillCounts(t *testing.T) {
 
 	// Seen at 1000, gone by the time the losses are counted at 1100.
 	prev := takeSnapshot(model.GameState{
-		Tick: 1000, Units: tanks(1, 2, 3, 4),
+		Tick: 1000, Units: tanks(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
 		Enemies: []model.Enemy{{ID: 90, Type: "yak", X: 50, Y: 50}},
 	}, nil)
 	prev.lossBaselineTick = 1000
 
-	gs := model.GameState{Tick: 1100, Units: tanks(4)} // no enemies on screen at all
+	gs := model.GameState{Tick: 1100, Units: tanks(4, 5, 6, 7, 8, 9, 10, 11, 12)} // no enemies on screen
 	var got string
 	for _, e := range detectEvents(gs, nil, &prev) {
 		if e.Kind == EventStrategyCountered {
@@ -1187,11 +1188,11 @@ func TestAircraftSeenDuringTheWindowStillCounts(t *testing.T) {
 	// But a sighting older than the window must NOT be dragged in — otherwise
 	// one aircraft early on explains every vehicle lost for the rest of the game.
 	stale := takeSnapshot(model.GameState{
-		Tick: 1000, Units: tanks(1, 2, 3, 4),
+		Tick: 1000, Units: tanks(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
 		Enemies: []model.Enemy{{ID: 90, Type: "yak", X: 50, Y: 50}},
 	}, nil)
 	stale.lossBaselineTick = 1000
-	late := model.GameState{Tick: 1000 + fleetingThreatMemoryTicks + 1, Units: tanks(4)}
+	late := model.GameState{Tick: 1000 + fleetingThreatMemoryTicks + 1, Units: tanks(4, 5, 6, 7, 8, 9, 10, 11, 12)}
 	for _, e := range detectEvents(late, nil, &stale) {
 		if e.Kind == EventStrategyCountered {
 			t.Errorf("stale sighting %d ticks old still fired: %q", fleetingThreatMemoryTicks+1, e.Detail)
@@ -1215,5 +1216,53 @@ func TestThreatMemoryCarriesForwardAndExpires(t *testing.T) {
 	carryThreatMemory(map[string]int{"mig": 1000}, cur2, 1200)
 	if cur2["mig"] != 1200 {
 		t.Errorf("mig = %d, want the newer sighting to stand", cur2["mig"])
+	}
+}
+
+// Losing everything you had is not evidence that a unit type is countered.
+//
+// The loss thresholds are absolute, so three vehicles lost reads identically
+// whether you fielded three or forty. Game 157 held vehicle_weight at 0.60 for
+// twelve doctrines, lost its entire three-vehicle force to a Yak and a MiG, and
+// came back at 0.20 on the very next doctrine before oscillating 0.55, 0.20.
+// The feedback runs the wrong way: the fewer vehicles you field, the more
+// certain you are to be told to stop fielding them, so a composition collapse
+// locks itself in.
+func TestWipingOutATinyForceIsNotACounter(t *testing.T) {
+	tanks := func(ids ...int) []model.Unit {
+		var us []model.Unit
+		for _, id := range ids {
+			us = append(us, model.Unit{ID: id, Type: "2tnk"})
+		}
+		return us
+	}
+	migOverhead := []model.Enemy{{ID: 90, Type: "mig", X: 50, Y: 50}}
+
+	// Exactly game 157: three vehicles owned, all three lost, MiG overhead.
+	prev := takeSnapshot(model.GameState{Tick: 1000, Units: tanks(1, 2, 3), Enemies: migOverhead}, nil)
+	prev.lossBaselineTick = 1000
+	gs := model.GameState{Tick: 1100, Units: nil, Enemies: migOverhead}
+
+	for _, e := range detectEvents(gs, nil, &prev) {
+		if e.Kind == EventStrategyCountered {
+			t.Errorf("fired on a three-of-three wipe: %q — that says the force was tiny, not countered", e.Detail)
+		}
+	}
+
+	// The same three losses out of a real force must still fire.
+	big := takeSnapshot(model.GameState{
+		Tick: 1000, Units: tanks(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12), Enemies: migOverhead,
+	}, nil)
+	big.lossBaselineTick = 1000
+	survived := model.GameState{Tick: 1100, Units: tanks(4, 5, 6, 7, 8, 9, 10, 11, 12), Enemies: migOverhead}
+
+	fired := false
+	for _, e := range detectEvents(survived, nil, &big) {
+		if e.Kind == EventStrategyCountered {
+			fired = true
+		}
+	}
+	if !fired {
+		t.Error("three of twelve lost must still count: that is a real share of a real force")
 	}
 }
