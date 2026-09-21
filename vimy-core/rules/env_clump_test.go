@@ -80,3 +80,73 @@ func TestCentroidIgnoresTheOutlier(t *testing.T) {
 		t.Errorf("centre = (%d,%d), want (50,50): the mean would be (66,66), with nobody near it", x, y)
 	}
 }
+
+// The gate's numerator, exposed.
+//
+// Game 154 blocked 80 strikes on dispersion and recorded members and the
+// furthest straggler — a maximum, where the gate reads a percentile. Those two
+// numbers cannot distinguish "25 of 31 packed tight and 6 trailing", which
+// passes, from "31 evenly strung out", which cannot pass at any squad size the
+// 8-cell radius was tuned for. near is the figure that separates them.
+func TestSquadClumpReportsWhatTheGateCounted(t *testing.T) {
+	// Six units: four together, two a long way out. 80% of six is five, so
+	// four near is a fail — and the max spread alone would not have said so.
+	env := RuleEnv{
+		State: model.GameState{
+			Units: []model.Unit{
+				{ID: 1, X: 100, Y: 100},
+				{ID: 2, X: 101, Y: 100},
+				{ID: 3, X: 100, Y: 101},
+				{ID: 4, X: 102, Y: 102},
+				{ID: 5, X: 140, Y: 100},
+				{ID: 6, X: 160, Y: 100},
+			},
+		},
+		Memory: map[string]any{
+			"squads": map[string]*Squad{
+				"ground-attack": {Name: "ground-attack", Domain: "ground", UnitIDs: []int{1, 2, 3, 4, 5, 6}},
+			},
+		},
+	}
+	members, near, need := env.SquadClump("ground-attack", 8)
+	if members != 6 {
+		t.Errorf("members = %d, want 6", members)
+	}
+	if near != 4 {
+		t.Errorf("near = %d, want 4: two units are 40 and 60 cells out", near)
+	}
+	if need != 5 {
+		t.Errorf("need = %d, want 5 (ceil(0.8*6))", need)
+	}
+	// And the wrapper must still be exactly near >= need.
+	if env.SquadClumped("ground-attack", 8) {
+		t.Error("SquadClumped disagrees with its own arithmetic")
+	}
+}
+
+// Every trivially-clumped shortcut must keep answering true through the split:
+// no squad map, no squad, and a single surviving unit.
+func TestSquadClumpTrivialCasesStayClumped(t *testing.T) {
+	cases := map[string]RuleEnv{
+		"no squad map": {State: model.GameState{}, Memory: map[string]any{}},
+		"no such squad": {
+			State:  model.GameState{},
+			Memory: map[string]any{"squads": map[string]*Squad{}},
+		},
+		"one survivor": {
+			State: model.GameState{Units: []model.Unit{{ID: 1, X: 5, Y: 5}}},
+			Memory: map[string]any{"squads": map[string]*Squad{
+				"ground-attack": {Name: "ground-attack", UnitIDs: []int{1, 2, 3}},
+			}},
+		},
+	}
+	for name, env := range cases {
+		if !env.SquadClumped("ground-attack", 8) {
+			t.Errorf("%s: want trivially clumped", name)
+		}
+		_, near, need := env.SquadClump("ground-attack", 8)
+		if near < need {
+			t.Errorf("%s: near %d < need %d", name, near, need)
+		}
+	}
+}
