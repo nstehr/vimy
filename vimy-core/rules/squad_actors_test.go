@@ -268,3 +268,30 @@ func TestSquadTargetCountsOnlyCombatGround(t *testing.T) {
 		t.Errorf("target = %d, want 2: harvesters and aircraft are not the offensive", got)
 	}
 }
+
+// Only the offensive absorbs the army. The garrison asks for a handful of
+// units on purpose, and form-defense-squad runs at roughly 475 against the
+// attack's 265 — so scaling it too meant it took everything first and left the
+// assault a remnant: 35 units on the field and a squad of 6 at tick 13500.
+func TestOnlyTheOffensiveScalesWithTheArmy(t *testing.T) {
+	units := make([]model.Unit, 0, 12)
+	for i := 1; i <= 12; i++ {
+		units = append(units, model.Unit{ID: i, Type: "e1", Idle: true})
+	}
+
+	def := RuleEnv{Memory: map[string]any{}, State: model.GameState{Units: units}}
+	if err := FormSquad("ground-defense", "ground", 3, "defend")(def, nil); err != nil {
+		t.Fatalf("FormSquad: %v", err)
+	}
+	if got := getSquads(def.Memory)["ground-defense"]; got.TargetSize != 3 {
+		t.Errorf("garrison target = %d, want the 3 it asked for", got.TargetSize)
+	}
+
+	atk := RuleEnv{Memory: map[string]any{}, State: model.GameState{Units: units}}
+	if err := FormSquad("ground-attack", "ground", 3, "attack")(atk, nil); err != nil {
+		t.Fatalf("FormSquad: %v", err)
+	}
+	if got := getSquads(atk.Memory)["ground-attack"]; got.TargetSize != 12 {
+		t.Errorf("assault target = %d, want all 12 committable units", got.TargetSize)
+	}
+}
