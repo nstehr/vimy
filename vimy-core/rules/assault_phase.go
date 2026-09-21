@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/nstehr/vimy/vimy-core/model"
+	"github.com/nstehr/vimy/vimy-core/wal"
 )
 
 // The base assault is already a state machine; it has just never said so. Its
@@ -109,9 +110,10 @@ const (
 // Counted per squad per reason, in memory, and read out at game end. Cheap
 // enough to run on every evaluation, which matters: the interesting case is
 // the one that happens thousands of times.
-func recordStrikeBlocked(env RuleEnv, reason string) {
+func recordStrikeBlocked(env RuleEnv, squad, reason string) {
 	counts := memoryMap[string, int](env.Memory, "strikeBlocked")
 	counts[reason]++
+	emit(env, wal.Event{Kind: "strike-blocked", Squad: squad, Reason: reason})
 }
 
 // StrikeBlockers reports why strikes did not happen, by reason.
@@ -146,9 +148,20 @@ type rallyShape struct {
 }
 
 // recordRallyShape notes one rally: how many members the squad had, how many
-// of them could actually be commanded, and how far the furthest had strayed
-// from the centroid.
-func recordRallyShape(env RuleEnv, members, idle, spread int) {
+// of them could actually be commanded, how far the furthest had strayed from
+// the centroid, and how many were inside the radius the gate actually measures.
+//
+// near is the last of those and the only one that answers whether the gate can
+// be satisfied. members and spread say how big and how loose; near against
+// ceil(0.8n) says whether an 8-cell circle is the thing holding the squad.
+// Kept out of the SQLite rally aggregate on purpose — that chain is a
+// migration, sqlc, store and Currie for a figure the event stream already
+// carries per rally and unsampled.
+func recordRallyShape(env RuleEnv, squad string, members, idle, spread, near int) {
+	emit(env, wal.Event{
+		Kind: "rally", Squad: squad,
+		Members: members, Idle: idle, Spread: spread, Near: near,
+	})
 	s, _ := env.Memory["rallyShape"].(*rallyShape)
 	if s == nil {
 		s = &rallyShape{}
@@ -244,6 +257,16 @@ func recordTransit(env RuleEnv, name string, tx, ty int) {
 	}
 	dx, dy := float64(tx-cx), float64(ty-cy)
 	frac := math.Sqrt(dx*dx+dy*dy) / diag
+
+	// The bands below throw `frac` away: 0.34 and 0.21 both become "Mid", and
+	// then the Mid samples are summed. Game 148 reduces a 118920-tick game to
+	// 76 far / 5 mid / 0 near, which cannot say WHEN the squad stopped
+	// closing, only that it did. The event keeps the number.
+	emit(env, wal.Event{
+		Kind: "transit", Squad: name,
+		Members: members, Near: near, Spread: spread,
+		Attrs: map[string]float64{"target_fraction": frac},
+	})
 
 	t, _ := env.Memory["transitSpread"].(*transitSpread)
 	if t == nil {

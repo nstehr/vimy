@@ -37,5 +37,19 @@ build:
 run:
 	go run . $(ARGS)
 
+# Play with telemetry on.
+#
+# `go build`, not `go run`, deliberately: the Go toolchain stamps vcs.revision
+# into a built binary and NOT into `go run`, so a game played with `make run`
+# streams with an empty `revision` and only half the version dimension. That is
+# exactly the silent gap this telemetry exists to close, so the target that
+# turns streaming on is the one that builds first.
+#
+# vimyc must be on PATH -- the doctrine compiler, and what the rules digest
+# fingerprints.
+VIMYC_BIN ?= $(abspath $(VIMYC))/target/release
+run-stream: build
+	PATH="$(VIMYC_BIN):$$PATH" ./bin/vimy -stream $(ARGS)
+
 clean:
 	rm -rf bin/

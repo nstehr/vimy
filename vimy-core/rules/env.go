@@ -27,6 +27,9 @@ type RuleEnv struct {
 	Terrain     *model.TerrainGrid
 	Preferences UnitPreferences
 	TargetBias  TargetBias
+	// Events is where structured telemetry goes. Nil when streaming is off,
+	// which is the default and the case every test runs in.
+	Events TelemetrySink
 }
 
 func biasOr1(b float64) float64 {
@@ -446,28 +449,46 @@ func (e RuleEnv) IsHarvesterHarassed() bool {
 // still needs both — at that size there is no minority, and a lone unit
 // walking into a base is the piecemeal death this check exists to prevent.
 func (e RuleEnv) SquadClumped(name string, radiusCells int) bool {
+	_, near, need := e.SquadClump(name, radiusCells)
+	return near >= need
+}
+
+// SquadClump is the gate's own arithmetic, exposed so that a strike blocked on
+// dispersion can record WHY rather than only that it was. near is how many
+// members sit within radiusCells of their median and need is what that has to
+// reach; SquadClumped is near >= need and nothing more.
+//
+// Split out because the rally instrumentation recorded the furthest straggler,
+// which is a maximum, while the gate reads a percentile. A squad of 31 whose
+// furthest member is 46 cells out is equally consistent with 25 packed tight
+// and 6 trailing — which passes — and with 31 evenly strung out, which cannot.
+// Game 154 blocked 80 strikes here and could not distinguish the two, so it
+// could not say whether the fixed 8-cell radius is the binding constraint once
+// a squad is army-sized.
+func (e RuleEnv) SquadClump(name string, radiusCells int) (members, near, need int) {
 	squads, ok := e.Memory["squads"].(map[string]*Squad)
 	if !ok {
-		return true // no squad map — trivially "clumped"
+		return 0, 0, 0 // no squad map — trivially "clumped"
 	}
 	sq, ok := squads[name]
 	if !ok || len(sq.UnitIDs) == 0 {
-		return true // no squad — no dispersion to worry about
+		return 0, 0, 0 // no squad — no dispersion to worry about
 	}
 
 	ids := make(map[int]bool, len(sq.UnitIDs))
 	for _, id := range sq.UnitIDs {
 		ids[id] = true
 	}
-	var members []model.Unit
+	var alive []model.Unit
 	for _, u := range e.State.Units {
 		if !ids[u.ID] {
 			continue
 		}
-		members = append(members, u)
+		alive = append(alive, u)
 	}
-	if len(members) < 2 {
-		return true // one unit is trivially clumped
+	if len(alive) < 2 {
+		// One unit is trivially clumped, and a need of zero says so.
+		return len(alive), len(alive), 0
 	}
 	// Median, not mean. A mean is dragged by the very stragglers this check is
 	// meant to tolerate: three units at x=50, 50 and 100 have a mean of 66, so
@@ -476,11 +497,10 @@ func (e RuleEnv) SquadClumped(name string, radiusCells int) bool {
 	// meaningless while one straggler can disqualify everybody. The median
 	// sits with the cluster and ignores the outlier, which is the question
 	// being asked: are most of them together?
-	cx, cy := medianXY(members)
+	cx, cy := medianXY(alive)
 
 	radiusSq := radiusCells * radiusCells
-	near := 0
-	for _, u := range members {
+	for _, u := range alive {
 		dx := u.X - cx
 		dy := u.Y - cy
 		if dx*dx+dy*dy <= radiusSq {
@@ -490,14 +510,14 @@ func (e RuleEnv) SquadClumped(name string, radiusCells int) bool {
 	// The 80% figure, but never so strict that it demands everyone: one unit
 	// may always lag. Plain flooring was the first attempt and drifts too far
 	// the other way — it would let two of six straggle, where 80% permits one.
-	need := (len(members)*8 + 9) / 10 // ceil(0.8n)
-	if max := len(members) - 1; need > max {
+	need = (len(alive)*8 + 9) / 10 // ceil(0.8n)
+	if max := len(alive) - 1; need > max {
 		need = max
 	}
 	if need < 2 {
 		need = 2
 	}
-	return near >= need
+	return len(alive), near, need
 }
 
 // medianXY is the per-axis median position of a set of units. Per-axis rather

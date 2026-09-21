@@ -1,0 +1,65 @@
+# ClickHouse for Currie.
+#
+# Two ways in, deliberately:
+#
+#   docker compose run --rm local          zero ingest. clickhouse-local reads
+#                                          ~/.vimy/exports/*.json.gz in place.
+#   docker compose up -d clickhouse        the server, with persistent tables,
+#                                          for anything cross-game.
+#
+# Both mount the archive read-only. Nothing here can write to ~/.vimy.
+
+name: currie-clickhouse
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    container_name: currie-clickhouse
+    ports:
+      - "8123:8123"   # HTTP / play UI at http://localhost:8123/play
+      - "9000:9000"   # native protocol
+    environment:
+      CLICKHOUSE_DB: currie
+      CLICKHOUSE_USER: currie
+      CLICKHOUSE_PASSWORD: currie
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      # The entrypoint chowns everything under user_files -R, which fails hard
+      # on the two read-only bind mounts below. DO_NOT_CHOWN skips it; the data
+      # directory already belongs to the clickhouse user inside the image, so
+      # nothing needs chowning. This is what keeps the archive read-only.
+      CLICKHOUSE_DO_NOT_CHOWN: "1"
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - ch-data:/var/lib/clickhouse
+      # file() and sqlite() resolve paths under user_files. Read-only: the
+      # archive is the source of truth and ClickHouse is a derived view of it.
+      - ${HOME}/.vimy/exports:/var/lib/clickhouse/user_files/exports:ro
+      - ${HOME}/.vimy/vimy.db:/var/lib/clickhouse/user_files/vimy.db:ro
+      - ./sql:/sql:ro
+      # Runs once, on first boot of an empty ch-data volume.
+      - ./sql/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--user", "currie", "--password", "currie", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  # clickhouse-local: no server, no ingest, no state. Same binary, same SQL.
+  #   docker compose run --rm local                       interactive
+  #   docker compose run --rm local --queries-file /sql/explore.sql
+  local:
+    image: clickhouse/clickhouse-server:25.8
+    profiles: ["local"]
+    entrypoint: ["clickhouse", "local"]
+    working_dir: /var/lib/clickhouse/user_files
+    volumes:
+      - ${HOME}/.vimy/exports:/var/lib/clickhouse/user_files/exports:ro
+      - ${HOME}/.vimy/vimy.db:/var/lib/clickhouse/user_files/vimy.db:ro
+      - ./sql:/sql:ro
+
+volumes:
+  ch-data:

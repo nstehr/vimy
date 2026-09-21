@@ -2,13 +2,17 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/nstehr/vimy/vimy-core/agent"
 	"github.com/nstehr/vimy/vimy-core/ipc"
@@ -37,6 +41,9 @@ var (
 	exportDir    string
 	exportEvery  int
 	exportMax    int
+
+	streamTelemetry bool
+	streamDir       string
 )
 
 // Rule tracing and state export default on. They were opt-in while nothing read
@@ -52,7 +59,19 @@ func main() {
 	flag.BoolVar(&exportStates, "export-states", true, "record sampled game states and rule evaluations, one file per game under -export-dir. What Currie replays and what vimyc's differential corpus is built from. -export-states=false to turn it off")
 	flag.StringVar(&exportDir, "export-dir", "", "where -export-states writes; defaults to ~/.vimy/exports, alongside the database")
 	flag.IntVar(&exportEvery, "export-every", 15, "with -export-states, record one evaluation in this many")
-	flag.IntVar(&exportMax, "export-max", 20000, "with -export-states, stop after this many recorded cases")
+	// 20000 truncated every game over ~32000 ticks, and covered the five
+	// longest games -- mean 156582 ticks -- under 40%. So vimyc's differential
+	// corpus systematically under-represented late game, which is exactly
+	// where squads exist and the squad predicates fire.
+	//
+	// Raised rather than thinning -export-every: measured over the 69 recorded
+	// exports, full coverage at the current density needs 111499 cases worst
+	// case and 40630 at p90. Thinning would have cost density in every game to
+	// fix a problem in the tail. Only safe to raise now that counting lives in
+	// the stream and the export is a corpus rather than an analysis input.
+	flag.IntVar(&exportMax, "export-max", 120000, "with -export-states, stop after this many recorded cases")
+	flag.BoolVar(&streamTelemetry, "stream", false, "write a per-game telemetry log -- every rule evaluation unsampled, plus one row per rally, blocked strike and transit sample -- that Currie ships into ClickHouse. Stamped with the rule sources that played the game, so a tuning change has a before and an after. Build with `go build` rather than `go run`, or the revision stamp is empty")
+	flag.StringVar(&streamDir, "stream-dir", "", "where -stream writes; defaults to ~/.vimy/stream")
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
@@ -135,6 +154,29 @@ func main() {
 		}
 		strategist.UseVimyc(compiler)
 		slog.Info("compiling doctrines through vimyc", "bin", compiler.Bin)
+
+		// Once, at startup: what this binary will play with. Costs one extra
+		// compile of a fixed doctrine and is the whole basis of "did that
+		// change move the number".
+		if v, err := compiler.SourceVersion(); err != nil {
+			slog.Error("cannot fingerprint the rule sources", "error", err)
+		} else {
+			sourceVersion = v
+			slog.Info("rule sources", "digest", v.RulesDigest,
+				"revision", orUnknown(v.Revision), "modified", v.Modified)
+			if v.Modified {
+				slog.Warn("built from a dirty tree: this run is not reproducible, and a before/after that spans it means nothing")
+			}
+		}
+	}
+
+	if streamDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			slog.Error("cannot find the home directory for -stream-dir", "error", err)
+			os.Exit(1)
+		}
+		streamDir = filepath.Join(home, ".vimy", "stream")
 	}
 
 	dataStore, err := store.New("")
@@ -198,9 +240,46 @@ func main() {
 	slog.Info("shutting down")
 }
 
+// sourceVersion is what the rule sources fingerprint to, filled in at startup.
+// Zero when there is no compiler -- a run with no strategist plays the built-in
+// rules and has nothing to version.
+var sourceVersion rules.SourceVersion
+
+func orUnknown(s string) string {
+	if s == "" {
+		return "unknown (not built from a repository)"
+	}
+	return s
+}
+
+// newSessionID names a game's telemetry directory. Time-ordered so the
+// directory listing reads chronologically, with enough randomness that two
+// games starting in the same second cannot collide.
+func newSessionID() string {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return time.Now().UTC().Format("20060102-150405")
+	}
+	return time.Now().UTC().Format("20060102-150405") + "-" + hex.EncodeToString(b[:])
+}
+
 func handleConn(ctx context.Context, conn net.Conn, engine *rules.Engine, strategist *agent.Strategist, dataStore *store.Store) {
 	c := ipc.NewConnection(conn, nil)
 	a := agent.New(c, engine, strategist, dataStore, ctx)
+
+	// Deferred to Hello, not opened here. A connection is not a game: the
+	// mod's bot module is a per-player trait that opens its own socket, and a
+	// game that did not close cleanly can leave one behind. Only a connection
+	// that says hello is playing.
+	if streamTelemetry {
+		a.Telemetry = &agent.TelemetryConfig{
+			Dir:         streamDir,
+			NewID:       newSessionID,
+			RulesDigest: sourceVersion.RulesDigest,
+			Revision:    sourceVersion.Revision,
+			Modified:    sourceVersion.Modified,
+		}
+	}
 	c.RegisterHandler(ipc.TypeHello, a.HandleHello)
 	c.RegisterHandler(ipc.TypeGameState, a.HandleGameState)
 	c.RegisterHandler(ipc.TypeGameEnd, a.HandleGameEnd)

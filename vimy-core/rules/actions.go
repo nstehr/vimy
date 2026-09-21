@@ -2412,6 +2412,70 @@ func markEffect(env RuleEnv) {
 
 // --- Squad action factories ---
 
+// committableGround counts the combat ground units this squad could hold: every
+// one not already rostered to a DIFFERENT squad, whether or not it is idle.
+//
+// Not filtered on Idle, and not filtered on the pool. Idle means "has no
+// current order", so a unit doing its job is invisible to it — the same
+// predicate that made squads uncommandable, readiness zero while moving, and
+// the base alarm permanent. And the pool is what can be ADDED this instant,
+// which is the wrong question for a target.
+//
+// Units in another squad are excluded because that is where the garrison
+// lives: ground-defense absorbed 3604 defence acts on its own in game 149
+// without the offensive ever being touched. So "not in another squad" already
+// means "not needed at home".
+func committableGround(env RuleEnv, ownName string) int {
+	claimed := make(map[int]bool)
+	for name, sq := range getSquads(env.Memory) {
+		if name == ownName {
+			continue
+		}
+		for _, id := range sq.UnitIDs {
+			claimed[id] = true
+		}
+	}
+	n := 0
+	for _, u := range env.State.Units {
+		if !IsCombatUnit(u.Type) || isAircraft(u) || isNaval(u) || claimed[u.ID] {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+// squadTarget is how big this squad should be: what the doctrine asks for as a
+// FLOOR, and the committable force as the actual number.
+//
+// The doctrine's ground_attack_group_size is a constant — 5 or 6 in every game
+// the strategist has written — while the army runs from 7 combat units to 27
+// at peak. A constant target is therefore a smaller and smaller fraction of
+// the army as the army grows, and TargetSize was set once at formation and
+// never revisited, so it could not even track the army it was formed from.
+//
+// Game 150 is what that costs. The squad formed at a full 6 with all 6
+// commandable, held formation, and reached 0.143 of the map diagonal from the
+// enemy base — the closest any assault has come. What arrived was two units,
+// neither of them together, against 16 rocket soldiers and 10 APCs. It arrived
+// as a pair because it was only ever six.
+//
+// Recomputed on every call, so the target grows with the army rather than
+// freezing at whatever existed the moment the squad formed.
+// squadCommitted reports whether the squad has been given an attack or rally
+// order yet. Until it has, it is mustering and free to grow.
+func squadCommitted(env RuleEnv, name string) bool {
+	_, ok := memoryMap[string, squadAttackState](env.Memory, "squadAttackState")[name]
+	return ok
+}
+
+func squadTarget(env RuleEnv, name string, floor int) int {
+	if n := committableGround(env, name); n > floor {
+		return n
+	}
+	return floor
+}
+
 // FormSquad only assigns unit IDs; it issues no orders. Formation and action
 // are separate rules so the compiler can give each its own priority and
 // condition.
@@ -2430,7 +2494,38 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 		}
 
 		squads := getSquads(env.Memory)
+		// Only the offensive absorbs the army. The garrison asks for
+		// lerp(2, 5, ground-defense-priority) on purpose — a handful of units
+		// to answer raids — and form-defense-squad runs at roughly 475 against
+		// the attack's 265, so scaling it too meant it took everything first
+		// and left the assault a remnant: 35 units on the field and a squad of
+		// 6 at tick 13500.
+		target := size
+		if domain == "ground" && strings.EqualFold(role, "attack") {
+			target = squadTarget(env, name, size)
+		}
 		if sq, ok := squads[name]; ok && len(sq.UnitIDs) > 0 {
+			// The target tracks the army, so a squad formed when there were
+			// four units keeps growing as the next twenty arrive.
+			sq.TargetSize = target
+			// But only while it is still mustering. A committed squad that
+			// keeps recruiting is on a treadmill it cannot get off: game 155
+			// rallied 22 times without a strike, and the rally was working —
+			// spread fell 68, 58, 54, 50, 46, 44, 43 as the squad pulled
+			// together — but every time it neared the gate a unit just built at
+			// the war factory joined and the spread reset to 50-odd. near
+			// plateaued at 9 while need climbed 9, 10, 10, 11 with each recruit.
+			// The core was tight the whole time; the gate could never pass
+			// because recruitment outran convergence.
+			//
+			// Committed means an attack or rally order has issued, which is
+			// exactly what a squadAttackState entry records. Deliberately not a
+			// "has it left the base" distance test — a predicate whose name
+			// promises a condition and whose body means "something is nearby"
+			// is the bug this project keeps rediscovering.
+			if squadCommitted(env, name) {
+				return nil
+			}
 			// Reinforcement: top up an existing under-strength squad.
 			if len(sq.UnitIDs) >= sq.TargetSize || len(pool) == 0 {
 				return nil
@@ -2453,7 +2548,7 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 		if len(pool) == 0 {
 			return nil
 		}
-		take := min(size, len(pool))
+		take := min(target, len(pool))
 		ids := make([]int, take)
 		for i := range take {
 			ids[i] = pool[i].ID
@@ -2463,12 +2558,16 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 			Domain:     domain,
 			UnitIDs:    ids,
 			Role:       role,
-			TargetSize: size,
+			TargetSize: target,
 		}
+		// A squad forming from nothing is a new wave, not the old one limping
+		// on. Clearing the commitment reopens recruitment for the muster —
+		// otherwise the first squad's state freezes every squad that follows it.
+		delete(memoryMap[string, squadAttackState](env.Memory, "squadAttackState"), name)
 		env.Memory["squads"] = squads
 		markEffect(env)
 		slog.Info("squad formed", "name", name, "domain", domain, "role", role,
-			"size", take, "target", size)
+			"size", take, "target", target)
 		return nil
 	}
 }
@@ -2564,17 +2663,16 @@ func SquadAttackMove(name string) ActionFunc {
 		targetChanged := !hasPrev || prev.TargetX != enemy.X || prev.TargetY != enemy.Y
 		commitStale := hasPrev && env.State.Tick-prev.LastTick > squadAttackCommitTTL
 		if targetChanged || commitStale || !prev.Attacking {
-			if env.SquadClumped(name, squadRallyRadius) {
+			cx, cy, haveCentroid := squadCentroid(env, name)
+			// Same doorstep rule as the base assault, and no centroid still
+			// falls through to a direct attack.
+			arrived := haveCentroid && withinStrikeReach(env, cx, cy, enemy.X, enemy.Y)
+			if env.SquadClumped(name, squadRallyRadius) || arrived || !haveCentroid {
 				state[name] = squadAttackState{TargetX: enemy.X, TargetY: enemy.Y, Attacking: true, LastTick: env.State.Tick}
 			} else {
-				cx, cy, ok := squadCentroid(env, name)
-				if ok {
-					state[name] = squadAttackState{TargetX: enemy.X, TargetY: enemy.Y, Attacking: false, LastTick: env.State.Tick}
-					slog.Debug("squad rallying before attack", "squad", name, "count", len(ids), "target", enemy.ID, "centroid_x", cx, "centroid_y", cy)
-					return sendAttackMove(env, conn, ids, cx, cy)
-				}
-				// No centroid — fall through to direct attack.
-				state[name] = squadAttackState{TargetX: enemy.X, TargetY: enemy.Y, Attacking: true, LastTick: env.State.Tick}
+				state[name] = squadAttackState{TargetX: enemy.X, TargetY: enemy.Y, Attacking: false, LastTick: env.State.Tick}
+				slog.Debug("squad rallying before attack", "squad", name, "count", len(ids), "target", enemy.ID, "centroid_x", cx, "centroid_y", cy)
+				return sendAttackMove(env, conn, ids, cx, cy)
 			}
 		} else {
 			prev.LastTick = env.State.Tick
@@ -2700,36 +2798,38 @@ func squadStructureTarget(env RuleEnv, name string) *model.Enemy {
 	if !ok {
 		return nil
 	}
-	mw0, mh0 := float64(env.State.MapWidth), float64(env.State.MapHeight)
-	strikeReach := math.Sqrt(mw0*mw0+mh0*mh0) * structureStrikeFraction
-
 	target := env.BestGroundTargetFrom(cx, cy)
 	if target == nil {
 		// Whether it has arrived decides what this means. Standing on the
 		// remembered base and seeing nothing is a targeting defect; still
 		// walking is just walking.
-		if base := env.NearestEnemyBase(); base != nil {
-			dx, dy := float64(base.X-cx), float64(base.Y-cy)
-			if dx*dx+dy*dy <= strikeReach*strikeReach {
-				recordStrikeBlocked(env, StrikeBlockedBlindAtBase)
-				return nil
-			}
+		if base := env.NearestEnemyBase(); base != nil && withinStrikeReach(env, cx, cy, base.X, base.Y) {
+			recordStrikeBlocked(env, name, StrikeBlockedBlindAtBase)
+			return nil
 		}
-		recordStrikeBlocked(env, StrikeBlockedNoTargetEnRoute)
+		recordStrikeBlocked(env, name, StrikeBlockedNoTargetEnRoute)
 		return nil
 	}
 	if !IsKnownBuildingType(target.Type) {
-		recordStrikeBlocked(env, StrikeBlockedNotBuilding)
+		recordStrikeBlocked(env, name, StrikeBlockedNotBuilding)
 		return nil
 	}
-	mw, mh := float64(env.State.MapWidth), float64(env.State.MapHeight)
-	reach := math.Sqrt(mw*mw+mh*mh) * structureStrikeFraction
-	dx, dy := float64(target.X-cx), float64(target.Y-cy)
-	if dx*dx+dy*dy > reach*reach {
-		recordStrikeBlocked(env, StrikeBlockedOutOfReach)
+	if !withinStrikeReach(env, cx, cy, target.X, target.Y) {
+		recordStrikeBlocked(env, name, StrikeBlockedOutOfReach)
 		return nil // still a walk away; keep moving
 	}
 	return target
+}
+
+// withinStrikeReach reports whether a squad standing at cx,cy has arrived at
+// tx,ty — inside structureStrikeFraction of the map diagonal. It already
+// decided what a missing target means; it now also decides when a rally has
+// stopped being a gathering move.
+func withinStrikeReach(env RuleEnv, cx, cy, tx, ty int) bool {
+	mw, mh := float64(env.State.MapWidth), float64(env.State.MapHeight)
+	reach := math.Sqrt(mw*mw+mh*mh) * structureStrikeFraction
+	dx, dy := float64(tx-cx), float64(ty-cy)
+	return dx*dx+dy*dy <= reach*reach
 }
 
 func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
@@ -2755,21 +2855,39 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 		// to keep growing to find what is left of a razed base.
 		reapproach := targetChanged || !prev.Attacking
 		if targetChanged || commitStale || !prev.Attacking {
-			if env.SquadClumped(name, squadRallyRadius) {
+			cx, cy, haveCentroid := squadCentroid(env, name)
+			// The rally gathers the squad for the WALK IN, and it is spent the
+			// moment the squad is on the doorstep: the else-branch attack-moves
+			// the squad onto its OWN centroid, which at that range is not
+			// gathering but standing still inside the base's defensive envelope,
+			// re-issued every evaluation. Arriving unclumped and attacking is
+			// worse than arriving clumped; arriving unclumped and holding still
+			// under the guns is worse than either.
+			//
+			// How often this fires is another matter, and the honest answer is
+			// rarely. It was justified by "game 154 marched 27 units to within
+			// 17% of the enemy base", which was a misreading: on a transit row
+			// `near` is the COUNT of members inside the clump radius, not a
+			// distance — the distance is attrs["target_fraction"]. Read
+			// properly, no squad in game 156 ever closed past 0.255 of the map
+			// diagonal and the army-sized ones stopped at 0.391, all of it in
+			// the Far band. The squad does not stall on the doorstep, it never
+			// reaches the doorstep. This guard is correct and cheap; it is not
+			// the thing keeping Vimy from striking.
+			arrived := haveCentroid && withinStrikeReach(env, cx, cy, base.X, base.Y)
+			if env.SquadClumped(name, squadRallyRadius) || arrived || !haveCentroid {
 				aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: true, LastTick: env.State.Tick}
 			} else {
-				cx, cy, ok := squadCentroid(env, name)
-				if ok {
-					aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: false, LastTick: env.State.Tick}
-					recordAssaultPhase(env, name, phaseRally, "")
-					recordStrikeBlocked(env, StrikeBlockedUnclumped)
-					// ids is the IDLE members — the ones this order can reach.
-					// members is all of them, which is what SquadClumped judges.
-					members, spread := squadSpread(env, name, cx, cy)
-					recordRallyShape(env, members, len(ids), spread)
-					return sendAttackMove(env, conn, ids, cx, cy)
-				}
-				aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: true, LastTick: env.State.Tick}
+				aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: false, LastTick: env.State.Tick}
+				recordAssaultPhase(env, name, phaseRally, "")
+				recordStrikeBlocked(env, name, StrikeBlockedUnclumped)
+				// ids is the IDLE members — the ones this order can reach.
+				// members is all of them, which is what the gate judges, and
+				// near is how many of those the gate actually counted.
+				members, near, _ := env.SquadClump(name, squadRallyRadius)
+				_, spread := squadSpread(env, name, cx, cy)
+				recordRallyShape(env, name, members, len(ids), spread, near)
+				return sendAttackMove(env, conn, ids, cx, cy)
 			}
 		} else {
 			prev.LastTick = env.State.Tick

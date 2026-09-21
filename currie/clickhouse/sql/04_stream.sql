@@ -1,0 +1,122 @@
+-- The streamed side of the archive.
+--
+-- Everything in 01_schema.sql is loaded from files after a game ends, sampled
+-- 1-in-15, and cannot be counted. These tables are fed by the shipper from the
+-- sidecar's write-ahead log while the game is still running, unsampled -- so
+-- `countIf(fired)` here means what it says, and build-war-factory's one firing
+-- per game is one row, not a coin flip against the sampler.
+
+CREATE DATABASE IF NOT EXISTS currie;
+
+CREATE TABLE IF NOT EXISTS currie.stream_rule_evals
+(
+    session_id  LowCardinality(String),
+    tick        UInt32,
+    rule        LowCardinality(String),
+    rule_set    LowCardinality(String),
+    -- -1 when the evaluation was streamed without a projection, which is most
+    -- of them: projecting costs ~60x evaluating, so state stays sampled even
+    -- though the evaluations no longer are. Join to game_states only where
+    -- this is >= 0, and never read it as "no state existed".
+    state_idx   Int32,
+    fired       Bool,
+    skipped     Bool
+)
+ENGINE = MergeTree
+ORDER BY (session_id, rule, tick)
+-- The shipper retries a segment whose INSERT landed but whose ledger row did
+-- not, carrying the same insert_deduplication_token. Without a window here
+-- that retry doubles the segment; with one ClickHouse drops the repeated
+-- block. 1000 is roughly a game's worth of segments at any sane segment size.
+SETTINGS non_replicated_deduplication_window = 1000;
+
+-- One row per game the sidecar streamed. game_id is 0 until the retrospective
+-- archives the game: SQLite hands out the id at archive time, so nothing
+-- during the game can know it, and every cross-game query joins through here.
+CREATE TABLE IF NOT EXISTS currie.stream_sessions
+(
+    session_id LowCardinality(String),
+    started_at DateTime,
+    game_id    UInt32,
+
+    -- WHAT PLAYED THE GAME. This is the dimension the archive never had, and
+    -- the reason a rule change could not be evaluated: 147 games and no way to
+    -- group them by the code that produced them. Squad spread sat near 20 cells
+    -- against a required 8 through four separate fixes, each judged by eye
+    -- against the next game or two.
+    --
+    -- rules_digest fingerprints the compiled rule set for a FIXED doctrine, so
+    -- it moves when the .vy sources or vimyc's codegen move and stays put when
+    -- the LLM merely picks different weights. revision is the sidecar build.
+    -- A refactor that changes no behaviour shows a new revision and the same
+    -- digest, which is the answer you want.
+    rules_digest LowCardinality(String),
+    revision     LowCardinality(String),
+    -- Built from a dirty tree. A before/after that spans one of these is not
+    -- an answer, so it is a column rather than a footnote.
+    modified     Bool,
+
+
+    -- The log drops rows rather than stall the game. Non-zero means any count
+    -- from this session is a floor.
+    rows_written UInt64,
+    rows_dropped UInt64
+)
+ENGINE = ReplacingMergeTree
+ORDER BY session_id;
+
+-- What the shipper has moved. Not load-bearing -- deduplication is what makes
+-- the pipeline correct -- but it is how the shipper avoids re-reading files it
+-- has already sent, and how a human answers "did the tail of that game land".
+CREATE TABLE IF NOT EXISTS currie.stream_segments
+(
+    session_id  LowCardinality(String),
+    segment     String,
+    rows        UInt64,
+    bytes       UInt64,
+    ingested_at DateTime
+)
+ENGINE = ReplacingMergeTree
+ORDER BY (session_id, segment);
+
+-- One row per occurrence of the sparse things worth analysing: a rally, a
+-- strike that did not happen.
+--
+-- This replaces nothing -- the per-game counters stay, and a disagreement
+-- between a counter and a count over these rows is a bug worth finding. What
+-- the counters cannot do is carry the unit of analysis. rally_count and
+-- rally_spread_sum reduce a game to two integers, so a game with 763 rallies
+-- and a game with ONE produce means of equal apparent weight. Game 146's mean
+-- spread of 17.0 is a single rally. Pooling at the rally, across games, is the
+-- only honest way to ask whether a fix moved anything.
+CREATE TABLE IF NOT EXISTS currie.stream_events
+(
+    session_id LowCardinality(String),
+    tick       UInt32,
+    kind       LowCardinality(String),   -- 'rally' | 'strike-blocked' | 'transit'
+    squad      LowCardinality(String),
+    reason     LowCardinality(String),   -- strike-blocked: which blocker
+
+    -- members and spread mean the same thing for every kind that sets them.
+    -- idle and near DO NOT: idle is the subset an ORDER CAN REACH (rally),
+    -- near is the subset WITHIN squadRallyRadius OF THE CENTRE (transit).
+    -- Two different measurements, so two columns -- sharing one is what forced
+    -- strike_blocked_no_target to be split, and that could not be applied
+    -- backwards. Each kind fills a subset; filter on kind before reading these.
+    members    Int32,
+    idle       Int32,                    -- rally
+    near       Int32,                    -- transit
+    spread     Int32,
+
+    -- The next thing worth recording, without a migration -- and where the
+    -- transit sampler's target_fraction lives: the squad's distance from its
+    -- target as a fraction of the map diagonal. The in-memory sampler buckets
+    -- that into three bands and sums them, so game 148's 118920 ticks reduce
+    -- to 76 far / 5 mid / 0 near. Keeping the number means the bands are a
+    -- choice made at query time, which is the only way to ask whether moving a
+    -- threshold moved anything.
+    attrs      Map(LowCardinality(String), Float64)
+)
+ENGINE = MergeTree
+ORDER BY (session_id, kind, tick)
+SETTINGS non_replicated_deduplication_window = 1000;

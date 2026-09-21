@@ -13,6 +13,7 @@ import (
 	"github.com/nstehr/vimy/vimy-core/model"
 	"github.com/nstehr/vimy/vimy-core/rules"
 	"github.com/nstehr/vimy/vimy-core/store"
+	"github.com/nstehr/vimy/vimy-core/wal"
 )
 
 // Agent owns the decision-making for a single player session.
@@ -23,10 +24,63 @@ type Agent struct {
 	Engine     *rules.Engine
 	Strategist *Strategist
 	Store      *store.Store
-	ctx        context.Context
+	// WAL is the telemetry log for this game, opened at Hello and nil until
+	// then. Sealed once the retrospective knows which archive row the game
+	// became.
+	WAL *wal.Log
+	// Telemetry is how to open that log. Nil when streaming is off.
+	Telemetry *TelemetryConfig
+	ctx       context.Context
 
 	// When a game state was last processed, for the stall watchdog.
 	lastState atomic.Int64
+}
+
+// TelemetryConfig is everything needed to open a game's log, carried rather
+// than an opened log: a connection that never plays must not leave a session
+// directory behind, and only one connection may stream at a time.
+type TelemetryConfig struct {
+	Dir         string
+	NewID       func() string
+	RulesDigest string
+	Revision    string
+	Modified    bool
+}
+
+// startTelemetry claims the engine's sink for this game, if streaming is on and
+// nothing else holds it. Losing the claim is not an error: it means another
+// connection is already playing, and two logs against one engine would leave
+// the loser sealing an empty session.
+func (a *Agent) startTelemetry() {
+	if a.Telemetry == nil || a.WAL != nil {
+		return
+	}
+	cfg := a.Telemetry
+	sink, err := a.Engine.AttachEvents(func() (rules.TelemetrySink, error) {
+		return wal.Open(cfg.Dir, wal.Session{
+			ID:          cfg.NewID(),
+			RulesDigest: cfg.RulesDigest,
+			Revision:    cfg.Revision,
+			Modified:    cfg.Modified,
+		}, wal.LogOptions{})
+	})
+	if err != nil {
+		// Telemetry is never worth a game.
+		slog.Error("cannot open the telemetry log; streaming off for this game", "error", err)
+		return
+	}
+	if sink == nil {
+		slog.Warn("telemetry already streaming for another connection; not streaming this one",
+			"player", a.Player)
+		return
+	}
+	log, ok := sink.(*wal.Log)
+	if !ok {
+		return
+	}
+	a.WAL = log
+	slog.Info("streaming telemetry", "dir", cfg.Dir, "player", a.Player,
+		"digest", cfg.RulesDigest, "modified", cfg.Modified)
 }
 
 func New(conn *ipc.Connection, engine *rules.Engine, strategist *Strategist, store *store.Store, ctx context.Context) *Agent {
@@ -50,6 +104,8 @@ func (a *Agent) HandleHello(env ipc.Envelope) (*ipc.Envelope, error) {
 		"player", a.Player,
 		"faction", a.Faction,
 		"opponents", opponentSummary)
+	a.startTelemetry()
+
 	a.lastState.Store(time.Now().UnixNano())
 	go a.watchForStall(stallAfter/3, stallAfter)
 
@@ -111,7 +167,20 @@ func (a *Agent) HandleGameEnd(env ipc.Envelope) (*ipc.Envelope, error) {
 		// Under the lock and before Reset wipes it: the review runs async and
 		// inserts the game record only once it finishes.
 		snap := a.Strategist.snapshotForReview(won, exportPath)
+		// game_id does not exist until ArchiveGame returns it, so sealing the
+		// log is the retrospective's job. Without this the session ships with
+		// game_id 0 and cannot be joined to anything.
+		if snap != nil && a.WAL != nil {
+			snap.onArchived = a.WAL.Finish
+		}
 		a.Strategist.runRetrospective(a.ctx, snap)
+		if snap == nil && a.WAL != nil {
+			// No retrospective to seal it. Still seal, or the open segment
+			// never ships.
+			if err := a.WAL.Finish(0); err != nil {
+				slog.Error("sealing the telemetry log failed", "error", err)
+			}
+		}
 
 		a.Strategist.Reset()
 
@@ -120,6 +189,13 @@ func (a *Agent) HandleGameEnd(env ipc.Envelope) (*ipc.Envelope, error) {
 		if snap == nil && a.Store != nil {
 			_ = a.Store.RecordGame(store.GameRecord{Faction: a.Faction, Won: won})
 		}
+	}
+
+	// Release the sink whatever happened above, or the next game finds it held
+	// by a log that is already sealed and streams nothing.
+	if a.WAL != nil {
+		a.Engine.DetachEvents()
+		a.WAL = nil
 	}
 
 	a.Engine.Reset()

@@ -72,7 +72,7 @@ func NewStateExporter(dir string, every, maxCases int) (*StateExporter, error) {
 		}
 		dir = filepath.Join(home, ".vimy", "exports")
 	} else {
-		dir = expandHome(dir)
+		dir = ExpandHome(dir)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", dir, err)
@@ -81,7 +81,10 @@ func NewStateExporter(dir string, every, maxCases int) (*StateExporter, error) {
 }
 
 // expandHome resolves a leading `~`, which the shell won't inside quotes.
-func expandHome(path string) string {
+// ExpandHome resolves a leading ~ against the current user's home directory.
+// Exported because Currie takes the same -dir style arguments and had its own
+// copy of this.
+func ExpandHome(path string) string {
 	if path != "~" && !strings.HasPrefix(path, "~/") {
 		return path
 	}

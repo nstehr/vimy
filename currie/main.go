@@ -12,8 +12,12 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"strconv"
+	"syscall"
 
+	"github.com/nstehr/vimy/currie/stream"
 	"github.com/nstehr/vimy/vimy-core/store"
 )
 
@@ -33,7 +37,34 @@ func run() error {
 	addr := flag.String("addr", ":8090", "listen address")
 	game := flag.String("game", "", "print one game's post mortem to stdout and exit: an id, or \"latest\"")
 	top := flag.Int("top", 8, "how many blamed rules to list with -game")
+
+	ship := flag.Bool("ship", false,
+		"ship the sidecar's write-ahead evaluation log into ClickHouse and exit when done, or keep shipping with -ship-every")
+	shipEvery := flag.Duration("ship-every", 0, "with -ship, keep shipping on this interval instead of making one pass")
+	streamDir := flag.String("stream-dir", "", "the write-ahead log directory; defaults to <dir>/stream")
+	chURL := flag.String("clickhouse", "http://localhost:8123", "ClickHouse HTTP endpoint")
+	chDB := flag.String("clickhouse-db", "currie", "ClickHouse database")
+	chUser := flag.String("clickhouse-user", "currie", "ClickHouse user")
+	chPass := flag.String("clickhouse-password", "currie", "ClickHouse password")
 	flag.Parse()
+
+	walDir := *streamDir
+	if walDir == "" {
+		walDir = filepath.Join(expand(*dir), "stream")
+	}
+
+	// A whole job, not a mode of the server: it runs and exits before the
+	// archive is opened, because it does not need it.
+	if *ship {
+		sh := stream.New(walDir, *chURL, *chDB, *chUser, *chPass)
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		if err := sh.Ping(ctx); err != nil {
+			return fmt.Errorf("clickhouse: %w (is the stream schema loaded? see clickhouse/sql/04_stream.sql)", err)
+		}
+		slog.Info("shipping", "wal", walDir, "clickhouse", *chURL, "every", *shipEvery)
+		return sh.Run(ctx, *shipEvery)
+	}
 
 	st, err := store.New(expand(*dir))
 	if err != nil {

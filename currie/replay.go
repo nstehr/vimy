@@ -501,14 +501,9 @@ func trimSourcePath(line string, args []string) string {
 	return line
 }
 
-func expand(p string) string {
-	if strings.HasPrefix(p, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, p[2:])
-		}
-	}
-	return p
-}
+// expand is rules.ExpandHome, which also handles a bare "~" that this copy
+// did not.
+func expand(p string) string { return rules.ExpandHome(p) }
 
 // print ranks by how often one clause was solely responsible: that is the
 // number a person can act on, and ranking by raw blocked count would put

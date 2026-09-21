@@ -38,6 +38,12 @@ type Engine struct {
 	bias    TargetBias
 
 	exporter *StateExporter
+	events   TelemetrySink
+	// ruleSetID fingerprints `rules`, cached because it is now read on every
+	// evaluation rather than only on sampled ones. RuleSetID sorts and hashes
+	// every rule's source: fine once per swap, absurd 25 times a second.
+	// Written under mu with `rules`, so the two can never disagree.
+	ruleSetID string
 
 	// Per-rule firing counters for the current doctrine window, populated only
 	// while traceFirings is on and reset by FlushFiringStats.
@@ -69,12 +75,55 @@ func NewEngine(rules []*Rule) (*Engine, error) {
 	}
 	return &Engine{
 		rules:      compiled,
+		ruleSetID:  RuleSetID(compiled),
 		Memory:     make(map[string]any),
 		fireCounts: make(map[string]int),
 		actCounts:  make(map[string]int),
 		firstTick:  make(map[string]int),
 		lastTick:   make(map[string]int),
 	}, nil
+}
+
+// SetEvents attaches a sink for structured events. Nil disables them, which is
+// the default: the counters they duplicate are always on.
+func (e *Engine) SetEvents(s TelemetrySink) {
+	e.mu.Lock()
+	e.events = s
+	e.mu.Unlock()
+}
+
+// AttachEvents installs a sink only if none is attached, and builds it under
+// the lock so nothing is created that cannot be used.
+//
+// The engine is one object shared by every connection, and the mod's bot module
+// is a per-player trait that opens its own socket -- so a second Vimy player,
+// or a stale connection from a game that did not close cleanly, produces a
+// second Agent against the same engine. A plain SetEvents there is last-writer-
+// wins: the first game's telemetry stops mid-game and its log seals empty, with
+// nothing in the output to say so. Observed on the first real run, twice in the
+// same second.
+//
+// Returns the sink that is attached, which is nil when another already holds
+// the engine. A caller that gets nil must not stream.
+func (e *Engine) AttachEvents(build func() (TelemetrySink, error)) (TelemetrySink, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.events != nil {
+		return nil, nil
+	}
+	s, err := build()
+	if err != nil {
+		return nil, err
+	}
+	e.events = s
+	return s, nil
+}
+
+// DetachEvents releases the sink so the next game can claim it. Idempotent.
+func (e *Engine) DetachEvents() {
+	e.mu.Lock()
+	e.events = nil
+	e.mu.Unlock()
 }
 
 // SetExporter attaches a recorder for vimyc's differential corpus. Nil disables
@@ -178,13 +227,15 @@ func (e *Engine) RuleNames() []string {
 func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connection) error {
 	e.mu.RLock()
 	rules := e.rules
+	ruleSetID := e.ruleSetID
 	exporter := e.exporter
+	events := e.events
 	e.mu.RUnlock()
 
 	e.memMu.Lock()
 	defer e.memMu.Unlock()
 
-	env := RuleEnv{State: gs, Faction: faction, Memory: e.Memory, Terrain: e.Terrain, Preferences: e.prefs, TargetBias: e.bias}
+	env := RuleEnv{State: gs, Faction: faction, Memory: e.Memory, Terrain: e.Terrain, Preferences: e.prefs, TargetBias: e.bias, Events: events}
 	sampleIncome(env)
 	updateIntel(env)
 	updateBuiltRoles(env)
@@ -200,15 +251,12 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 	// Re-projected after each firing rather than once per evaluation: an
 	// action mutates Memory, and later rules in the same tick see it.
 	stateIdx := exporter.begin(env, rules)
-	ruleSetID := ""
-	if stateIdx >= 0 {
-		ruleSetID = RuleSetID(rules)
-	}
 
 	anyFired := false
 	for _, r := range rules {
 		if fired[r.Category] {
 			exporter.record(stateIdx, gs.Tick, ruleSetID, r.Name, false, true)
+			streamEval(events, stateIdx, gs.Tick, ruleSetID, r.Name, false, true)
 			continue
 		}
 
@@ -220,6 +268,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 
 		match, ok := result.(bool)
 		exporter.record(stateIdx, gs.Tick, ruleSetID, r.Name, ok && match, false)
+		streamEval(events, stateIdx, gs.Tick, ruleSetID, r.Name, ok && match, false)
 		if !ok || !match {
 			continue
 		}
@@ -276,6 +325,7 @@ func (e *Engine) Swap(newRules []*Rule) error {
 	}
 	e.mu.Lock()
 	e.rules = compiled
+	e.ruleSetID = RuleSetID(compiled)
 	e.mu.Unlock()
 
 	// Keep squads the incoming rule set still forms. Dropping all of them on

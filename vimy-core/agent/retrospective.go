@@ -39,6 +39,9 @@ type retrospectiveSnapshot struct {
 	// Where this game's states were written, for replay. Empty without
 	// --export-states.
 	exportPath string
+	// onArchived seals the telemetry log once the game has an archive id.
+	// Nil when streaming is off.
+	onArchived func(gameID int64) error
 	// The directive these doctrines were written from.
 	directive string
 }
@@ -157,10 +160,25 @@ func doRetrospective(ctx context.Context, snap *retrospectiveSnapshot) {
 
 	archival := buildArchival(snap, review, err == nil)
 
+	// Sealed whatever happens below: a log left open never ships its tail,
+	// and Finish is idempotent so the successful call wins the race with this.
+	if snap.onArchived != nil {
+		defer func() {
+			if err := snap.onArchived(0); err != nil {
+				slog.Error("sealing the telemetry log failed", "error", err)
+			}
+		}()
+	}
+
 	gameID, archErr := snap.store.ArchiveGame(ctx, archival.gameCtx, archival.qualityTag, archival.reviewJSON, archival.doctrines)
 	if archErr != nil {
 		slog.Error("ArchiveGame failed", "error", archErr)
 		return
+	}
+	if snap.onArchived != nil {
+		if err := snap.onArchived(gameID); err != nil {
+			slog.Error("sealing the telemetry log failed", "error", err)
+		}
 	}
 
 	if len(archival.lessons) > 0 {
