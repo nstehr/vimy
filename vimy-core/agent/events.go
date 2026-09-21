@@ -62,6 +62,11 @@ type stateSnapshot struct {
 	// Start of the accumulation window. Dead units stay in the domain ID sets
 	// until it closes, so countMissing sees the total rather than one tick's.
 	lossBaselineTick int
+
+	// Fleeting threat type → the tick it was last seen. Aircraft leave the
+	// moment they have fired, so the counter check reads this alongside what is
+	// on screen rather than only what is on screen.
+	threatLastSeen map[string]int
 }
 
 // criticalBuildingTypes change what the AI can do at all, so losing one forces
@@ -120,10 +125,51 @@ var antiInfantryThreats = map[string]bool{
 	rules.ShockTrooper: true,
 }
 
+// antiVehicleThreats was two static defences — a tesla coil and a turret — so
+// "my vehicles are being countered" could only fire when Vimy drove into a
+// base. Game 156 lost its artillery to an opponent fielding 11 MiGs and 11
+// Yaks, and strategy_countered stayed silent for vehicles all game while
+// firing for infantry at tick 43140. Nothing reached the strategist: no
+// counter event, no burned axis, only the raw type codes in enemy_units_seen
+// for it to draw its own conclusions from.
+//
+// The infantry table had six entries including mobile units from the start.
+// The asymmetry is not an accident of judgement, it is an accident of
+// VISIBILITY: visibleThreats needs the threat on screen at the moment the loss
+// registers, and a building always is. Aircraft are handled by the memory
+// window below; the rest of the list is what kills tanks.
 var antiVehicleThreats = map[string]bool{
-	rules.TeslaCoil: true,
-	rules.Turret:    true,
+	rules.TeslaCoil:     true,
+	rules.Turret:        true,
+	rules.MiG:           true,
+	rules.Yak:           true,
+	rules.Hind:          true,
+	rules.Longbow:       true,
+	rules.RocketSoldier: true,
+	rules.V2Launcher:    true,
+	rules.HeavyTank:     true,
+	rules.MammothTank:   true,
+	rules.TeslaTank:     true,
 }
+
+// fleetingThreats do not stay where they killed you. A MiG strafes an
+// artillery piece and is gone before the loss is counted, so requiring it to
+// be visible at that instant means it never counts at all — which is most of
+// why the anti-vehicle table drifted toward buildings. These are remembered
+// for fleetingThreatMemoryTicks instead.
+var fleetingThreats = map[string]bool{
+	rules.MiG:       true,
+	rules.Yak:       true,
+	rules.Hind:      true,
+	rules.Longbow:   true,
+	rules.BlackHawk: true,
+}
+
+// fleetingThreatMemoryTicks matches counterCooldownTicks deliberately: that is
+// exactly how long losses accumulate before the check runs, so an aircraft
+// seen at any point in the window that produced the losses still counts, and
+// one seen before that window opened does not.
+const fleetingThreatMemoryTicks = counterCooldownTicks
 
 var antiAirThreats = map[string]bool{
 	rules.SAMSite:   true,
@@ -137,6 +183,10 @@ var threatDisplayName = map[string]string{
 	rules.Pillbox: "Pillbox", rules.CamoPillbox: "Heavy Pillbox", rules.Turret: "Turret",
 	rules.SAMSite: "SAM Site", rules.AAGun: "AA Gun",
 	rules.Flamethrower: "Flamethrower", rules.ShockTrooper: "Shock Trooper", rules.FlakTruck: "Flak Truck",
+	rules.MiG: "MiG", rules.Yak: "Yak", rules.Hind: "Hind", rules.Longbow: "Longbow",
+	rules.BlackHawk: "Black Hawk", rules.RocketSoldier: "Rocket Soldier",
+	rules.V2Launcher: "V2 Launcher", rules.HeavyTank: "Heavy Tank",
+	rules.MammothTank: "Mammoth Tank", rules.TeslaTank: "Tesla Tank",
 }
 
 // counterCooldownTicks is the minimum gap between strategy_countered events.
@@ -245,15 +295,22 @@ func unitDomain(u model.Unit) string {
 // takeSnapshot captures the current diffable state for next tick's comparison.
 func takeSnapshot(gs model.GameState, memory map[string]any) stateSnapshot {
 	snap := stateSnapshot{
-		buildingIDs:  make(map[int]string, len(gs.Buildings)),
-		cash:         gs.Player.Cash + gs.Player.Resources,
-		phase:        gamePhase(gs),
-		enemiesSeen:  len(gs.Enemies) > 0,
-		superReady:   make(map[string]bool),
-		harvesterCnt: 0,
-		infantryIDs:  make(map[int]bool),
-		vehicleIDs:   make(map[int]bool),
-		aircraftIDs:  make(map[int]bool),
+		buildingIDs:    make(map[int]string, len(gs.Buildings)),
+		cash:           gs.Player.Cash + gs.Player.Resources,
+		phase:          gamePhase(gs),
+		enemiesSeen:    len(gs.Enemies) > 0,
+		superReady:     make(map[string]bool),
+		harvesterCnt:   0,
+		infantryIDs:    make(map[int]bool),
+		vehicleIDs:     make(map[int]bool),
+		aircraftIDs:    make(map[int]bool),
+		threatLastSeen: make(map[string]int),
+	}
+
+	for _, e := range gs.Enemies {
+		if t := baseType(e.Type); fleetingThreats[t] {
+			snap.threatLastSeen[t] = gs.Tick
+		}
 	}
 
 	for _, b := range gs.Buildings {
@@ -438,6 +495,7 @@ func detectEvents(gs model.GameState, memory map[string]any, prev *stateSnapshot
 				continue
 			}
 			threats := visibleThreats(gs.Enemies, c.threats)
+			rememberThreats(threats, prev.threatLastSeen, c.threats, gs.Tick)
 			if len(threats) == 0 {
 				continue
 			}
@@ -478,6 +536,37 @@ func visibleThreats(enemies []model.Enemy, threatSet map[string]bool) map[string
 		}
 	}
 	return counts
+}
+
+// carryThreatMemory folds the previous tick's sightings into this one's,
+// dropping anything older than the window so the map cannot grow without
+// bound over a long game.
+func carryThreatMemory(prev, cur map[string]int, tick int) {
+	for t, seen := range prev {
+		if tick-seen > fleetingThreatMemoryTicks {
+			continue // expired; let it fall out rather than accumulate
+		}
+		if cur[t] < seen {
+			cur[t] = seen
+		}
+	}
+}
+
+// rememberThreats adds threats seen recently but not standing here now.
+//
+// Counted as one apiece: the tick a type was last seen says nothing about how
+// many there were, and inventing a number would be exactly the kind of
+// inference this event exists to replace. Presence is the claim being made —
+// "a MiG was over this fight" — and one is enough to make it.
+func rememberThreats(into map[string]int, lastSeen map[string]int, threatSet map[string]bool, tick int) {
+	for t, seen := range lastSeen {
+		if !threatSet[t] || into[t] > 0 {
+			continue
+		}
+		if tick-seen <= fleetingThreatMemoryTicks {
+			into[t] = 1
+		}
+	}
 }
 
 // formatThreats renders a threat count map as "2x Flame Tower, 1x Tesla Coil".

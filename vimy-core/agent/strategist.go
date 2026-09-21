@@ -49,8 +49,8 @@ type BattlefieldStatus struct {
 	VehiclesLost       int
 	AircraftLost       int
 	NavalLost          int
-	EnemyUnitsKilled   int // engine count
-	EnemyBuildingsKill int // engine count
+	EnemyUnitsKilled   int         // engine count
+	EnemyBuildingsKill int         // engine count
 	EnemyBuildings     []TypeCount // currently visible
 	EnemyBuildingsSeen []TypeCount // cumulative historical
 	EnemyUnits         []TypeCount // currently visible
@@ -141,7 +141,7 @@ func NewStrategist(engine *rules.Engine, directive string, interval int) *Strate
 		// warrant re-planning twice inside half a minute — the previous plan
 		// has not had time to express itself.
 		cooldown: 600,
-		ready:     make(chan struct{}, 1),
+		ready:    make(chan struct{}, 1),
 	}
 }
 
@@ -384,6 +384,9 @@ func (s *Strategist) UpdateState(gs model.GameState) {
 	if s.prevSnap != nil {
 		snap.lastCounterTick = s.prevSnap.lastCounterTick
 		snap.lastHarvesterAttackTick = s.prevSnap.lastHarvesterAttackTick
+		// A snapshot only sees this tick, so without carrying it forward the
+		// "remembered" threat lasts exactly one tick and is no memory at all.
+		carryThreatMemory(s.prevSnap.threatLastSeen, snap.threatLastSeen, gs.Tick)
 
 		counterFired := false
 		for _, e := range events {
@@ -1256,8 +1259,8 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 			// inferred 396 kills where the engine recorded 138, and 10 enemy
 			// buildings where it recorded none — the strategist was being told
 			// it was winning fights it was losing.
-			Enemy_units_killed:          int64(gs.Player.UnitsKilled),
-			Enemy_buildings_destroyed:   int64(gs.Player.BuildingsKilled),
+			Enemy_units_killed:        int64(gs.Player.UnitsKilled),
+			Enemy_buildings_destroyed: int64(gs.Player.BuildingsKilled),
 		}
 	}
 

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/nstehr/vimy/vimy-core/model"
@@ -1111,4 +1112,108 @@ func containsStr(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+// Vehicles lost to aircraft must register as a counter.
+//
+// antiVehicleThreats was a tesla coil and a turret, so the vehicle arm of
+// strategy_countered could only fire when Vimy drove into a base. Game 156 lost
+// its artillery all game to an opponent fielding 11 MiGs and 11 Yaks and the
+// strategist was told nothing: no counter event, no burned axis, just aircraft
+// type codes in enemy_units_seen to draw its own conclusions from.
+func TestVehiclesLostToAircraftCountAsCountered(t *testing.T) {
+	tanks := func(ids ...int) []model.Unit {
+		var us []model.Unit
+		for _, id := range ids {
+			us = append(us, model.Unit{ID: id, Type: "2tnk"})
+		}
+		return us
+	}
+	migOverhead := []model.Enemy{{ID: 90, Type: "mig", X: 50, Y: 50}}
+
+	prev := takeSnapshot(model.GameState{Tick: 1000, Units: tanks(1, 2, 3, 4), Enemies: migOverhead}, nil)
+	prev.lossBaselineTick = 1000
+	// Three of four gone, the MiG still overhead.
+	gs := model.GameState{Tick: 1100, Units: tanks(4), Enemies: migOverhead}
+
+	var got string
+	for _, e := range detectEvents(gs, nil, &prev) {
+		if e.Kind == EventStrategyCountered {
+			got = e.Detail
+		}
+	}
+	if got == "" {
+		t.Fatal("no strategy_countered: losing three tanks under a MiG is the signal this event exists for")
+	}
+	if !strings.Contains(got, "vehicle") || !strings.Contains(got, "MiG") {
+		t.Errorf("detail = %q, want it to name the domain and the MiG", got)
+	}
+}
+
+// An aircraft does not loiter over the wreck it made.
+//
+// visibleThreats needs the threat on screen at the instant the check runs, and
+// a strafing run is over by then — which is most of why the anti-vehicle table
+// ended up holding only buildings. Remembering the sighting for the length of
+// the loss-accumulation window is what makes adding aircraft to that table
+// worth anything.
+func TestAircraftSeenDuringTheWindowStillCounts(t *testing.T) {
+	tanks := func(ids ...int) []model.Unit {
+		var us []model.Unit
+		for _, id := range ids {
+			us = append(us, model.Unit{ID: id, Type: "2tnk"})
+		}
+		return us
+	}
+
+	// Seen at 1000, gone by the time the losses are counted at 1100.
+	prev := takeSnapshot(model.GameState{
+		Tick: 1000, Units: tanks(1, 2, 3, 4),
+		Enemies: []model.Enemy{{ID: 90, Type: "yak", X: 50, Y: 50}},
+	}, nil)
+	prev.lossBaselineTick = 1000
+
+	gs := model.GameState{Tick: 1100, Units: tanks(4)} // no enemies on screen at all
+	var got string
+	for _, e := range detectEvents(gs, nil, &prev) {
+		if e.Kind == EventStrategyCountered {
+			got = e.Detail
+		}
+	}
+	if got == "" || !strings.Contains(got, "Yak") {
+		t.Fatalf("detail = %q, want the Yak remembered across the window", got)
+	}
+
+	// But a sighting older than the window must NOT be dragged in — otherwise
+	// one aircraft early on explains every vehicle lost for the rest of the game.
+	stale := takeSnapshot(model.GameState{
+		Tick: 1000, Units: tanks(1, 2, 3, 4),
+		Enemies: []model.Enemy{{ID: 90, Type: "yak", X: 50, Y: 50}},
+	}, nil)
+	stale.lossBaselineTick = 1000
+	late := model.GameState{Tick: 1000 + fleetingThreatMemoryTicks + 1, Units: tanks(4)}
+	for _, e := range detectEvents(late, nil, &stale) {
+		if e.Kind == EventStrategyCountered {
+			t.Errorf("stale sighting %d ticks old still fired: %q", fleetingThreatMemoryTicks+1, e.Detail)
+		}
+	}
+}
+
+// The memory has to survive tick to tick, and has to expire.
+func TestThreatMemoryCarriesForwardAndExpires(t *testing.T) {
+	prev := map[string]int{"mig": 1000, "yak": 500}
+	cur := map[string]int{}
+	carryThreatMemory(prev, cur, 1000+fleetingThreatMemoryTicks)
+	if _, ok := cur["mig"]; !ok {
+		t.Error("mig seen inside the window was dropped")
+	}
+	if _, ok := cur["yak"]; ok {
+		t.Error("yak seen long ago was carried anyway; the map would grow all game")
+	}
+	// A fresher sighting this tick must win over the remembered one.
+	cur2 := map[string]int{"mig": 1200}
+	carryThreatMemory(map[string]int{"mig": 1000}, cur2, 1200)
+	if cur2["mig"] != 1200 {
+		t.Errorf("mig = %d, want the newer sighting to stand", cur2["mig"])
+	}
 }
