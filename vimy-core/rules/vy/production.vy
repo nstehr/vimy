@@ -22,6 +22,8 @@ param tech-naval-first: int
 def infantry-base() = trunc(select(specialist-infantry-first > 0, 490.0, 500.0))
 def specialist-base() = trunc(select(specialist-infantry-first > 0, 500.0, 490.0))
 
+def rifle-cap() = army-cap(12.0, 50.0, infantry-weight)
+
 def scaled-reserves(cost: int) =
   cash >= cost
   and (vehicle-weight <= 0.1
@@ -114,6 +116,7 @@ rule produce-specialist-infantry {
 }
 
 rule produce-infantry {
+  because "rifle-cap() is the ceiling on the cheap body count, and it was not a considered number. army-cap(8, 30, ..) gave FIFTEEN riflemen at the infantry-weight an armour doctrine writes, while game 151 lost to an opponent fielding 134 infantry. This rule acted on 100 percent of its matches and matched only 77 times in 45040 ticks — never throttled, never short of cash, the condition simply stopped holding at fifteen. produce-vehicle meanwhile matched 561 times for 67 acts, contending for the single shared vehicle queue at 850 credits a tank while the barracks queue sat idle behind the cap. A rifleman is 100 credits against a medium tank's 850, so the same 38000 buys 380 of them or 44 tanks; the cap should not be deciding that trade, infantry-weight and the bank should. 12 to 50 gives 24 at the 0.16 an armour doctrine picks, 40 at a balanced 0.35, 92 at full commitment. One def because the number appears four times: here, the rush rule's double, and both ends of produce-bridge-infantry's band"
   priority infantry-base()
   category produce-infantry exclusive
   do produce-infantry
@@ -122,7 +125,7 @@ rule produce-infantry {
   require has-role(barracks)
   require not queue-busy(Infantry)
   require can-build(Infantry, e1)
-  require count(e1) < army-cap(8.0, 30.0, infantry-weight)
+  require count(e1) < rifle-cap()
   require infantry-reserves(100)
 }
 
@@ -137,7 +140,7 @@ rule produce-infantry-rush {
   require has-role(barracks)
   require not queue-busy(Infantry)
   require can-build(Infantry, e1)
-  require count(e1) < army-cap(8.0, 30.0, infantry-weight) * 2
+  require count(e1) < rifle-cap() * 2
   require cash >= 50
 }
 
@@ -155,8 +158,8 @@ rule produce-bridge-infantry {
   require (air-weight > 0.1 and not has-role(airfield))
        or (naval-weight > 0.1 and not has-role(naval-yard))
        or (vehicle-weight > 0.2 and not has-role(war-factory))
-  require count(e1) >= army-cap(8.0, 30.0, infantry-weight)
-  require count(e1) < army-cap(8.0, 30.0, infantry-weight)
+  require count(e1) >= rifle-cap()
+  require count(e1) < rifle-cap()
         + select(air-weight > 0.1, lerp(2, 5, air-weight), 0.0)
         + select(naval-weight > 0.1, lerp(1, 4, naval-weight), 0.0)
         + select(vehicle-weight > 0.2, lerp(1, 3, vehicle-weight), 0.0)
