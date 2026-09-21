@@ -2462,11 +2462,30 @@ func committableGround(env RuleEnv, ownName string) int {
 //
 // Recomputed on every call, so the target grows with the army rather than
 // freezing at whatever existed the moment the squad formed.
-// squadCommitted reports whether the squad has been given an attack or rally
-// order yet. Until it has, it is mustering and free to grow.
-func squadCommitted(env RuleEnv, name string) bool {
-	_, ok := memoryMap[string, squadAttackState](env.Memory, "squadAttackState")[name]
-	return ok
+// reinforceJoinCells is how close a unit must be to the squad to join it.
+//
+// Larger than squadRallyRadius, so a unit at the muster point can join a squad
+// that is still gathering and the two are not fighting each other. Far smaller
+// than the walk to the enemy, which on a 91x91 map runs 60 to 100 cells, so a
+// squad that has left cannot absorb anything from home.
+const reinforceJoinCells = squadRallyRadius * 2
+
+// withinReinforceRange keeps only the candidates standing with the squad.
+// A squad with no position yet takes anyone — it has nothing to disperse.
+func withinReinforceRange(env RuleEnv, name string, pool []model.Unit) []model.Unit {
+	cx, cy, ok := squadCentroid(env, name)
+	if !ok {
+		return pool
+	}
+	limit := reinforceJoinCells * reinforceJoinCells
+	kept := pool[:0:0]
+	for _, u := range pool {
+		dx, dy := u.X-cx, u.Y-cy
+		if dx*dx+dy*dy <= limit {
+			kept = append(kept, u)
+		}
+	}
+	return kept
 }
 
 func squadTarget(env RuleEnv, name string, floor int) int {
@@ -2508,26 +2527,32 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 			// The target tracks the army, so a squad formed when there were
 			// four units keeps growing as the next twenty arrive.
 			sq.TargetSize = target
-			// But only while it is still mustering. A committed squad that
-			// keeps recruiting is on a treadmill it cannot get off: game 155
-			// rallied 22 times without a strike, and the rally was working —
-			// spread fell 68, 58, 54, 50, 46, 44, 43 as the squad pulled
-			// together — but every time it neared the gate a unit just built at
-			// the war factory joined and the spread reset to 50-odd. near
-			// plateaued at 9 while need climbed 9, 10, 10, 11 with each recruit.
-			// The core was tight the whole time; the gate could never pass
-			// because recruitment outran convergence.
-			//
-			// Committed means an attack or rally order has issued, which is
-			// exactly what a squadAttackState entry records. Deliberately not a
-			// "has it left the base" distance test — a predicate whose name
-			// promises a condition and whose body means "something is nearby"
-			// is the bug this project keeps rediscovering.
-			if squadCommitted(env, name) {
-				return nil
-			}
 			// Reinforcement: top up an existing under-strength squad.
 			if len(sq.UnitIDs) >= sq.TargetSize || len(pool) == 0 {
+				return nil
+			}
+			// But only from units that are actually WITH the squad. Game 155
+			// rallied 22 times without a strike, and the rally itself was
+			// working — spread fell 68, 58, 54, 50, 46, 44, 43 as the squad
+			// pulled together — yet every time it neared the gate a unit just
+			// built at the war factory joined from the far side of the map and
+			// the spread reset to 50-odd. near plateaued at 9 while need
+			// climbed 9, 10, 10, 11 with each recruit. Recruitment outran
+			// convergence, so the gate could never pass.
+			//
+			// Refusing to recruit once COMMITTED was tried first and was too
+			// blunt: this design forms small and tops up, because
+			// unassigned-idle-ground runs a median of 0 and a maximum of 6, so
+			// a squad that cannot grow after forming never gets past the two or
+			// three it started with. Game 157 fielded squads averaging 4.3
+			// members and mostly exactly 2 — the "sent as a small pair" problem
+			// by a new route.
+			//
+			// The joiner's POSITION was always the real question. A unit at the
+			// muster point costs nothing to absorb; one at the factory while the
+			// squad stands at the enemy base is what wrecks the formation.
+			pool = withinReinforceRange(env, name, pool)
+			if len(pool) == 0 {
 				return nil
 			}
 			need := sq.TargetSize - len(sq.UnitIDs)

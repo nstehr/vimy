@@ -98,69 +98,64 @@ func TestUnclumpedSquadRalliesFarOutButCommitsOnTheDoorstep(t *testing.T) {
 	}
 }
 
-// A committed squad stops recruiting.
+// A squad recruits from the units standing with it, and only those.
 //
-// Game 155 rallied 22 times and struck zero. The rally itself worked: between
-// recruitments the spread fell monotonically, 68 through 43, as the squad
-// gathered. But each time it neared the gate a unit fresh off the war factory
-// joined from the far side of the map and the spread reset. near plateaued at
-// 9 while need climbed 9, 10, 10, 11 with every recruit — a tight core of nine
-// and a tail that was always brand new. Recruitment outran convergence, so the
-// gate could not pass no matter how well the squad marched.
-func TestCommittedSquadStopsRecruiting(t *testing.T) {
+// Game 155 rallied 22 times without a strike. The rally worked — spread fell
+// 68, 58, 54, 50, 46, 44, 43 as the squad gathered — but each time it neared
+// the gate a unit fresh off the war factory joined from across the map and the
+// spread reset. near plateaued at 9 while need climbed with every recruit.
+//
+// Refusing to recruit once committed was tried first and was too blunt. This
+// design forms small and tops up on purpose, because unassigned-idle-ground
+// runs a median of 0 and a maximum of 6, so a squad frozen at formation never
+// grows past the two or three it started with: game 157 fielded squads
+// averaging 4.3 members and mostly exactly 2. Position was always the real
+// question, not commitment.
+func TestSquadRecruitsOnlyFromUnitsStandingWithIt(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
 
-	// Four in the squad, four more idle and unassigned at home.
+	// Four in the squad around (100,100), two more idle beside them, and two
+	// far away at the factory.
 	units := []model.Unit{
 		{ID: 1, Type: "2tnk", X: 100, Y: 100, Idle: true},
 		{ID: 2, Type: "2tnk", X: 101, Y: 100, Idle: true},
 		{ID: 3, Type: "2tnk", X: 100, Y: 101, Idle: true},
 		{ID: 4, Type: "2tnk", X: 102, Y: 102, Idle: true},
-		{ID: 5, Type: "2tnk", X: 10, Y: 10, Idle: true},
-		{ID: 6, Type: "2tnk", X: 11, Y: 10, Idle: true},
-		{ID: 7, Type: "2tnk", X: 10, Y: 11, Idle: true},
+		{ID: 5, Type: "2tnk", X: 104, Y: 103, Idle: true},
+		{ID: 6, Type: "2tnk", X: 103, Y: 104, Idle: true},
+		{ID: 7, Type: "2tnk", X: 10, Y: 10, Idle: true},
 		{ID: 8, Type: "2tnk", X: 11, Y: 11, Idle: true},
 	}
 	mem := map[string]any{
 		"squads": map[string]*Squad{
 			"ground-attack": {Name: "ground-attack", Domain: "ground", Role: "attack",
-				UnitIDs: []int{1, 2, 3, 4}, TargetSize: 4},
+				UnitIDs: []int{1, 2, 3, 4}, TargetSize: 8},
 		},
 	}
 	env := RuleEnv{
 		State:  model.GameState{Tick: 2000, MapWidth: 128, MapHeight: 128, Units: units},
 		Memory: mem,
 	}
-
-	// Mustering: the four at home are fair game.
-	if err := FormSquad("ground-attack", "ground", 4, "attack")(env, conn); err != nil {
-		t.Fatalf("muster: %v", err)
-	}
-	mustered := len(getSquads(mem)["ground-attack"].UnitIDs)
-	if mustered <= 4 {
-		t.Fatalf("squad = %d members, want it to grow while still mustering", mustered)
+	if err := FormSquad("ground-attack", "ground", 8, "attack")(env, conn); err != nil {
+		t.Fatalf("reinforce: %v", err)
 	}
 
-	// Now commit it, which is what issuing an attack or rally order means.
-	memoryMap[string, squadAttackState](mem, "squadAttackState")["ground-attack"] =
-		squadAttackState{TargetX: 10, TargetY: 10, Attacking: true, LastTick: 2000}
-
-	// A fresh tank rolls off the line, a map away from the squad.
-	env.State.Units = append(units, model.Unit{ID: 9, Type: "2tnk", X: 5, Y: 5, Idle: true})
-	if err := FormSquad("ground-attack", "ground", 4, "attack")(env, conn); err != nil {
-		t.Fatalf("committed: %v", err)
+	got := map[int]bool{}
+	for _, id := range getSquads(mem)["ground-attack"].UnitIDs {
+		got[id] = true
 	}
-	if got := len(getSquads(mem)["ground-attack"].UnitIDs); got != mustered {
-		t.Errorf("squad = %d members, want %d: a committed squad must not absorb new production", got, mustered)
+	// The two beside the squad must join: mustering has to work, or squads
+	// never grow past the handful they form with.
+	for _, id := range []int{5, 6} {
+		if !got[id] {
+			t.Errorf("unit %d stands with the squad and did not join", id)
+		}
 	}
-
-	// And a squad that re-forms from nothing is a new wave: recruitment reopens.
-	delete(getSquads(mem), "ground-attack")
-	if err := FormSquad("ground-attack", "ground", 4, "attack")(env, conn); err != nil {
-		t.Fatalf("re-form: %v", err)
-	}
-	if squadCommitted(env, "ground-attack") {
-		t.Error("re-forming must clear the old squad's commitment, or every later wave is frozen at birth")
+	// The two at the far end must not: that is the join that wrecks formation.
+	for _, id := range []int{7, 8} {
+		if got[id] {
+			t.Errorf("unit %d joined from %d cells away and resets the squad's spread", id, 127)
+		}
 	}
 }
