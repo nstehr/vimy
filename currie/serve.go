@@ -15,10 +15,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nstehr/vimy/currie/ch"
 	"github.com/nstehr/vimy/vimy-core/store"
 )
 
-//go:embed index.html.tmpl report.html.tmpl insight.html.tmpl sweep.html.tmpl
+//go:embed index.html.tmpl report.html.tmpl insight.html.tmpl sweep.html.tmpl live.html.tmpl
 var pages embed.FS
 
 // The web app.
@@ -33,10 +34,14 @@ type server struct {
 	// transcribed, so the numbers track the mod.
 	engineRules string
 	bin         string
-	store    *store.Store
-	tmpl     *template.Template
-	insight  insighter
-	cached   *cache
+	// The streamed half, unsampled. Nil when no server is reachable: every
+	// section it feeds is then a section the page skips, the same way a missing
+	// model costs the prose and nothing else.
+	ch      *ch.Client
+	store   *store.Store
+	tmpl    *template.Template
+	insight insighter
+	cached  *cache
 
 	mu       sync.Mutex
 	cache    map[int64]*Replay
@@ -69,25 +74,39 @@ type insighter interface {
 	Read(ctx context.Context, r *Replay) (*Insight, error)
 }
 
-func newServer(dir, rulesDir, engineRules, bin string, st *store.Store, ins insighter) (*server, error) {
-	// A reading survives a restart; a replay is cheap enough to redo.
-	stored, err := newCache(dir, rulesDir)
-	if err != nil {
-		return nil, err
-	}
-	t, terr := template.New("").Funcs(template.FuncMap{
+// parseTemplates builds the page set.
+//
+// Separate from newServer so a test can render every template without an
+// archive behind it: a mistyped field in a template is a runtime error on a
+// page nobody looks at until it is being looked at.
+func parseTemplates() (*template.Template, error) {
+	t, err := template.New("").Funcs(template.FuncMap{
 		"pct":   func(f float64) string { return fmt.Sprintf("%.4f", f) },
 		"pct1":  func(f float64) string { return fmt.Sprintf("%.0f", f*100) },
 		"sub":   func(a, b float64) float64 { return a - b },
 		"ticks": func(n int) string { return fmt.Sprintf("%d", n) },
 		"date":  func(t time.Time) string { return t.Format("2 Jan 2006 15:04") },
+		"clock": func(t time.Time) string { return t.Format("15:04") },
 	}).ParseFS(pages, "*.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("templates: %w", err)
+	}
+	return t, nil
+}
+
+func newServer(dir, rulesDir, engineRules, bin string, st *store.Store, ins insighter, chc *ch.Client) (*server, error) {
+	// A reading survives a restart; a replay is cheap enough to redo.
+	stored, err := newCache(dir, rulesDir)
+	if err != nil {
+		return nil, err
+	}
+	t, terr := parseTemplates()
 	if terr != nil {
-		return nil, fmt.Errorf("templates: %w", terr)
+		return nil, terr
 	}
 	return &server{
 		dir: dir, rulesDir: rulesDir, engineRules: engineRules, bin: bin, store: st,
-		tmpl: t, insight: ins, cached: stored,
+		tmpl: t, insight: ins, cached: stored, ch: chc,
 		cache:    map[int64]*Replay{},
 		insights: map[int64]*insightJob{},
 		sweeps:   map[int64]*sweepJob{},
@@ -101,11 +120,19 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /game/{id}/insight", s.handleInsight)
 	mux.HandleFunc("GET /game/{id}/sweep", s.handleSweep)
 	mux.HandleFunc("POST /link/{id}", s.handleLink)
+	// The game as it is played. A page of its own rather than a section of the
+	// report: the report is about a game that finished, and this one has no id
+	// to hang off yet.
+	mux.HandleFunc("GET /live", s.handleLive)
+	mux.HandleFunc("GET /live/panel", s.handleLivePanel)
 	return mux
 }
 
 type indexView struct {
-	Dir        string
+	Dir string
+	// Whether to offer the live page. Hidden rather than shown-and-broken when
+	// there is no server to read.
+	HasStream  bool
 	Games      []gameRow
 	Unlinked   int
 	HasInsight bool
@@ -144,7 +171,7 @@ func (s *server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	loose := s.exports(claimed)
 
-	v := indexView{Dir: s.dir, HasInsight: s.insight != nil, Loose: loose, Note: r.URL.Query().Get("note")}
+	v := indexView{Dir: s.dir, HasInsight: s.insight != nil, HasStream: s.ch != nil, Loose: loose, Note: r.URL.Query().Get("note")}
 	for _, g := range games {
 		row := gameRow{ReplayableGame: g, Replayable: g.ExportPath != "", Outcome: "loss"}
 		if g.Won {
@@ -241,6 +268,12 @@ func (s *server) handleGame(w http.ResponseWriter, r *http.Request) {
 	v.Home = "/"
 	v.Warnings = rep.Warnings
 	s.addOutcome(r.Context(), &v, rep)
+	// Synchronous, unlike the reading and the sweep: these are three aggregate
+	// queries against a columnar store and they answer in milliseconds, so the
+	// cost of a poll endpoint would exceed the cost of the wait. The client's
+	// own timeout is what keeps a server that is up but grinding from holding
+	// the page.
+	v.Stream = loadStream(r.Context(), s.ch, id, 16)
 
 	// The report is what the reader came for and it is ready now; the prose
 	// arrives when it arrives.

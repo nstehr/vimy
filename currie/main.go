@@ -16,7 +16,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"time"
 
+	"github.com/nstehr/vimy/currie/ch"
 	"github.com/nstehr/vimy/currie/stream"
 	"github.com/nstehr/vimy/vimy-core/store"
 )
@@ -66,6 +68,18 @@ func run() error {
 		return sh.Run(ctx, *shipEvery)
 	}
 
+	// Optional, like the model and for the same reason: the report's product is
+	// the blame analysis, which needs nothing but the archive. A ClickHouse
+	// that is absent, unreachable or missing 04_stream.sql costs the counted
+	// sections and the live page, and is a warning rather than a failure.
+	chc := ch.New(*chURL, *chDB, *chUser, *chPass)
+	pingCtx, cancelPing := context.WithTimeout(context.Background(), 3*time.Second)
+	if err := chc.Ping(pingCtx); err != nil {
+		slog.Warn("stream disabled", "clickhouse", *chURL, "error", err)
+		chc = nil
+	}
+	cancelPing()
+
 	st, err := store.New(expand(*dir))
 	if err != nil {
 		return fmt.Errorf("open archive: %w", err)
@@ -82,7 +96,7 @@ func run() error {
 		slog.Info("insight disabled: no OPENAI_API_KEY or ANTHROPIC_API_KEY")
 	}
 
-	srv, err := newServer(expand(*dir), *rulesDir, expand(*engineRules), *bin, st, ins)
+	srv, err := newServer(expand(*dir), *rulesDir, expand(*engineRules), *bin, st, ins, chc)
 	if err != nil {
 		return err
 	}

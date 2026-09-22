@@ -214,6 +214,15 @@ type view struct {
 	Spend *Spend
 	// What the compiler said about the rule set while replaying it.
 	Warnings []Warning
+
+	// The unsampled half, from ClickHouse. Nil when no server is configured,
+	// and carrying its own note when the game was never streamed.
+	//
+	// Kept as its own field rather than merged into the sections above, and the
+	// page keeps it in its own sections for the same reason: the blame analysis
+	// is computed from a 1-in-15 sample and these numbers are counted. Adding
+	// one to the other would produce a figure that is neither.
+	Stream *StreamView
 }
 
 // buildWith adds the analysis that needs the windows kept apart.

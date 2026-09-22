@@ -1,0 +1,243 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Currie · the game as it is played</title>
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+<style>
+:root {
+  --bg:#faf9f7; --panel:#fff; --ink:#14161a; --ink-2:#3d4149; --ink-3:#6b7079;
+  --rule:rgba(20,22,26,.13); --rule-soft:rgba(20,22,26,.07);
+  --sole:#b3452b; --calm:#2f6b4f; --other:#8a8f98;
+  --display:"Iowan Old Style",Georgia,serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#131417; --panel:#191b1f; --ink:#e8e9ec; --ink-2:#b9bcc2; --ink-3:#878b93;
+    --rule:rgba(232,233,236,.16); --rule-soft:rgba(232,233,236,.08);
+    --sole:#e0754f; --calm:#6fb391; --other:#7d838c;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#131417; --panel:#191b1f; --ink:#e8e9ec; --ink-2:#b9bcc2; --ink-3:#878b93;
+  --rule:rgba(232,233,236,.16); --rule-soft:rgba(232,233,236,.08);
+  --sole:#e0754f; --calm:#6fb391; --other:#7d838c;
+}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 var(--display)}
+.wrap{max-width:60rem;margin:0 auto;padding-block:2.4rem;padding-inline:16px;display:flex;flex-direction:column;gap:2rem}
+.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+.eyebrow a{color:inherit;text-decoration:none;border-bottom:1px solid var(--rule)}
+h1{font-size:2rem;line-height:1.15;margin:.35rem 0 0;letter-spacing:-.015em}
+h2{font-size:1.15rem;margin:0 0 .6rem;letter-spacing:-.01em}
+.lede{color:var(--ink-2);max-width:66ch;margin:.2rem 0 1rem}
+section{margin:0}
+.figure{border:1px solid var(--rule);background:var(--panel)}
+.figure-head{padding:.8rem 1.1rem;border-bottom:1px solid var(--rule);display:flex;flex-wrap:wrap;gap:.4rem 1.4rem;align-items:baseline;justify-content:space-between}
+.figure-title{font-weight:600}
+.legend{font-family:var(--mono);font-size:.74rem;color:var(--ink-3)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule)}
+.stat{background:var(--panel);padding:.9rem 1.05rem;display:flex;flex-direction:column;gap:.25rem}
+.stat-n{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:1.65rem;font-weight:600;line-height:1;letter-spacing:-.02em}
+.stat-n.bad{color:var(--sole)} .stat-n.good{color:var(--calm)}
+.stat-l{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.stat-sub{font-size:.8rem;color:var(--ink-2)}
+.pill{display:inline-flex;align-items:center;gap:.4rem;font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;padding:.2rem .5rem;border:1px solid var(--rule);border-radius:99px;color:var(--ink-3)}
+.pill.on{color:var(--calm);border-color:var(--calm)}
+.pill.off{color:var(--ink-3)}
+.pulse{width:7px;height:7px;border-radius:50%;background:var(--calm);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.pulse{animation:none;opacity:.8}}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th{text-align:left;font-family:var(--mono);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:400;padding:.5rem .7rem;border-bottom:1px solid var(--rule)}
+td{padding:.4rem .7rem;border-bottom:1px solid var(--rule-soft);vertical-align:baseline}
+td.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.r{font-family:var(--mono);font-size:.85rem;overflow-wrap:anywhere}
+tr.silent td.r{color:var(--sole)}
+.scroll{overflow-x:auto}
+.track{position:relative;height:.45rem;background:var(--rule-soft);border-radius:.23rem;min-width:70px;overflow:hidden}
+.track i{position:absolute;inset:0 auto 0 0;background:var(--other);display:block}
+.note{margin:0;padding:.9rem 1.1rem;color:var(--ink-2);font-size:.9rem}
+.spark{display:block;width:100%;height:auto}
+.spark-wrap{padding:1rem 1.1rem;display:flex;flex-direction:column;gap:.7rem}
+.spark-key{font-family:var(--mono);font-size:.74rem;color:var(--ink-3);display:flex;flex-wrap:wrap;gap:.3rem 1.2rem}
+.spark-key b{font-weight:400;color:var(--ink-2)}
+.swatch{display:inline-block;width:14px;height:2px;vertical-align:middle;margin-right:.35rem}
+footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padding-top:1rem}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow"><a href="/">Currie</a> · live</div>
+    <h1>The game as it is played</h1>
+    <p class="lede">
+      Vimy's dashboard shows what the strategist <em>intends</em> — the directive, the doctrine
+      compiled right now, the weights over time. This is what the squads actually did: rallies,
+      strikes that did not happen, and how far a squad got from its target. One row per
+      occurrence, unsampled, arriving while the game runs.
+    </p>
+  </header>
+
+  <div hx-get="/live/panel" hx-trigger="load, every {{.Poll}}" hx-swap="outerHTML">
+    {{template "livepanel" .}}
+  </div>
+
+  <footer>
+    Fed by the sidecar's write-ahead log and shipped by <code>currie -ship -ship-every 5s</code>.
+    A game in progress has no id — SQLite hands that out when the retrospective archives — so
+    everything here is keyed on the session.
+  </footer>
+</div>
+
+{{define "livepanel"}}
+<div hx-get="{{.URL}}" hx-trigger="every {{.Poll}}" hx-swap="outerHTML" style="display:flex;flex-direction:column;gap:2rem">
+
+  {{if not .Has}}
+  <section class="figure"><p class="note">{{.Note}}</p></section>
+  {{else}}
+
+  <section>
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-n">{{if .Live}}<span class="pill on"><span class="pulse" aria-hidden="true"></span>live</span>{{else}}<span class="pill off">last session</span>{{end}}</div>
+        <div class="stat-l">shipper</div>
+        <div class="stat-sub">newest segment {{.Lag}} · {{.Session.Segments}} shipped</div>
+      </div>
+      <div class="stat">
+        <div class="stat-n">{{.Tick}}</div>
+        <div class="stat-l">tick reached</div>
+        <div class="stat-sub">
+          {{if eq .Session.GameID 0}}no game id yet — the retrospective has not archived{{else}}<a href="/game/{{.Session.GameID}}">game {{.Session.GameID}}</a>{{end}}
+        </div>
+      </div>
+      <div class="stat">
+        <div class="stat-n">{{.Session.Short}}</div>
+        <div class="stat-l">rules digest</div>
+        <div class="stat-sub">build {{.Session.Revision}}{{if .Session.Modified}} · <b>dirty tree — not a before/after</b>{{end}}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-n{{if .Session.Floor}} bad{{end}}">{{.Session.RowsDropped}}</div>
+        <div class="stat-l">rows dropped</div>
+        <div class="stat-sub">{{if .Session.Floor}}every count below is a floor, not a number{{else if .Session.Counted}}of {{.Session.RowsWritten}} written — counts below are complete{{else}}the session reports its totals when the game ends — until then this is not yet a clean bill{{end}}</div>
+      </div>
+    </div>
+    {{with .Note}}<p class="note">{{.}}</p>{{end}}
+  </section>
+
+  {{with .Rally}}
+  <section>
+    <h2>Rallies</h2>
+    <p class="lede">
+      Three numbers settle the diagnosis, and only per rally: members against the subset an order
+      can reach. Close together means the radius is the fault; well below means the rally cannot
+      reach the squad, which is a different bug with a different fix.
+    </p>
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-n">{{.Rallies}}</div><div class="stat-l">rallies</div>
+      </div>
+      <div class="stat">
+        <div class="stat-n{{if gt .MeanSpread 8.0}} bad{{else}} good{{end}}">{{printf "%.1f" .MeanSpread}}</div>
+        <div class="stat-l">mean spread, cells</div>
+        <div class="stat-sub">a clump needs 8</div>
+      </div>
+      <div class="stat">
+        <div class="stat-n">{{printf "%.0f" .PctClumped}}%</div>
+        <div class="stat-l">rallies that clumped</div>
+      </div>
+      <div class="stat">
+        <div class="stat-n">{{printf "%.2f" .Reachable}}</div>
+        <div class="stat-l">share the order reached</div>
+        <div class="stat-sub">{{printf "%.1f" .MeanMembers}} members on average</div>
+      </div>
+    </div>
+  </section>
+  {{end}}
+
+  {{if .Strikes}}
+  <section>
+    <h2>Strikes that did not happen</h2>
+    <p class="lede">
+      One row per occurrence, so nothing hides: <code>strike_blocked_no_target</code> had to be
+      split in two because a single counter held two causes with opposite fixes. The next cause
+      is a new reason here, not a migration.
+    </p>
+    <div class="figure scroll">
+      <table>
+        <thead><tr><th>blocker</th><th style="width:40%"></th><th class="n">blocked</th><th class="n">last seen</th></tr></thead>
+        <tbody>
+        {{range .Strikes}}
+        <tr>
+          <td class="r">{{.Reason}}</td>
+          <td><span class="track"><i style="width:{{pct1 .Share}}%"></i></span></td>
+          <td class="n">{{.Blocked}}</td>
+          <td class="n">tick {{.LastTick}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {{end}}
+
+  {{if .Transit}}
+  <section>
+    <h2>Did the squad stop closing?</h2>
+    <p class="lede">
+      The distance from the squad to its target, as a fraction of the map diagonal. The in-memory
+      sampler buckets this into three bands and sums them, which reduces a whole game to three
+      integers and cannot say <em>when</em> anything happened. Keeping the number means the bands
+      are a choice made at read time — and that a line which flattens is visible as a line.
+    </p>
+    <div class="figure">
+      <div class="figure-head">
+        <span class="figure-title">Approach, by {{ticks 5000}}-tick window</span>
+        <span class="legend">closest approach {{printf "%.3f" .Spark.Floor}}{{if .Spark.Stalled}} · no closer in the last third{{end}}</span>
+      </div>
+      <div class="spark-wrap">
+        <svg class="spark" viewBox="0 0 {{.Spark.Width}} {{.Spark.Height}}" role="img"
+             aria-label="Squad distance to target over time, as a fraction of the map diagonal. Closest approach {{printf "%.3f" .Spark.Floor}}.">
+          <line x1="0" y1="{{.Spark.Height}}" x2="{{.Spark.Width}}" y2="{{.Spark.Height}}" stroke="currentColor" stroke-opacity=".18"/>
+          <polyline points="{{.Spark.Mean}}" fill="none" stroke="var(--other)" stroke-width="1.5" stroke-linejoin="round"/>
+          <polyline points="{{.Spark.Closest}}" fill="none" stroke="var(--sole)" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+        <div class="spark-key">
+          <span><i class="swatch" style="background:var(--sole)"></i><b>closest</b> approach in the window</span>
+          <span><i class="swatch" style="background:var(--other)"></i><b>mean</b> distance</span>
+          <span>axis is 0 (on target) at the bottom to 1 (a map away) at the top — never rescaled, so two games compare by eye</span>
+        </div>
+      </div>
+    </div>
+  </section>
+  {{end}}
+
+  {{if .Rates}}
+  <section>
+    <h2>What has fired</h2>
+    <p class="lede">
+      Counted, not sampled: every rule, every evaluation, including the ones an exclusive winner
+      skipped. A zero here is a zero — which the 1-in-15 export can never say.
+    </p>
+    <div class="figure scroll">
+      <table>
+        <thead><tr><th>rule</th><th class="n">fired</th><th class="n">evaluated</th><th class="n">rate</th><th class="n">skipped</th><th class="n">first</th></tr></thead>
+        <tbody>
+        {{range .Rates}}
+        <tr{{if .Silent}} class="silent"{{end}}>
+          <td class="r">{{.Rule}}</td>
+          <td class="n">{{.Fired}}</td>
+          <td class="n">{{.Evals}}</td>
+          <td class="n">{{pct1 .Rate}}%</td>
+          <td class="n">{{.Skipped}}</td>
+          <td class="n">{{if .Silent}}—{{else}}tick {{.FirstFired}}{{end}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {{end}}
+
+  {{end}}
+</div>
+{{end}}

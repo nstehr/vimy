@@ -4,8 +4,9 @@ VIMYC ?= ../../vimyc
 RULES ?= ../vimy-core/rules/vy
 ADDR  ?= :8090
 DIR   ?= ~/.vimy
+CH    ?= http://localhost:8123
 
-.PHONY: run build test clean generate
+.PHONY: run build test test-ch clean generate
 
 # Regenerate the cache's query code after touching store/queries.sql or
 # store/schema.sql. Committed, so an ordinary build needs no sqlc.
@@ -25,6 +26,18 @@ build:
 
 test:
 	go test ./...
+
+# The queries in clickhouse.go and live.go are strings, so the compiler checks
+# none of them: a typo is a section that silently disappears from the page.
+# This runs them against a real server. Needs `make -C clickhouse up` and a
+# game that has been streamed; skips cleanly without either.
+#
+# Run it after touching any SQL. Three of the four bugs found writing this
+# read path were invisible to `go test` and to review: an alias that shadowed
+# its own column, a monotonic function ClickHouse moved inside an aggregate,
+# and a WITH alias the analyzer would not resolve.
+test-ch:
+	CURRIE_CH=$(CH) go test ./ -run TestLiveQueries -v
 
 clean:
 	rm -f currie

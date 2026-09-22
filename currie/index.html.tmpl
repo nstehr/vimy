@@ -12,6 +12,7 @@
 body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
 .wrap{max-width:940px;margin:0 auto;padding:clamp(2rem,5vw,4rem) clamp(1.1rem,4vw,2.5rem) 5rem;display:flex;flex-direction:column;gap:2rem}
 .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+.eyebrow a{color:inherit}
 h1{font-family:var(--display);font-weight:700;font-size:clamp(2.2rem,6vw,3.2rem);line-height:1;letter-spacing:-.015em;margin:.5rem 0 0}
 .lede{margin:0;color:var(--ink-2);max-width:66ch}
 code{font-family:var(--mono);font-size:.88em;background:var(--rule-soft);padding:.08em .34em;border-radius:2px}
@@ -40,7 +41,7 @@ form.link :focus-visible{outline:2px solid var(--calm);outline-offset:2px}
 
 <div class="wrap">
   <header>
-    <div class="eyebrow">Currie · rule-set post mortems</div>
+    <div class="eyebrow">Currie · rule-set post mortems{{if .HasStream}} · <a href="/live">live</a>{{end}}</div>
     <h1>Recorded games</h1>
   </header>
 

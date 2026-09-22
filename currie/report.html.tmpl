@@ -181,6 +181,17 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
 .ran .rn2{font-family:var(--mono);font-size:.85rem}
 .ran .lost{color:var(--ink-3);font-size:.82rem}
 .ran .lost b{color:var(--sole);font-weight:500;font-family:var(--mono);font-size:.95em}
+.stream-head{display:flex;flex-wrap:wrap;gap:.4rem .9rem;align-items:baseline}
+.badge{display:inline-flex;align-items:center;gap:.35rem;font-family:var(--mono);font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;padding:.15rem .5rem;border:1px solid var(--rule);border-radius:99px;color:var(--ink-3);white-space:nowrap}
+.badge.ok{color:var(--calm);border-color:var(--calm)}
+.badge.bad{color:var(--sole);border-color:var(--sole)}
+.counted{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--calm)}
+.ran tr.silent td.rn2{color:var(--sole)}
+.cohort tr.now{background:var(--rule-soft)}
+.cohort tr.now td{font-weight:600}
+.cohort td.dg{font-family:var(--mono);font-size:.82rem}
+.moved{margin:.7rem 0 0;font-size:.9rem;color:var(--ink-2)}
+.moved b{color:var(--ink)}
 </style>
 
 <div class="wrap">
@@ -300,6 +311,190 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     <ul class="warns"><li>The total is {{printf "%.2f" .Inflation}}&times; everything this game earned, so it is WRONG, not surprising.
       An act is a produce envelope, resent every 100 ticks until the item appears, so one unit is counted many times.
       <span class="w-scope">Every producing rule inflates alike, so the SHARES above still hold. The credit totals do not &mdash; do not reason from them.</span></li></ul>
+    {{end}}
+  </section>
+  {{end}}
+
+  {{with .Stream}}
+  <section>
+    <div class="stream-head">
+      <h2 style="margin-bottom:0">What actually fired</h2>
+      <span class="counted">counted, not sampled</span>
+    </div>
+    <p class="lede">
+      Everything else on this page is computed from the state export, which records one evaluation
+      in fifteen: every row carries the world it was judged against, which is what makes the blame
+      below possible, and none of it can be counted. These rows are the other half &mdash; one per
+      evaluation, unsampled, written to the sidecar's log while the game ran. A zero here is a
+      zero. <code>build-war-factory</code> fires once per game and the export catches it in none.
+    </p>
+
+    {{if not .Streamed}}
+    <p class="clean">{{.Note}}</p>
+    {{else}}
+
+    {{if .Floor}}
+    <ul class="warns"><li>{{.Dropped}} rows were dropped rather than stall the game.
+      <span class="w-scope">Every count in this section is a FLOOR, not a number. The rule loop writes to a buffered channel and drops when it is full, because a stalled game is worse than an incomplete log.</span></li></ul>
+    {{end}}
+
+    {{if .Firing}}
+    <div class="figure" style="margin-bottom:1.2rem">
+      <div class="figure-head">
+        <span class="figure-title">What fired</span>
+        <span class="legend">
+          {{len .Firing}} rules acted{{if .FiringOmitted}} &middot; {{.FiringOmitted}} more not shown{{end}}
+          {{range .Sessions}} &middot; {{.Segments}} segments shipped{{end}}
+        </span>
+      </div>
+      <div style="overflow-x:auto">
+      <table class="ran">
+        <thead><tr><th>rule</th><th class="n">fired</th><th class="n">evaluated</th><th class="n">rate</th><th class="n">skipped</th><th class="n">first act</th></tr></thead>
+        <tbody>
+        {{range .Firing}}
+        <tr>
+          <td class="rn2">{{.Rule}}</td>
+          <td class="n">{{.Fired}}</td>
+          <td class="n">{{.Evals}}</td>
+          <td class="n">{{pct1 .Rate}}%</td>
+          <td class="n">{{.Skipped}}</td>
+          <td class="n">{{pct1 (.FirstPct $.DurationTicks)}}%</td>
+        </tr>
+        {{end}}
+        </tbody>
+      </table>
+      </div>
+    </div>
+    {{end}}
+
+    {{if .Silent}}
+    <div class="figure" style="margin-bottom:1.2rem">
+      <div class="figure-head">
+        <span class="figure-title">Evaluated, never once fired</span>
+        <span class="legend">{{len .Silent}} rules{{if .SilentOmitted}} &middot; {{.SilentOmitted}} more not shown{{end}} &middot; most chances refused first</span>
+      </div>
+      <div style="overflow-x:auto">
+      <table class="ran">
+        <thead><tr><th>rule</th><th class="n">evaluated</th><th class="n">skipped</th><th class="n">rule sets</th></tr></thead>
+        <tbody>
+        {{range .Silent}}
+        <tr class="silent">
+          <td class="rn2">{{.Rule}}</td>
+          <td class="n">{{.Evals}}</td>
+          <td class="n">{{.Skipped}}</td>
+          <td class="n">{{.RuleSets}}</td>
+        </tr>
+        {{end}}
+        </tbody>
+      </table>
+      </div>
+      <p class="note" style="padding:.7rem 1.1rem;margin:0;font-size:.85rem;color:var(--ink-3)">
+        A zero here is a zero &mdash; the blame analysis above cannot make that claim, because its
+        sample keeps one evaluation in fifteen and a rule that fires once a game lands in it by
+        luck. <b>skipped</b> is an evaluation an exclusive winner meant was never reached: a rule
+        that is always skipped and a rule that is always false are indistinguishable in a firing
+        count and need opposite fixes, so they are separate columns. A rule blocked in every one
+        of several <b>rule sets</b> was not merely unlucky in one doctrine.
+      </p>
+    </div>
+    {{end}}
+
+    <div class="figure" style="margin-bottom:1.2rem">
+      <div class="figure-head">
+        <span class="figure-title">Does the stream agree with the counters?</span>
+        {{if .VerifyNote}}<span class="badge">not compared</span>
+        {{else if .Verify.Agrees}}<span class="badge ok">agrees</span>
+        {{else}}<span class="badge bad">{{.Verify.Drifted}} rules drifted</span>{{end}}
+      </div>
+      <p class="note">
+        The stream and SQLite's <code>rule_firings</code> measure the same thing by different
+        routes: one counts rows, the other increments an integer in the rule loop. Keeping both
+        means the stream has an oracle, and this line of work began with a confident count off a
+        sampled table that was simply wrong.
+        {{with .Verify}}The comparison is scoped to tick {{.FirstSwap}} onward &mdash; the first
+        rule-set swap &mdash; because the counters structurally cannot hold the opening window.
+        Inside that window, exact agreement is expected.{{end}}
+      </p>
+      {{with .VerifyNote}}<p class="note" style="padding-top:0">{{.}}</p>{{end}}
+      {{with .Verify}}
+      {{if .Rows}}
+      <div style="overflow-x:auto">
+      <table class="ran">
+        <thead><tr><th>rule</th><th class="n">stream</th><th class="n">counter</th><th class="n">drift</th></tr></thead>
+        <tbody>
+        {{range .Rows}}
+        <tr><td class="rn2">{{.Rule}}</td><td class="n">{{.StreamFired}}</td><td class="n">{{.CounterFired}}</td><td class="n">{{.Drift}}</td></tr>
+        {{end}}
+        </tbody>
+      </table>
+      </div>
+      <p class="note" style="font-size:.85rem;color:var(--ink-3)">
+        Drift inside the comparable window means either the log dropped rows or the two definitions
+        have come apart. Both are worth finding; neither is a reason to trust one number over the other.
+      </p>
+      {{end}}
+      {{if .PreSwap}}
+      <details class="fold" style="margin:0;padding:.9rem 1.1rem">
+        <summary>The opening, which <code>rule_firings</code> cannot see</summary>
+        <div style="overflow-x:auto;margin-top:.7rem">
+        <table class="ran">
+          <thead><tr><th>rule</th><th class="n">fired</th><th class="n">first</th><th class="n">last</th></tr></thead>
+          <tbody>
+          {{range .PreSwap}}
+          <tr><td class="rn2">{{.Rule}}</td><td class="n">{{.Fired}}</td><td class="n">{{.First}}</td><td class="n">{{.Last}}</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+        </div>
+        <p class="note" style="font-size:.85rem;color:var(--ink-3);padding-left:0">
+          The MCV deploy, the first power plant, the first refinery. <code>strategist.go</code>
+          flushes the window counters unconditionally and attaches them only when a prior record
+          exists, so the seed window is read out and dropped. The stream has it; the counter never did.
+        </p>
+      </details>
+      {{end}}
+      {{end}}
+    </div>
+
+    {{with .Cohort}}
+    <div class="figure">
+      <div class="figure-head">
+        <span class="figure-title">Has anything moved?</span>
+        <span class="legend">rally spread, pooled at the rally, grouped by what played the game</span>
+      </div>
+      <p class="note">
+        <code>rules_digest</code> fingerprints the compiled rule set for a fixed doctrine, so it
+        moves when the <code>.vy</code> sources or vimyc's codegen move and stays put when the
+        strategist merely picks different weights. Without it, squad spread sat near 20 cells
+        against a required 8 through four separate fixes &mdash; each judged by eye against the
+        next game or two, against a metric whose game-to-game noise is larger than the effect
+        being chased.
+      </p>
+      <div style="overflow-x:auto">
+      <table class="ran cohort">
+        <thead><tr><th>rules</th><th>first seen</th><th class="n">games</th><th class="n">rallies</th><th class="n">mean spread</th><th class="n">&plusmn; stderr</th><th class="n">clumped</th></tr></thead>
+        <tbody>
+        {{range .Rows}}
+        <tr{{if .Current}} class="now"{{end}}>
+          <td class="dg">{{.Short}}{{if .Current}} &larr; this game{{end}}{{if .ModifiedGames}} <span class="badge bad">{{.ModifiedGames}} dirty</span>{{end}}</td>
+          <td>{{date .Seen}}</td>
+          <td class="n">{{.Games}}</td>
+          <td class="n">{{.Rallies}}</td>
+          <td class="n">{{printf "%.2f" .MeanSpread}}</td>
+          <td class="n">{{if .Thin}}&mdash;{{else}}{{printf "%.2f" .StdErr}}{{end}}</td>
+          <td class="n">{{printf "%.0f" .PctClumped}}%</td>
+        </tr>
+        {{end}}
+        </tbody>
+      </table>
+      </div>
+      {{with .Delta}}<p class="moved" style="padding:0 1.1rem 1rem">Against the previous rule sources: <b>{{.}}</b>.
+        Two standard errors is a deliberately conservative bar, and the reason it is here: four fixes
+        were read as improvements against differences this test would have called noise.</p>{{end}}
+      {{if not .Previous}}<p class="moved" style="padding:0 1.1rem 1rem">Nothing to compare against yet &mdash; these are the first rule sources the stream has seen.</p>{{end}}
+    </div>
+    {{end}}
+
     {{end}}
   </section>
   {{end}}

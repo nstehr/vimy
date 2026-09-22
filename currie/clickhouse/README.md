@@ -192,6 +192,47 @@ and belong. If a sampled producer is ever added -- thinning the stream on a
 marathon game, say -- that is when the flag goes in, with something to test it
 against.
 
+## Reading back out
+
+For a while nothing did. The shipper moved rows in and every question these
+tables answered was answered by a human running a `make` target, while the
+report page computed its blame from the sampled export — the table this README
+says cannot be counted.
+
+`../ch` is the read path: an HTTP client, server-side `{name:Type}` parameters
+and a generic decode, about a hundred lines. `../clickhouse.go` holds the
+queries the report asks, `../live.go` the ones the live page asks. The `make`
+targets here are unchanged and still the right tool for exploring; what is new
+is that three sections of the report are now SELECTs over these rows.
+
+Set `readonly=2` on every read. It permits SELECT and per-query settings and
+refuses everything that writes, which costs nothing today and has to already be
+in place before a model is choosing the SQL.
+
+### Gotchas paid for writing it
+
+- **Never alias a result column to the name of a source column.** ClickHouse
+  resolves the alias ahead of the column it shadows, *everywhere* in the query,
+  including inside other aggregates. `countIf(fired) AS fired` makes the next
+  `countIf(fired)` count a UInt64 and the query fails with `Illegal type Int64
+  of last argument for aggregate function with If suffix` — which does not
+  name the alias. `count() AS fired` in a query that also says `WHERE fired`
+  fails with `Aggregate function count() is found in WHERE`.
+- **A monotonic function gets moved inside min/max.** `toInt64(minIf(tick,
+  fired))` becomes `minIf(toInt64(tick), toInt64(fired))` and the condition
+  stops being a condition. Cast the column, not the aggregate — or do not
+  cast: a UInt32 needs none.
+- **The analyzer will not resolve a `WITH` alias from the SELECT list** of the
+  same query. Two round trips read better anyway.
+- **`countIf` returns UInt64, and UInt64 subtraction wraps.** The drift between
+  the stream and SQLite's counters is a signed quantity; without
+  `toInt64(...) - toInt64(...)` a counter ahead by one reports
+  18446744073709551615 and reads as catastrophe.
+
+None of these is visible to the Go compiler, and none was caught by review.
+`make -C .. test-ch` runs every query against a real server and is what found
+all four.
+
 ## Files
 
 ```
@@ -202,6 +243,9 @@ sql/03_currie.sql      the ASOF pairing, conjunct-level blame, per-opponent
 sql/explore.sql        the same ideas with no server at all
 sql/04_stream.sql      the streamed tables, fed by ../stream
 sql/05_tuning.sql      did that change move the number
+../ch/                 the read path: HTTP, parameters, decode
+../clickhouse.go       the report's queries
+../live.go             the live page's queries
 ../stream/ship.go      the shipper
 ../../vimy-core/wal/   the contract, and the sidecar's writer
 ```
