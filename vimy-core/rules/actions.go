@@ -2462,30 +2462,33 @@ func committableGround(env RuleEnv, ownName string) int {
 //
 // Recomputed on every call, so the target grows with the army rather than
 // freezing at whatever existed the moment the squad formed.
-// reinforceJoinCells is how close a unit must be to the squad to join it.
+// squadAssaulting reports whether the squad is close enough to the enemy base
+// that taking reinforcements would reshuffle a formation already in contact.
 //
-// Larger than squadRallyRadius, so a unit at the muster point can join a squad
-// that is still gathering and the two are not fighting each other. Far smaller
-// than the walk to the enemy, which on a 91x91 map runs 60 to 100 cells, so a
-// squad that has left cannot absorb anything from home.
-const reinforceJoinCells = squadRallyRadius * 2
-
-// withinReinforceRange keeps only the candidates standing with the squad.
-// A squad with no position yet takes anyone — it has nothing to disperse.
-func withinReinforceRange(env RuleEnv, name string, pool []model.Unit) []model.Unit {
+// This replaces a fixed join radius, which was the wrong question. A radius of
+// twice the rally distance did stop the game 155 treadmill — a unit fresh off
+// the war factory joining a squad at the enemy base, resetting spread to 50-odd
+// every time the clump gate came within reach — but it also stranded everyone
+// at home the moment the squad left. Game 159 sat on 44 idle units with a squad
+// frozen at 6 for thousands of ticks: form-ground-attack fired 1038 times and
+// was refused every candidate, while a fresh squad could not form either
+// because one already existed. That is the same failure as freezing
+// recruitment, reached from the other side.
+//
+// A rifleman walking to catch up with a squad crossing open ground costs
+// nothing. One joining a squad already at the gate is what wrecks the assault.
+// So the question is not how far the joiner is, it is whether the squad is
+// still travelling — and withinStrikeReach already draws that line.
+func squadAssaulting(env RuleEnv, name string) bool {
 	cx, cy, ok := squadCentroid(env, name)
 	if !ok {
-		return pool
+		return false
 	}
-	limit := reinforceJoinCells * reinforceJoinCells
-	kept := pool[:0:0]
-	for _, u := range pool {
-		dx, dy := u.X-cx, u.Y-cy
-		if dx*dx+dy*dy <= limit {
-			kept = append(kept, u)
-		}
+	base := env.NearestEnemyBase()
+	if base == nil {
+		return false
 	}
-	return kept
+	return withinStrikeReach(env, cx, cy, base.X, base.Y)
 }
 
 func squadTarget(env RuleEnv, name string, floor int) int {
@@ -2551,8 +2554,7 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 			// The joiner's POSITION was always the real question. A unit at the
 			// muster point costs nothing to absorb; one at the factory while the
 			// squad stands at the enemy base is what wrecks the formation.
-			pool = withinReinforceRange(env, name, pool)
-			if len(pool) == 0 {
+			if squadAssaulting(env, name) {
 				return nil
 			}
 			need := sq.TargetSize - len(sq.UnitIDs)

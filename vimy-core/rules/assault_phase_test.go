@@ -98,64 +98,68 @@ func TestUnclumpedSquadRalliesFarOutButCommitsOnTheDoorstep(t *testing.T) {
 	}
 }
 
-// A squad recruits from the units standing with it, and only those.
+// A squad takes reinforcements while it travels, and refuses them once it is
+// in contact.
 //
-// Game 155 rallied 22 times without a strike. The rally worked — spread fell
-// 68, 58, 54, 50, 46, 44, 43 as the squad gathered — but each time it neared
-// the gate a unit fresh off the war factory joined from across the map and the
-// spread reset. near plateaued at 9 while need climbed with every recruit.
+// Game 155's treadmill was a unit fresh off the war factory joining a squad at
+// the enemy base, resetting spread to 50-odd each time the clump gate came
+// within reach. A fixed join radius stopped that and caused the opposite
+// failure: game 159 sat on 44 idle units with the squad frozen at 6, because
+// everyone at home was out of range and a second squad could not form.
 //
-// Refusing to recruit once committed was tried first and was too blunt. This
-// design forms small and tops up on purpose, because unassigned-idle-ground
-// runs a median of 0 and a maximum of 6, so a squad frozen at formation never
-// grows past the two or three it started with: game 157 fielded squads
-// averaging 4.3 members and mostly exactly 2. Position was always the real
-// question, not commitment.
-func TestSquadRecruitsOnlyFromUnitsStandingWithIt(t *testing.T) {
+// So the line is contact, not distance. The joiner's walk is free; the
+// reshuffle at the gate is not.
+func TestSquadReinforcesWhileTravellingButNotInContact(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
 
-	// Four in the squad around (100,100), two more idle beside them, and two
-	// far away at the factory.
+	// Four in the squad at (100,100), four idle recruits back at base.
 	units := []model.Unit{
 		{ID: 1, Type: "2tnk", X: 100, Y: 100, Idle: true},
 		{ID: 2, Type: "2tnk", X: 101, Y: 100, Idle: true},
 		{ID: 3, Type: "2tnk", X: 100, Y: 101, Idle: true},
 		{ID: 4, Type: "2tnk", X: 102, Y: 102, Idle: true},
-		{ID: 5, Type: "2tnk", X: 104, Y: 103, Idle: true},
-		{ID: 6, Type: "2tnk", X: 103, Y: 104, Idle: true},
-		{ID: 7, Type: "2tnk", X: 10, Y: 10, Idle: true},
-		{ID: 8, Type: "2tnk", X: 11, Y: 11, Idle: true},
+		{ID: 5, Type: "2tnk", X: 10, Y: 10, Idle: true},
+		{ID: 6, Type: "2tnk", X: 11, Y: 11, Idle: true},
+		{ID: 7, Type: "2tnk", X: 10, Y: 12, Idle: true},
+		{ID: 8, Type: "2tnk", X: 12, Y: 10, Idle: true},
 	}
-	mem := map[string]any{
-		"squads": map[string]*Squad{
-			"ground-attack": {Name: "ground-attack", Domain: "ground", Role: "attack",
-				UnitIDs: []int{1, 2, 3, 4}, TargetSize: 8},
-		},
-	}
-	env := RuleEnv{
-		State:  model.GameState{Tick: 2000, MapWidth: 128, MapHeight: 128, Units: units},
-		Memory: mem,
-	}
-	if err := FormSquad("ground-attack", "ground", 8, "attack")(env, conn); err != nil {
-		t.Fatalf("reinforce: %v", err)
+	build := func(baseX, baseY int) (RuleEnv, map[string]any) {
+		mem := map[string]any{
+			"squads": map[string]*Squad{
+				"ground-attack": {Name: "ground-attack", Domain: "ground", Role: "attack",
+					UnitIDs: []int{1, 2, 3, 4}, TargetSize: 8},
+			},
+			"enemyBases": map[string]EnemyBaseIntel{
+				"red": {Owner: "red", X: baseX, Y: baseY, Tick: 1, FromBuildings: true},
+			},
+		}
+		return RuleEnv{
+			State:  model.GameState{Tick: 2000, MapWidth: 128, MapHeight: 128, Units: units},
+			Memory: mem,
+		}, mem
 	}
 
-	got := map[int]bool{}
-	for _, id := range getSquads(mem)["ground-attack"].UnitIDs {
-		got[id] = true
+	// Enemy base far away: the squad is travelling, so the recruits at home
+	// must be able to join. Stranding them is how 44 units sat idle.
+	env, mem := build(10, 10)
+	if err := FormSquad("ground-attack", "ground", 8, "attack")(env, conn); err != nil {
+		t.Fatalf("travelling: %v", err)
 	}
-	// The two beside the squad must join: mustering has to work, or squads
-	// never grow past the handful they form with.
-	for _, id := range []int{5, 6} {
-		if !got[id] {
-			t.Errorf("unit %d stands with the squad and did not join", id)
-		}
+	if got := len(getSquads(mem)["ground-attack"].UnitIDs); got <= 4 {
+		t.Errorf("squad = %d members, want it to absorb recruits while travelling", got)
 	}
-	// The two at the far end must not: that is the join that wrecks formation.
-	for _, id := range []int{7, 8} {
-		if got[id] {
-			t.Errorf("unit %d joined from %d cells away and resets the squad's spread", id, 127)
-		}
+
+	// Enemy base under the squad's feet: it is in contact and must not
+	// reshuffle for anyone.
+	env2, mem2 := build(101, 101)
+	if !squadAssaulting(env2, "ground-attack") {
+		t.Fatal("premise broken: the squad is supposed to be in contact")
+	}
+	if err := FormSquad("ground-attack", "ground", 8, "attack")(env2, conn); err != nil {
+		t.Fatalf("in contact: %v", err)
+	}
+	if got := len(getSquads(mem2)["ground-attack"].UnitIDs); got != 4 {
+		t.Errorf("squad = %d members, want 4: a squad at the gate must not take joiners", got)
 	}
 }
