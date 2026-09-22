@@ -163,3 +163,54 @@ func TestSquadReinforcesWhileTravellingButNotInContact(t *testing.T) {
 		t.Errorf("squad = %d members, want 4: a squad at the gate must not take joiners", got)
 	}
 }
+
+// squad-reengage nudges stragglers; it must not steer the army.
+//
+// It used squad-attack-move, the assault action, which commands EVERY member —
+// so one idle straggler redirected the whole squad, and at bestTargetForSquad
+// rather than the base the assault was marching on. The rule is category
+// combat, not the exclusive ground-attack-choice, so it acted alongside the
+// exclusive winner rather than competing with it: two rules steering the same
+// units at two different targets every tick. Game 159 sawtoothed 51 units
+// across 0.3 of the map diagonal in front of the enemy base for thousands of
+// ticks without ever closing.
+func TestNudgeMovesOnlyTheStragglers(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	// Four marching (under orders, so not idle) and two stragglers standing.
+	units := []model.Unit{
+		{ID: 1, Type: "2tnk", X: 100, Y: 100},
+		{ID: 2, Type: "2tnk", X: 101, Y: 100},
+		{ID: 3, Type: "2tnk", X: 100, Y: 101},
+		{ID: 4, Type: "2tnk", X: 102, Y: 102},
+		{ID: 5, Type: "2tnk", X: 60, Y: 60, Idle: true},
+		{ID: 6, Type: "2tnk", X: 61, Y: 61, Idle: true},
+	}
+	mem := map[string]any{
+		"squads": map[string]*Squad{
+			"ground-attack": {Name: "ground-attack", Domain: "ground", Role: "attack",
+				UnitIDs: []int{1, 2, 3, 4, 5, 6}, TargetSize: 6},
+		},
+	}
+	env := RuleEnv{
+		State:  model.GameState{Tick: 3000, MapWidth: 128, MapHeight: 128, Units: units},
+		Memory: mem,
+	}
+	if err := SquadNudgeStragglers("ground-attack")(env, conn); err != nil {
+		t.Fatalf("nudge: %v", err)
+	}
+
+	// sendAttackMove records who it ordered. Only the two idle ones may appear.
+	sent := memoryMap[int, attackMoveEntry](mem, "attackMoveSent")
+	for _, id := range []int{5, 6} {
+		if _, ok := sent[id]; !ok {
+			t.Errorf("straggler %d was not nudged", id)
+		}
+	}
+	for _, id := range []int{1, 2, 3, 4} {
+		if _, ok := sent[id]; ok {
+			t.Errorf("marching unit %d was redirected: one straggler must not steer the army", id)
+		}
+	}
+}

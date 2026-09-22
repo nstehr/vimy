@@ -145,12 +145,13 @@ var actionFactories = map[string]func([]string) (ActionFunc, error){
 		}
 		return FormSquad(a[0], lower(a[1]), size, lower(a[3])), nil
 	},
-	"squad-attack-move":       squadAction(SquadAttackMove),
-	"squad-air-strike":        squadAction(SquadAirStrike),
-	"squad-focus-fire":        squadAction(SquadFocusFire),
-	"squad-disengage":         squadAction(SquadDisengage),
-	"squad-defend":            squadAction(SquadDefend),
-	"squad-guard-harvesters":  squadFloatAction(SquadGuardHarvesters),
+	"squad-attack-move":      squadAction(SquadAttackMove),
+	"squad-nudge-stragglers": squadAction(SquadNudgeStragglers),
+	"squad-air-strike":       squadAction(SquadAirStrike),
+	"squad-focus-fire":       squadAction(SquadFocusFire),
+	"squad-disengage":        squadAction(SquadDisengage),
+	"squad-defend":           squadAction(SquadDefend),
+	"squad-guard-harvesters": squadFloatAction(SquadGuardHarvesters),
 	"scramble-to-harvesters": func(a []string) (ActionFunc, error) {
 		if err := arity(a, 2); err != nil {
 			return nil, err

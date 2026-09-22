@@ -2720,6 +2720,41 @@ func SquadAttackMove(name string) ActionFunc {
 	}
 }
 
+// SquadNudgeStragglers moves only the squad members that have gone idle, toward
+// wherever the squad as a whole is already headed.
+//
+// squad-reengage used squad-attack-move, which is the main assault action and
+// commands EVERY member. Its own note says it is there to "catch stragglers
+// finishing an order while the squad presses forward", and it triggers on a
+// single idle member — so one straggler anywhere in the squad redirected the
+// whole army, to bestTargetForSquad rather than to the base the assault was
+// marching on. It is not in the exclusive ground-attack-choice category either,
+// so it acted alongside the exclusive winner rather than competing with it.
+//
+// Game 159 is what that looked like: squad-attack-known-base fired 210 times
+// against squad-reengage's 104, and 51 units sawtoothed across 0.3 of the map
+// diagonal — roughly 38 cells forward, 38 cells back — for thousands of ticks
+// in front of the enemy base, never closing. Two rules steering the same army
+// at two different targets.
+//
+// So this commands the idle members and nothing else, and it steers them at the
+// squad's own centroid: the straggler's job is to rejoin, not to pick a fight
+// of its own. No rally, no attack state — the assault rules own that.
+func SquadNudgeStragglers(name string) ActionFunc {
+	return func(env RuleEnv, conn *ipc.Connection) error {
+		ids := squadIdleActorIDs(env, name)
+		if len(ids) == 0 {
+			return nil
+		}
+		cx, cy, ok := squadCentroid(env, name)
+		if !ok {
+			return nil
+		}
+		slog.Debug("nudging stragglers", "squad", name, "count", len(ids), "x", cx, "y", cy)
+		return sendAttackMove(env, conn, ids, cx, cy)
+	}
+}
+
 // groundApproachWaypointFor returns a threat-aware staging point if the squad
 // is far from `dest` AND a waypoint would actually shift the approach. Returns
 // false when the squad is already engaging or no useful waypoint exists.

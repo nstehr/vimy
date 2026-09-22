@@ -74,8 +74,8 @@ rule squad-attack {
 rule squad-reengage {
   priority attack-priority() - 2
   category combat
-  because "catches stragglers finishing an order while the squad presses forward"
-  do squad-attack-move(ground-attack)
+  because "catches stragglers finishing an order while the squad presses forward, and now commands ONLY them. It used squad-attack-move, which is the assault action and moves every member, aimed at bestTargetForSquad rather than the base the assault was marching on — so one idle straggler redirected the whole army. This rule is category combat, not the exclusive ground-attack-choice, so it acted alongside the exclusive winner instead of competing with it: two rules steering the same units at two different targets, every tick. Game 159 sawtoothed 51 units across 0.3 of the map diagonal, 38 cells forward and 38 back, in front of the enemy base for thousands of ticks without closing, at 210 base-attack fires against 104 of these. Stragglers are now steered at the squad's own centroid, because rejoining is the job"
+  do squad-nudge-stragglers(ground-attack)
   require squad-exists(ground-attack)
   require squad-idle-count(ground-attack) > 0
   require exists best-ground-target or exists nearest-enemy
