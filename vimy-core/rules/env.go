@@ -1405,36 +1405,61 @@ func (e RuleEnv) SquadNeedsReinforcement(name string) bool {
 	return len(sq.UnitIDs) < sq.TargetSize
 }
 
-// SquadReadyRatio is the idle fraction of *available* members. Retreating units
-// leave both numerator and denominator, so a doctrine demanding 100% readiness
-// isn't blocked forever by one unit healing at the depot.
+// SquadReadyRatio is how much of the INTENDED force is alive and present:
+// living members over TargetSize, capped at 1.
+//
+// It counted members flagged Idle, and Idle means "has no current order" — it
+// clears the instant the sidecar issues one. So a squad marching on its target,
+// doing exactly what it was told, read as zero ready, while a single stranded
+// unit with nothing to do read as 1.0. The gate was inverted: too strict for a
+// real assault and too lax for a remnant.
+//
+// That inversion was worked around twice rather than fixed — activation() was
+// clamped to 0.5 in "Ask the squad for a readiness it can actually reach" and
+// then to 0.25 in "ask the squad for what exists" — which made commit_ratio
+// inert above 0.25. The strategist asks for 0.70 to avoid piecemeal waves, the
+// prompt tells it to ask for 0.6-0.8 against a fortified base, and none of it
+// could bind. squad-attack's own note called the clamp "a calibration and not a
+// cure", and said the cure was that readiness must not mean standing still.
+//
+// Game 158 is what the stopgap cost: the squad decayed 15 to 6 to 2 to 1 and
+// kept walking into the enemy base, because a remnant of one scores full marks.
+// Army peak fell to 5000 against game 155's 11800 — the force never
+// accumulated, it was committed and lost and committed again.
+//
+// Retreating units are excluded from the numerator but NOT from TargetSize: a
+// squad half of which is limping to the depot is not ready to assault, which is
+// the question being asked.
 func (e RuleEnv) SquadReadyRatio(name string) float64 {
 	squads := getSquads(e.Memory)
 	sq, ok := squads[name]
 	if !ok || len(sq.UnitIDs) == 0 {
 		return 0
 	}
-	idleSet := make(map[int]bool)
+	target := sq.TargetSize
+	if target <= 0 {
+		// No target recorded: fall back to the roster so the gate stays a
+		// fraction of something real rather than dividing by zero.
+		target = len(sq.UnitIDs)
+	}
+	alive := make(map[int]bool, len(e.State.Units))
 	for _, u := range e.State.Units {
-		if u.Idle {
-			idleSet[u.ID] = true
-		}
+		alive[u.ID] = true
 	}
 	retreating := getRetreatingUnits(e.Memory)
-	idle, available := 0, 0
+	present := 0
 	for _, id := range sq.UnitIDs {
 		if _, isRetreating := retreating[id]; isRetreating {
 			continue
 		}
-		available++
-		if idleSet[id] {
-			idle++
+		if alive[id] {
+			present++
 		}
 	}
-	if available == 0 {
-		return 0
+	if present >= target {
+		return 1
 	}
-	return float64(idle) / float64(available)
+	return float64(present) / float64(target)
 }
 
 func (e RuleEnv) SquadIdleCount(name string) int {

@@ -978,9 +978,15 @@ func computePressureFlags(currentTick int, gs *model.GameState, stress []Event) 
 	return beingRushed, harvesterHarassed
 }
 
-// groundSquadReadyRatio is the ground-attack squad's idle/target ratio, 0 when
-// it hasn't formed. Read against the doctrine's commit_ratio so the LLM can see
-// whether its intended commit threshold is reachable.
+// groundSquadReadyRatio is how much of the ground-attack squad's intended force
+// is alive and present, 0 when it hasn't formed. Read against the doctrine's
+// commit_ratio so the LLM can see whether its commit threshold is reachable.
+//
+// Must agree with rules.SquadReadyRatio, which the gate actually uses. It did
+// not: both counted units flagged Idle, and Idle means "has no current order",
+// so the number shown to the strategist went to zero the moment the squad was
+// given one. The strategist was being asked to compare its commit_ratio against
+// a figure that measured standing still.
 func groundSquadReadyRatio(memory map[string]any, gs model.GameState) float64 {
 	squads, ok := memory["squads"].(map[string]*rules.Squad)
 	if !ok {
@@ -990,19 +996,20 @@ func groundSquadReadyRatio(memory map[string]any, gs model.GameState) float64 {
 	if !ok || sq.TargetSize <= 0 {
 		return 0
 	}
-	idleSet := make(map[int]bool)
+	alive := make(map[int]bool, len(gs.Units))
 	for _, u := range gs.Units {
-		if u.Idle {
-			idleSet[u.ID] = true
-		}
+		alive[u.ID] = true
 	}
-	idle := 0
+	present := 0
 	for _, id := range sq.UnitIDs {
-		if idleSet[id] {
-			idle++
+		if alive[id] {
+			present++
 		}
 	}
-	return float64(idle) / float64(sq.TargetSize)
+	if present >= sq.TargetSize {
+		return 1
+	}
+	return float64(present) / float64(sq.TargetSize)
 }
 
 // computeCashBurnRate is the net cash delta since the last evaluation, positive

@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"math"
 	"testing"
 
 	"github.com/nstehr/vimy/vimy-core/model"
@@ -396,36 +397,82 @@ func TestSquadNeedsReinforcement(t *testing.T) {
 	}
 }
 
+// Readiness is how much of the INTENDED force is present, not how many members
+// happen to have no current order.
+//
+// It counted Idle, and Idle clears the moment the sidecar issues an order, so a
+// squad marching on its target read as zero ready while a lone stranded unit
+// read as 1.0 — too strict for a real assault and too lax for a remnant. Game
+// 158's squad decayed 15 to 6 to 2 to 1 and kept walking into the enemy base,
+// because one unit of one is full marks.
 func TestSquadReadyRatio(t *testing.T) {
-	memory := map[string]any{
-		"squads": map[string]*Squad{
-			"alpha": {
-				Name:       "alpha",
-				Domain:     "ground",
-				UnitIDs:    []int{1, 2, 3, 4},
-				Role:       "attack",
-				TargetSize: 5,
-			},
-		},
+	squad := func(ids []int, target int) map[string]any {
+		return map[string]any{"squads": map[string]*Squad{
+			"alpha": {Name: "alpha", Domain: "ground", Role: "attack", UnitIDs: ids, TargetSize: target},
+		}}
 	}
-	env := RuleEnv{
-		State: model.GameState{
-			Units: []model.Unit{
-				{ID: 1, Type: "1tnk", Idle: true},
-				{ID: 2, Type: "1tnk", Idle: true},
-				{ID: 3, Type: "1tnk", Idle: true},
-				{ID: 4, Type: "1tnk", Idle: false},
-			},
-		},
-		Memory: memory,
+	units := func(ids []int, idle bool) []model.Unit {
+		var us []model.Unit
+		for _, id := range ids {
+			us = append(us, model.Unit{ID: id, Type: "1tnk", Idle: idle})
+		}
+		return us
 	}
 
-	ratio := env.SquadReadyRatio("alpha")
-	if ratio != 0.75 {
-		t.Errorf("expected SquadReadyRatio = 0.75, got %f", ratio)
+	cases := []struct {
+		name   string
+		ids    []int
+		alive  []int
+		idle   bool
+		target int
+		want   float64
+	}{
+		{"four of five present", []int{1, 2, 3, 4}, []int{1, 2, 3, 4}, true, 5, 0.8},
+		// The whole point: orders must not lower readiness.
+		{"a marching squad is ready", []int{1, 2, 3, 4, 5}, []int{1, 2, 3, 4, 5}, false, 5, 1.0},
+		// Game 158: a remnant must not read as a ready squad.
+		{"a remnant of one is not ready", []int{1}, []int{1}, true, 6, 1.0 / 6.0},
+		// Dead members are not present, however large the roster says it is.
+		{"the dead do not count", []int{1, 2, 3, 4, 5, 6}, []int{1, 2}, true, 6, 2.0 / 6.0},
+		{"over strength caps at one", []int{1, 2, 3, 4}, []int{1, 2, 3, 4}, true, 2, 1.0},
 	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			env := RuleEnv{
+				State:  model.GameState{Units: units(c.alive, c.idle)},
+				Memory: squad(c.ids, c.target),
+			}
+			if got := env.SquadReadyRatio("alpha"); math.Abs(got-c.want) > 1e-9 {
+				t.Errorf("ready ratio = %v, want %v", got, c.want)
+			}
+		})
+	}
+
+	env := RuleEnv{State: model.GameState{}, Memory: squad([]int{1}, 5)}
 	if env.SquadReadyRatio("missing") != 0 {
 		t.Error("expected SquadReadyRatio for missing squad to be 0")
+	}
+}
+
+// A squad limping to the depot is not ready to assault, so retreating members
+// leave the numerator while TargetSize stands.
+func TestSquadReadyRatioExcludesRetreating(t *testing.T) {
+	mem := map[string]any{"squads": map[string]*Squad{
+		"alpha": {Name: "alpha", Domain: "ground", Role: "attack", UnitIDs: []int{1, 2, 3, 4}, TargetSize: 4},
+	}}
+	env := RuleEnv{
+		State: model.GameState{Units: []model.Unit{
+			{ID: 1, Type: "1tnk"}, {ID: 2, Type: "1tnk"},
+			{ID: 3, Type: "1tnk"}, {ID: 4, Type: "1tnk"},
+		}},
+		Memory: mem,
+	}
+	if got := env.SquadReadyRatio("alpha"); got != 1.0 {
+		t.Fatalf("ready ratio = %v, want 1 with everyone present", got)
+	}
+	mem["retreatingUnits"] = map[int]int{3: 100, 4: 100}
+	if got := env.SquadReadyRatio("alpha"); got != 0.5 {
+		t.Errorf("ready ratio = %v, want 0.5 with half the squad retreating", got)
 	}
 }
 
