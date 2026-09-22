@@ -4,13 +4,16 @@ import (
 	"compress/gzip"
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/nstehr/vimy/vimy-core/wal"
 )
@@ -264,5 +267,66 @@ func TestShipReadsACompressedSegmentBack(t *testing.T) {
 	}
 	if len(f2.tokens) != 1 || f2.tokens[0] != "s1/"+wal.SegmentName(wal.EvalsPrefix, 1) {
 		t.Errorf("tokens = %v, want the original logical name so the resend deduplicates", f2.tokens)
+	}
+}
+
+// With an interval, a failing first pass must not kill the shipper.
+//
+// It used to. That was harmless when shipping was a process someone started by
+// hand and watched exit, and became a real hazard once the server ships in the
+// background: a ClickHouse that is a few seconds behind the server at startup
+// is the ordinary case, and a shipper that gave up there would leave the whole
+// game unshipped with one log line to say so.
+func TestRunKeepsShippingAfterAFailedFirstPass(t *testing.T) {
+	root := t.TempDir()
+	session(t, root, "s1", `{"tick":1,"rule":"a"}`+"\n")
+
+	var passes atomic.Int64
+	f := &fakeCH{fail: func(q string) bool {
+		// Fail every query of the first pass, then let the shipper through.
+		if strings.Contains(q, "SELECT concat(session_id") {
+			return passes.Add(1) == 1
+		}
+		return false
+	}}
+	srv := newFake(t, f)
+	sh := New(root, srv.URL, "currie", "u", "p")
+	sh.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- sh.Run(ctx, 10*time.Millisecond) }()
+
+	// The segment lands on a later pass, not the first.
+	deadline := time.Now().Add(1500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		f.mu.Lock()
+		n := len(f.tokens)
+		f.mu.Unlock()
+		if n > 0 {
+			cancel()
+			if err := <-done; err != nil {
+				t.Fatalf("Run returned %v", err)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("the shipper gave up after the first pass failed")
+}
+
+// Without an interval it is a job whose exit code means something, so the
+// error is still returned.
+func TestRunOnePassStillReportsFailure(t *testing.T) {
+	root := t.TempDir()
+	session(t, root, "s1", `{"tick":1,"rule":"a"}`+"\n")
+
+	f := &fakeCH{fail: func(q string) bool { return true }}
+	srv := newFake(t, f)
+	sh := New(root, srv.URL, "currie", "u", "p")
+
+	if err := sh.Run(context.Background(), 0); err == nil {
+		t.Fatal("a single pass that failed must report it")
 	}
 }

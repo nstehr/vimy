@@ -62,12 +62,23 @@ type Stats struct {
 
 // Run ships everything ready, then keeps shipping on an interval until the
 // context is cancelled. A zero interval makes it a single pass.
+//
+// With an interval, NO pass is fatal -- including the first. An interval means
+// "keep shipping", and a database that is not up yet at the moment the server
+// starts is the ordinary case now that Currie ships in the background: dying
+// there would leave the whole game unshipped and nothing but one log line to
+// say so. Without an interval this is a job whose exit code means something,
+// so the error is returned.
 func (s *Shipper) Run(ctx context.Context, interval time.Duration) error {
 	st, err := s.Pass(ctx)
-	if err != nil {
+	switch {
+	case err != nil && interval <= 0:
 		return err
+	case err != nil:
+		s.Log.Error("ship pass failed", "error", err)
+	default:
+		s.logPass(st)
 	}
-	s.logPass(st)
 	if interval <= 0 {
 		return nil
 	}

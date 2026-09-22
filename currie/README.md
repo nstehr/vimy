@@ -78,9 +78,28 @@ condition, and a `WITH` alias the analyzer would not resolve.
 ## While the game runs
 
 ```sh
-currie -ship -ship-every 5s      # in one terminal, during the game
-open http://localhost:8090/live  # in another
+currie                           # or: make run
+open http://localhost:8090/live
 ```
+
+One process. The server ships the sidecar's write-ahead log into ClickHouse on
+a background goroutine for as long as it runs, because the two halves share
+nothing — the shipper reads sealed files and POSTs them, and touches neither
+the archive nor the replay cache.
+
+It was two processes, and forgetting the second one did not look like an
+error: the pages still rendered and the live panel simply showed the last
+session it had, which is indistinguishable from a quiet game.
+
+`-no-ship` turns it off, for a machine where something else is already
+shipping. `currie -ship` is still the shipper on its own — a headless box that
+only moves rows, or `make -C clickhouse ship` for a one-off catch-up of
+segments written while nothing was running. Running both is safe: the
+deduplication token is the segment's path, so a segment shipped twice lands
+once.
+
+Nothing is lost if ClickHouse is down. The log stays on disk and the next
+shipper to run moves every segment it missed.
 
 Vimy's own dashboard shows what the strategist *intends* — the directive, the
 doctrine compiled right now, the weights over time. `/live` is what the squads

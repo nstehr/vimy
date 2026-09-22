@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -41,8 +42,11 @@ func run() error {
 	top := flag.Int("top", 8, "how many blamed rules to list with -game")
 
 	ship := flag.Bool("ship", false,
-		"ship the sidecar's write-ahead evaluation log into ClickHouse and exit when done, or keep shipping with -ship-every")
-	shipEvery := flag.Duration("ship-every", 0, "with -ship, keep shipping on this interval instead of making one pass")
+		"ship the write-ahead log into ClickHouse and nothing else: no server, no archive. The server ships on its own, so this is for a headless shipper or a one-off catch-up with -ship-every 0")
+	shipEvery := flag.Duration("ship-every", 5*time.Second,
+		"how often to ship. Zero with -ship makes a single pass and exits")
+	noShip := flag.Bool("no-ship", false,
+		"do not ship in the background. The live page then shows only what some other shipper has moved")
 	streamDir := flag.String("stream-dir", "", "the write-ahead log directory; defaults to <dir>/stream")
 	chURL := flag.String("clickhouse", "http://localhost:8123", "ClickHouse HTTP endpoint")
 	chDB := flag.String("clickhouse-db", "currie", "ClickHouse database")
@@ -55,12 +59,16 @@ func run() error {
 		walDir = filepath.Join(expand(*dir), "stream")
 	}
 
-	// A whole job, not a mode of the server: it runs and exits before the
-	// archive is opened, because it does not need it.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Shipping alone: no server, no archive opened, because it needs neither.
+	// Still its own mode -- a headless box that only moves rows, and the
+	// one-off catch-up `make ship` runs -- but no longer the only way to get
+	// rows into ClickHouse, which is what made running a game a two-terminal
+	// affair.
 	if *ship {
 		sh := stream.New(walDir, *chURL, *chDB, *chUser, *chPass)
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-		defer stop()
 		if err := sh.Ping(ctx); err != nil {
 			return fmt.Errorf("clickhouse: %w (is the stream schema loaded? see clickhouse/sql/04_stream.sql)", err)
 		}
@@ -75,7 +83,12 @@ func run() error {
 	chc := ch.New(*chURL, *chDB, *chUser, *chPass)
 	pingCtx, cancelPing := context.WithTimeout(context.Background(), 3*time.Second)
 	if err := chc.Ping(pingCtx); err != nil {
-		slog.Warn("stream disabled", "clickhouse", *chURL, "error", err)
+		// Also turns off background shipping, since there is nowhere to ship
+		// to. Nothing is lost by that: the write-ahead log stays on disk and a
+		// later `currie -ship -ship-every 0` moves every segment it missed.
+		slog.Warn("no ClickHouse: the counted sections, the live page and background shipping are all off",
+			"clickhouse", *chURL, "error", err,
+			"fix", "make -C clickhouse up && make -C clickhouse stream, then restart currie")
 		chc = nil
 	}
 	cancelPing()
@@ -113,8 +126,46 @@ func run() error {
 		return srv.postmortem(ctx, os.Stdout, id, *top)
 	}
 
+	// The shipper, in the background, for the life of the server.
+	//
+	// It used to be a second process someone had to remember, and forgetting it
+	// did not look like an error: the pages rendered, the live panel just said
+	// the last session it had, which is indistinguishable from a quiet game.
+	// A goroutine because the two halves share nothing -- the shipper reads
+	// sealed files and POSTs them, and touches neither the archive nor the
+	// replay cache.
+	if chc != nil && !*noShip {
+		sh := stream.New(walDir, *chURL, *chDB, *chUser, *chPass)
+		go func() {
+			slog.Info("shipping in the background", "wal", walDir, "every", *shipEvery)
+			// Run only returns here when the context is cancelled: with an
+			// interval no pass is fatal, so a ClickHouse that restarts costs
+			// a log line and not the rest of the game.
+			if err := sh.Run(ctx, *shipEvery); err != nil {
+				slog.Error("shipper stopped", "error", err)
+			}
+		}()
+	} else if chc != nil {
+		slog.Info("not shipping", "reason", "-no-ship")
+	}
+
+	// A real server rather than ListenAndServe, so ^C stops the shipper too and
+	// the open segment is not left half-moved.
+	httpSrv := &http.Server{Addr: *addr, Handler: srv.routes()}
+	go func() {
+		<-ctx.Done()
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := httpSrv.Shutdown(shutdown); err != nil {
+			slog.Warn("shutdown", "error", err)
+		}
+	}()
+
 	slog.Info("currie listening", "addr", *addr, "dir", expand(*dir))
-	return http.ListenAndServe(*addr, srv.routes())
+	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
 // resolveGame turns the -game value into an id.

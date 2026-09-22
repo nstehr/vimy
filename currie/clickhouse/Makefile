@@ -37,13 +37,19 @@ load: up
 # --- the streamed half -------------------------------------------------------
 # Unsampled, shipped from the sidecar's write-ahead log while the game runs.
 # See ../stream/wal.go for the contract and ../../currie/README.md for why.
+#
+# `currie` itself ships in the background now, so neither target below is part
+# of playing a game. `ship` is the one-off catch-up for segments written while
+# nothing was shipping; `ship-loop` is a headless shipper on a box with no
+# server. Both are safe to run alongside the server -- the deduplication token
+# is the segment path, so a segment shipped twice lands once.
 
 stream: up
 	$(CH) --queries-file /sql/04_stream.sql
 	@echo "stream tables ready"
 
 ship: stream
-	cd .. && go run . -ship
+	cd .. && go run . -ship -ship-every 0
 
 ship-loop: stream
 	cd .. && go run . -ship -ship-every 5s
