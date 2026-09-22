@@ -62,3 +62,52 @@ func TestBurnedAxesReachThePrompt(t *testing.T) {
 		t.Error("BURNED AXES rendered with nothing burned")
 	}
 }
+
+// Every situation field a prompt rule reasons about must actually reach the
+// prompt.
+//
+// burned_axes was computed, assigned, used to gate eight production rules, and
+// never rendered. Fixing that one did not fix its siblings: being_rushed and
+// harvester_harassed were the same, so RUSH RESPONSE and HARVESTER HARASSMENT
+// could never fire. Vimy was rushed in games 160 and 161 — 139 harvesters lost
+// in one of them, refineries walked down to zero — and infantry_weight stayed
+// at 0.35 against a rule demanding 0.5, because the model was told to check a
+// flag it had never been shown. ground_squad_ready_ratio was invisible too,
+// which made the comparison the prompt invites meaningless.
+//
+// The field existing, the assignment existing, and nothing erroring is exactly
+// what this class of bug looks like. Only rendering catches it.
+func TestSituationFlagsReachThePrompt(t *testing.T) {
+	sit := types.GameSituation{
+		Tick: 4000, Phase: "Early Game",
+		Being_rushed:                 true,
+		Harvester_harassed:           true,
+		Ground_squad_ready_ratio:     0.4,
+		Cash_burn_rate:               -250,
+		Time_to_reach_enemy_estimate: 3500,
+	}
+	body := promptText(t, mustRequest(t, sit))
+	for _, want := range []string{"BEING RUSHED: true", "HARVESTER HARASSMENT: true", "Ground squad readiness", "Cash burn rate", "3500"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("%q never rendered; the rule that reads it cannot fire", want)
+		}
+	}
+
+	// The two alarms are conditional and must stay silent when false, or every
+	// doctrine is told it is under attack.
+	calm := promptText(t, mustRequest(t, types.GameSituation{Tick: 4000, Phase: "Early Game"}))
+	for _, unwanted := range []string{"BEING RUSHED: true", "HARVESTER HARASSMENT: true"} {
+		if strings.Contains(calm, unwanted) {
+			t.Errorf("%q rendered when the flag is false", unwanted)
+		}
+	}
+}
+
+func mustRequest(t *testing.T, sit types.GameSituation) bamlpkg.HTTPRequest {
+	t.Helper()
+	req, err := baml.Request.GenerateDoctrine("hold the line", sit, "germany", nil)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	return req
+}
