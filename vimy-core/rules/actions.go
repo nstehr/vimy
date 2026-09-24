@@ -2894,6 +2894,84 @@ func withinStrikeReach(env RuleEnv, cx, cy, tx, ty int) bool {
 	return dx*dx+dy*dy <= reach*reach
 }
 
+// siegeRangeCells is each siege weapon's reach, read from the mod's own
+// weapons.yaml rather than transcribed: 155mm is 20c0, SCUD is 10c0.
+var siegeRangeCells = map[string]int{
+	Artillery:  20, // 155mm, Allied
+	V2Launcher: 10, // SCUD, Soviet
+}
+
+// maxBaseDefenceRange is the longest reach of any Red Alert base defence.
+// TurretGun 6c512 is the furthest; TeslaZap is 6c0, the flame tower inherits
+// ^FireWeapon at 5c0, and the pillbox chain gun is 5c0. Rounded up to 7.
+const maxBaseDefenceRange = 7
+
+// siegeStandoffCells is how far from the target a siege unit should hold: far
+// enough out that no base defence reaches it, near enough that its own gun
+// does. Artillery reaches 20 cells and a flame tower reaches 5, so walking the
+// artillery to the base centroid alongside the riflemen throws away a threefold
+// range advantage and is why the squad keeps being destroyed on entry.
+//
+// The margin matters because defences ring the base rather than sitting at its
+// centroid, so distance-to-centroid understates distance-to-nearest-tower. Four
+// cells of slack off the weapon's own range, floored at two cells beyond the
+// longest defence, which for a V2 at 10c0 leaves a tight but real window.
+func siegeStandoffCells(unitType string) (int, bool) {
+	r, ok := siegeRangeCells[baseUnitType(unitType)]
+	if !ok {
+		return 0, false
+	}
+	stand := r - 4
+	if floor := maxBaseDefenceRange + 2; stand < floor {
+		stand = floor
+	}
+	if stand > r {
+		return 0, false
+	}
+	return stand, true
+}
+
+func baseUnitType(t string) string {
+	t = strings.ToLower(t)
+	if i := strings.IndexByte(t, '.'); i >= 0 {
+		t = t[:i]
+	}
+	return t
+}
+
+// standoffPoint is the point `cells` from the target, on the line back toward
+// the squad. When the squad is already closer than that, it pulls them out.
+func standoffPoint(cx, cy, tx, ty, cells int) (int, int) {
+	dx, dy := float64(cx-tx), float64(cy-ty)
+	d := math.Hypot(dx, dy)
+	if d < 1 {
+		return cx, cy
+	}
+	f := float64(cells) / d
+	return tx + int(dx*f), ty + int(dy*f)
+}
+
+// splitSiege divides the order between units that should hold at range and
+// units that should close. Returns the closers unchanged when nothing in the
+// squad is a siege unit, which is the common case.
+func splitSiege(env RuleEnv, ids []uint32) (closers []uint32, siege map[uint32]int) {
+	typeOf := make(map[uint32]string, len(env.State.Units))
+	for _, u := range env.State.Units {
+		typeOf[uint32(u.ID)] = u.Type
+	}
+	for _, id := range ids {
+		if cells, ok := siegeStandoffCells(typeOf[id]); ok {
+			if siege == nil {
+				siege = map[uint32]int{}
+			}
+			siege[id] = cells
+			continue
+		}
+		closers = append(closers, id)
+	}
+	return closers, siege
+}
+
 func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
 		base := env.NearestEnemyBase()
@@ -3056,7 +3134,27 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 		}
 		env.Memory[memKey] = state
 
-		return sendAttackMove(env, conn, ids, tx, ty)
+		// Siege units hold at their own standoff; everyone else closes. Sending
+		// the whole squad to the same point walks a 20-cell gun into a 5-cell
+		// flame tower alongside the riflemen.
+		closers, siege := splitSiege(env, ids)
+		if len(siege) == 0 {
+			return sendAttackMove(env, conn, ids, tx, ty)
+		}
+		cx, cy, haveCentroid := squadCentroid(env, name)
+		if !haveCentroid {
+			return sendAttackMove(env, conn, ids, tx, ty)
+		}
+		for id, cells := range siege {
+			sx, sy := standoffPoint(cx, cy, tx, ty, cells)
+			if err := sendAttackMove(env, conn, []uint32{id}, sx, sy); err != nil {
+				return err
+			}
+		}
+		if len(closers) == 0 {
+			return nil
+		}
+		return sendAttackMove(env, conn, closers, tx, ty)
 	}
 }
 

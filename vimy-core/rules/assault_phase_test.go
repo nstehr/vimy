@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"math"
 	"testing"
 
 	"github.com/nstehr/vimy/vimy-core/model"
@@ -248,5 +249,119 @@ func TestApproachChoiceIsRecordedWithItsReason(t *testing.T) {
 	}
 	if got := open.ApproachChoices()[ApproachNoData]; got != 0 {
 		t.Errorf("no-data leaked into a run that had terrain: %d", got)
+	}
+}
+
+// Artillery holds at range; the rest of the squad closes.
+//
+// Every RA base defence is short-ranged - TurretGun 6c512 is the longest,
+// TeslaZap 6c0, the flame tower 5c0 - and Allied artillery reaches 20c0. The
+// assault sent the entire squad to the base centroid, so a 20-cell gun walked
+// into a 5-cell flame tower beside the riflemen and died there. That threefold
+// range advantage was simply unused.
+func TestSiegeUnitsHoldAtStandoffWhileTheRestClose(t *testing.T) {
+	for _, c := range []struct {
+		unit string
+		want int
+	}{
+		{"arty", 16}, // 20 - 4
+		{"v2rl", 9},  // 10 - 4 = 6, floored at maxBaseDefenceRange + 2
+		{"2tnk", 0},  // not a siege unit
+	} {
+		got, ok := siegeStandoffCells(c.unit)
+		if c.want == 0 {
+			if ok {
+				t.Errorf("%s: treated as siege", c.unit)
+			}
+			continue
+		}
+		if !ok || got != c.want {
+			t.Errorf("%s standoff = %d (ok=%v), want %d", c.unit, got, ok, c.want)
+		}
+		if got <= maxBaseDefenceRange {
+			t.Errorf("%s holds at %d, inside the %d-cell reach of a base defence", c.unit, got, maxBaseDefenceRange)
+		}
+		if r := siegeRangeCells[c.unit]; got > r {
+			t.Errorf("%s holds at %d, beyond its own %d-cell range", c.unit, got, r)
+		}
+	}
+
+	// The standoff point sits on the line back toward the squad, at the right
+	// distance from the target - including when the squad has already closed
+	// too far, where it must pull them back out.
+	sx, sy := standoffPoint(0, 0, 100, 0, 16)
+	if sx != 84 || sy != 0 {
+		t.Errorf("standoff = (%d,%d), want (84,0)", sx, sy)
+	}
+	sx, _ = standoffPoint(98, 0, 100, 0, 16)
+	if sx != 84 {
+		t.Errorf("standoff from inside = %d, want it pulled back out to 84", sx)
+	}
+
+	// And the split keeps the two groups apart.
+	env := RuleEnv{State: model.GameState{Units: []model.Unit{
+		{ID: 1, Type: "2tnk"}, {ID: 2, Type: "arty"}, {ID: 3, Type: "e1"}, {ID: 4, Type: "arty.husk"},
+	}}}
+	closers, siege := splitSiege(env, []uint32{1, 2, 3})
+	if len(siege) != 1 {
+		t.Fatalf("siege group = %d units, want 1", len(siege))
+	}
+	if _, ok := siege[2]; !ok {
+		t.Error("the artillery was not held back")
+	}
+	if len(closers) != 2 {
+		t.Errorf("closers = %d, want the tank and the rifleman", len(closers))
+	}
+}
+
+// And the assault must actually issue the two orders separately.
+//
+// The helper tests above pass even with the split removed, because they
+// exercise the geometry rather than the send path. This one reads what was
+// ordered: the artillery and the tanks must be sent to different places.
+func TestBaseAssaultOrdersSiegeToADifferentPlace(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	units := []model.Unit{
+		{ID: 1, Type: "2tnk", X: 20, Y: 20, Idle: true},
+		{ID: 2, Type: "2tnk", X: 21, Y: 20, Idle: true},
+		{ID: 3, Type: "arty", X: 20, Y: 21, Idle: true},
+		{ID: 4, Type: "e1", X: 21, Y: 21, Idle: true},
+	}
+	mem := map[string]any{
+		"squads": map[string]*Squad{
+			"ground-attack": {Name: "ground-attack", Domain: "ground", Role: "attack",
+				UnitIDs: []int{1, 2, 3, 4}, TargetSize: 4},
+		},
+		"enemyBases": map[string]EnemyBaseIntel{
+			"red": {Owner: "red", X: 100, Y: 100, Tick: 1, FromBuildings: true},
+		},
+	}
+	env := RuleEnv{
+		State:  model.GameState{Tick: 5000, MapWidth: 128, MapHeight: 128, Units: units},
+		Memory: mem,
+	}
+	if err := SquadAttackKnownBase("ground-attack", 1.0)(env, conn); err != nil {
+		t.Fatalf("assault: %v", err)
+	}
+
+	sent := memoryMap[int, attackMoveEntry](mem, "attackMoveSent")
+	arty, okA := sent[3]
+	tank, okT := sent[1]
+	if !okA || !okT {
+		t.Fatalf("missing orders: arty=%v tank=%v", okA, okT)
+	}
+	if arty.X == tank.X && arty.Y == tank.Y {
+		t.Fatal("artillery was sent to the same point as the tanks: the range advantage is unused")
+	}
+	// The artillery must stop short, outside any base defence's reach.
+	dx, dy := float64(arty.X-100), float64(arty.Y-100)
+	gap := math.Hypot(dx, dy)
+	if gap <= float64(maxBaseDefenceRange) {
+		t.Errorf("artillery holds %.1f cells from the base, inside the %d-cell defence reach", gap, maxBaseDefenceRange)
+	}
+	if gap > float64(siegeRangeCells["arty"]) {
+		t.Errorf("artillery holds %.1f cells out, beyond its own 20-cell gun", gap)
 	}
 }
