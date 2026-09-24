@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/nstehr/vimy/currie/ch"
 )
@@ -323,14 +324,44 @@ type terrainRow struct {
 	Grid  string `json:"terrain"`
 }
 
+// terrainCache holds each session's grid for the life of the process.
+//
+// The grid is fixed at the hello handshake and cannot change during a game, so
+// re-reading it was pure waste - and worse than waste. A live field polls every
+// three seconds, every poll re-queried it, and a single failed query blanked
+// the ground: terrain present at tick 1100 and gone at 1360, on the same
+// session, because the error was swallowed silently and the page drew what it
+// had. Fetching once removes the failure window rather than narrowing it.
+var terrainCache sync.Map // session id -> terrainRow
+
 // loadTerrain paints the background. Silent when a session predates the grid
 // being recorded: an older game still draws, just on blank ground.
 func (v *fieldView) loadTerrain(ctx context.Context, c *ch.Client, session string) {
-	t, err := ch.One[terrainRow](ctx, c,
-		`SELECT terrain_cols, terrain_rows, terrain_cell_w, terrain_cell_h, terrain
-		 FROM stream_sessions WHERE session_id = {session:String} LIMIT 1`,
-		map[string]any{"session": session})
-	if err != nil || t.Cols <= 0 || len(t.Grid) < t.Cols*t.Rows {
+	var t terrainRow
+	if hit, ok := terrainCache.Load(session); ok {
+		t = hit.(terrainRow)
+	} else {
+		var err error
+		// Ordered and filtered rather than LIMIT 1 on its own: the shipper
+		// inserts a session row per cycle, so several can exist at once until
+		// they merge, and an unordered pick is a coin flip between them.
+		t, err = ch.One[terrainRow](ctx, c,
+			`SELECT terrain_cols, terrain_rows, terrain_cell_w, terrain_cell_h, terrain
+			 FROM stream_sessions
+			 WHERE session_id = {session:String} AND terrain != ''
+			 ORDER BY started_at DESC LIMIT 1`,
+			map[string]any{"session": session})
+		if err != nil {
+			// Logged, not swallowed. A blank map that says nothing is how this
+			// looked like a rendering glitch rather than a failed query.
+			slog.Warn("field terrain", "session", session, "error", err)
+			return
+		}
+		if t.Cols > 0 {
+			terrainCache.Store(session, t)
+		}
+	}
+	if t.Cols <= 0 || len(t.Grid) < t.Cols*t.Rows {
 		return
 	}
 	// Zones are scaled to the same viewport the markers use, which is sized

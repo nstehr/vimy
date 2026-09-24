@@ -136,3 +136,25 @@ func TestFieldFrameSchedulesOnlyWhilePlaying(t *testing.T) {
 		t.Error("a paused frame must offer play")
 	}
 }
+
+// The grid is fixed at the hello handshake, so a live field must not re-read it
+// on every poll.
+//
+// It did, every three seconds, and a single failed query blanked the ground:
+// terrain present at tick 1100 and gone at 1360 on the same session, because
+// the error was swallowed and the page drew what it had. That read as a
+// rendering glitch and was a dropped query.
+func TestTerrainIsCachedPerSession(t *testing.T) {
+	terrainCache.Delete("cached-session")
+	want := terrainRow{Cols: 4, Rows: 4, CellW: 2, CellH: 2, Grid: "................"}
+	terrainCache.Store("cached-session", want)
+
+	// A nil client would fail any query, so reaching the ground at all proves
+	// the cache was used.
+	v := &fieldView{Size: fieldSize}
+	v.loadTerrain(t.Context(), nil, "cached-session")
+
+	if v.TerrainSpan != float64(want.Cols*want.CellW) {
+		t.Errorf("TerrainSpan = %v, want %v — the cache was not used", v.TerrainSpan, want.Cols*want.CellW)
+	}
+}
