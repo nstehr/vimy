@@ -25,6 +25,53 @@ type parse struct{}
 
 var Parse = &parse{}
 
+// / Parse version of InvestigateGameStep (Takes in string and returns types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool)
+func (*parse) InvestigateGameStep(text string, opts ...CallOptionFunc) (types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool, error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"text": text, "stream": false},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	if callOpts.tags != nil {
+		args.Tags = callOpts.tags
+	}
+
+	encoded, err := args.Encode()
+	if err != nil {
+		// This should never happen. if it does, please file an issue at https://github.com/boundaryml/baml/issues
+		// and include the type of the args you're passing in.
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: InvestigateGameStep: %w", err)
+		panic(wrapped_err)
+	}
+
+	result, err := bamlRuntime.CallFunctionParse(context.Background(), "InvestigateGameStep", encoded)
+	if err != nil {
+		return types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{}, err
+	}
+
+	casted := (result).(types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool)
+
+	return casted, nil
+}
+
 // / Parse version of ReadPostMortem (Takes in string and returns types.Insight)
 func (*parse) ReadPostMortem(text string, opts ...CallOptionFunc) (types.Insight, error) {
 

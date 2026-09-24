@@ -21,6 +21,80 @@ import (
 	"github.com/nstehr/vimy/currie/baml_client/types"
 )
 
+func InvestigateGameStep(ctx context.Context, facts types.GameFacts, tools string, history []types.AgentMessage, opts ...CallOptionFunc) (types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool, error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	// Resolve client option to clientRegistry (client takes precedence)
+	if callOpts.client != nil {
+		if callOpts.clientRegistry == nil {
+			callOpts.clientRegistry = baml.NewClientRegistry()
+		}
+		callOpts.clientRegistry.SetPrimaryClient(*callOpts.client)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"facts": facts, "tools": tools, "history": history},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	if callOpts.tags != nil {
+		args.Tags = callOpts.tags
+	}
+
+	encoded, err := args.Encode()
+	if err != nil {
+		panic(err)
+	}
+
+	if callOpts.onTick == nil {
+		result, err := bamlRuntime.CallFunction(ctx, "InvestigateGameStep", encoded, callOpts.onTick)
+		if err != nil {
+			return types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{}, err
+		}
+
+		if result.Error != nil {
+			return types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{}, result.Error
+		}
+
+		casted := (result.Data).(types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool)
+
+		return casted, nil
+	} else {
+		channel, err := bamlRuntime.CallFunctionStream(ctx, "InvestigateGameStep", encoded, callOpts.onTick)
+		if err != nil {
+			return types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{}, err
+		}
+
+		for result := range channel {
+			if result.Error != nil {
+				return types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{}, result.Error
+			}
+
+			if result.HasData {
+				return result.Data.(types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool), nil
+			}
+		}
+
+		return types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{}, fmt.Errorf("No data returned from stream")
+	}
+}
+
 func ReadPostMortem(ctx context.Context, facts types.GameFacts, opts ...CallOptionFunc) (types.Insight, error) {
 
 	var callOpts callOption

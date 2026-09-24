@@ -25,6 +25,52 @@ type build_request_stream struct{}
 
 var StreamRequest = &build_request_stream{}
 
+// Build streaming HTTP request for InvestigateGameStep (returns baml.HTTPRequest)
+func (*build_request_stream) InvestigateGameStep(facts types.GameFacts, tools string, history []types.AgentMessage, opts ...CallOptionFunc) (baml.HTTPRequest, error) {
+
+	var callOpts callOption
+	for _, opt := range opts {
+		opt(&callOpts)
+	}
+
+	// Resolve client option to clientRegistry (client takes precedence)
+	if callOpts.client != nil {
+		if callOpts.clientRegistry == nil {
+			callOpts.clientRegistry = baml.NewClientRegistry()
+		}
+		callOpts.clientRegistry.SetPrimaryClient(*callOpts.client)
+	}
+
+	args := baml.BamlFunctionArguments{
+		Kwargs: map[string]any{"facts": facts, "tools": tools, "history": history, "stream": true},
+		Env:    getEnvVars(callOpts.env),
+	}
+
+	if callOpts.clientRegistry != nil {
+		args.ClientRegistry = callOpts.clientRegistry
+	}
+
+	if callOpts.collectors != nil {
+		args.Collectors = callOpts.collectors
+	}
+
+	if callOpts.typeBuilder != nil {
+		args.TypeBuilder = callOpts.typeBuilder
+	}
+
+	if callOpts.tags != nil {
+		args.Tags = callOpts.tags
+	}
+
+	encoded, err := args.Encode()
+	if err != nil {
+		wrapped_err := fmt.Errorf("BAML INTERNAL ERROR: InvestigateGameStep: %w", err)
+		panic(wrapped_err)
+	}
+
+	return bamlRuntime.BuildRequest(context.Background(), "InvestigateGameStep", encoded)
+}
+
 // Build streaming HTTP request for ReadPostMortem (returns baml.HTTPRequest)
 func (*build_request_stream) ReadPostMortem(facts types.GameFacts, opts ...CallOptionFunc) (baml.HTTPRequest, error) {
 

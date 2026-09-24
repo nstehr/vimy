@@ -15,6 +15,42 @@ package type_builder
 
 import baml "github.com/boundaryml/baml/engine/language_client_go/pkg"
 
+type AgentMessageClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *AgentMessageClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *AgentMessageClassView) PropertyRole() (ClassPropertyView, error) {
+	return t.inner.Property("role")
+}
+
+func (t *AgentMessageClassView) PropertyContent() (ClassPropertyView, error) {
+	return t.inner.Property("content")
+}
+
+func (t *TypeBuilder) AgentMessage() (*AgentMessageClassView, error) {
+	bld, err := t.inner.Class("AgentMessage")
+	if err != nil {
+		return nil, err
+	}
+	return &AgentMessageClassView{inner: bld}, nil
+}
+
+func (t *AgentMessageClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
 type BlockedClauseClassView struct {
 	inner baml.ClassBuilder
 }
@@ -156,6 +192,38 @@ func (t *TypeBuilder) ClauseSensitivity() (*ClauseSensitivityClassView, error) {
 }
 
 func (t *ClauseSensitivityClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type CompareGamesToolClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *CompareGamesToolClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *CompareGamesToolClassView) PropertyReason() (ClassPropertyView, error) {
+	return t.inner.Property("reason")
+}
+
+func (t *TypeBuilder) CompareGamesTool() (*CompareGamesToolClassView, error) {
+	bld, err := t.inner.Class("CompareGamesTool")
+	if err != nil {
+		return nil, err
+	}
+	return &CompareGamesToolClassView{inner: bld}, nil
+}
+
+func (t *CompareGamesToolClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }
 
@@ -312,6 +380,90 @@ func (t *TypeBuilder) DoctrineChoice() (*DoctrineChoiceClassView, error) {
 }
 
 func (t *DoctrineChoiceClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type FieldAtToolClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *FieldAtToolClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *FieldAtToolClassView) PropertyTick() (ClassPropertyView, error) {
+	return t.inner.Property("tick")
+}
+
+func (t *FieldAtToolClassView) PropertyReason() (ClassPropertyView, error) {
+	return t.inner.Property("reason")
+}
+
+func (t *TypeBuilder) FieldAtTool() (*FieldAtToolClassView, error) {
+	bld, err := t.inner.Class("FieldAtTool")
+	if err != nil {
+		return nil, err
+	}
+	return &FieldAtToolClassView{inner: bld}, nil
+}
+
+func (t *FieldAtToolClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type FinalInsightToolClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *FinalInsightToolClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *FinalInsightToolClassView) PropertySummary() (ClassPropertyView, error) {
+	return t.inner.Property("summary")
+}
+
+func (t *FinalInsightToolClassView) PropertyFindings() (ClassPropertyView, error) {
+	return t.inner.Property("findings")
+}
+
+func (t *FinalInsightToolClassView) PropertySuggestion() (ClassPropertyView, error) {
+	return t.inner.Property("suggestion")
+}
+
+func (t *FinalInsightToolClassView) PropertyCaveat() (ClassPropertyView, error) {
+	return t.inner.Property("caveat")
+}
+
+func (t *FinalInsightToolClassView) PropertyDirective_advice() (ClassPropertyView, error) {
+	return t.inner.Property("directive_advice")
+}
+
+func (t *TypeBuilder) FinalInsightTool() (*FinalInsightToolClassView, error) {
+	bld, err := t.inner.Class("FinalInsightTool")
+	if err != nil {
+		return nil, err
+	}
+	return &FinalInsightToolClassView{inner: bld}, nil
+}
+
+func (t *FinalInsightToolClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }
 
@@ -556,6 +708,70 @@ func (t *TypeBuilder) MissingThing() (*MissingThingClassView, error) {
 }
 
 func (t *MissingThingClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type SquadTimelineToolClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *SquadTimelineToolClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *SquadTimelineToolClassView) PropertyReason() (ClassPropertyView, error) {
+	return t.inner.Property("reason")
+}
+
+func (t *TypeBuilder) SquadTimelineTool() (*SquadTimelineToolClassView, error) {
+	bld, err := t.inner.Class("SquadTimelineTool")
+	if err != nil {
+		return nil, err
+	}
+	return &SquadTimelineToolClassView{inner: bld}, nil
+}
+
+func (t *SquadTimelineToolClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type StrikeBlockersToolClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *StrikeBlockersToolClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *StrikeBlockersToolClassView) PropertyReason() (ClassPropertyView, error) {
+	return t.inner.Property("reason")
+}
+
+func (t *TypeBuilder) StrikeBlockersTool() (*StrikeBlockersToolClassView, error) {
+	bld, err := t.inner.Class("StrikeBlockersTool")
+	if err != nil {
+		return nil, err
+	}
+	return &StrikeBlockersToolClassView{inner: bld}, nil
+}
+
+func (t *StrikeBlockersToolClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }
 

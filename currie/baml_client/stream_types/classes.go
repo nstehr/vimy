@@ -20,6 +20,54 @@ import (
 	"github.com/boundaryml/baml/engine/language_client_go/pkg/cffi"
 )
 
+type AgentMessage struct {
+	Role    *string `json:"role"`
+	Content *string `json:"content"`
+}
+
+func (c *AgentMessage) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "AgentMessage" {
+		panic(fmt.Sprintf("expected AgentMessage, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "role":
+			c.Role = baml.Decode(valueHolder).Interface().(*string)
+
+		case "content":
+			c.Content = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class AgentMessage", key))
+
+		}
+	}
+
+}
+
+func (c AgentMessage) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["role"] = c.Role
+
+	fields["content"] = c.Content
+
+	return baml.EncodeClass("AgentMessage", fields, nil)
+}
+
+func (c AgentMessage) BamlTypeName() string {
+	return "AgentMessage"
+}
+
 type BlockedClause struct {
 	Source    *string  `json:"source"`
 	File      *string  `json:"file"`
@@ -222,6 +270,48 @@ func (c ClauseSensitivity) Encode() (*cffi.HostValue, error) {
 
 func (c ClauseSensitivity) BamlTypeName() string {
 	return "ClauseSensitivity"
+}
+
+type CompareGamesTool struct {
+	Reason *string `json:"reason"`
+}
+
+func (c *CompareGamesTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "CompareGamesTool" {
+		panic(fmt.Sprintf("expected CompareGamesTool, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "reason":
+			c.Reason = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class CompareGamesTool", key))
+
+		}
+	}
+
+}
+
+func (c CompareGamesTool) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["reason"] = c.Reason
+
+	return baml.EncodeClass("CompareGamesTool", fields, nil)
+}
+
+func (c CompareGamesTool) BamlTypeName() string {
+	return "CompareGamesTool"
 }
 
 type DeadRule struct {
@@ -438,6 +528,120 @@ func (c DoctrineChoice) Encode() (*cffi.HostValue, error) {
 
 func (c DoctrineChoice) BamlTypeName() string {
 	return "DoctrineChoice"
+}
+
+type FieldAtTool struct {
+	Tick   *int64  `json:"tick"`
+	Reason *string `json:"reason"`
+}
+
+func (c *FieldAtTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "FieldAtTool" {
+		panic(fmt.Sprintf("expected FieldAtTool, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "tick":
+			c.Tick = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "reason":
+			c.Reason = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class FieldAtTool", key))
+
+		}
+	}
+
+}
+
+func (c FieldAtTool) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["tick"] = c.Tick
+
+	fields["reason"] = c.Reason
+
+	return baml.EncodeClass("FieldAtTool", fields, nil)
+}
+
+func (c FieldAtTool) BamlTypeName() string {
+	return "FieldAtTool"
+}
+
+type FinalInsightTool struct {
+	Summary          *string          `json:"summary"`
+	Findings         []Finding        `json:"findings"`
+	Suggestion       *string          `json:"suggestion"`
+	Caveat           *string          `json:"caveat"`
+	Directive_advice *DirectiveAdvice `json:"directive_advice"`
+}
+
+func (c *FinalInsightTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "FinalInsightTool" {
+		panic(fmt.Sprintf("expected FinalInsightTool, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "summary":
+			c.Summary = baml.Decode(valueHolder).Interface().(*string)
+
+		case "findings":
+			c.Findings = baml.Decode(valueHolder).Interface().([]Finding)
+
+		case "suggestion":
+			c.Suggestion = baml.Decode(valueHolder).Interface().(*string)
+
+		case "caveat":
+			c.Caveat = baml.Decode(valueHolder).Interface().(*string)
+
+		case "directive_advice":
+			c.Directive_advice = baml.Decode(valueHolder).Interface().(*DirectiveAdvice)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class FinalInsightTool", key))
+
+		}
+	}
+
+}
+
+func (c FinalInsightTool) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["summary"] = c.Summary
+
+	fields["findings"] = c.Findings
+
+	fields["suggestion"] = c.Suggestion
+
+	fields["caveat"] = c.Caveat
+
+	fields["directive_advice"] = c.Directive_advice
+
+	return baml.EncodeClass("FinalInsightTool", fields, nil)
+}
+
+func (c FinalInsightTool) BamlTypeName() string {
+	return "FinalInsightTool"
 }
 
 type Finding struct {
@@ -780,6 +984,90 @@ func (c MissingThing) Encode() (*cffi.HostValue, error) {
 
 func (c MissingThing) BamlTypeName() string {
 	return "MissingThing"
+}
+
+type SquadTimelineTool struct {
+	Reason *string `json:"reason"`
+}
+
+func (c *SquadTimelineTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "SquadTimelineTool" {
+		panic(fmt.Sprintf("expected SquadTimelineTool, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "reason":
+			c.Reason = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class SquadTimelineTool", key))
+
+		}
+	}
+
+}
+
+func (c SquadTimelineTool) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["reason"] = c.Reason
+
+	return baml.EncodeClass("SquadTimelineTool", fields, nil)
+}
+
+func (c SquadTimelineTool) BamlTypeName() string {
+	return "SquadTimelineTool"
+}
+
+type StrikeBlockersTool struct {
+	Reason *string `json:"reason"`
+}
+
+func (c *StrikeBlockersTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "StrikeBlockersTool" {
+		panic(fmt.Sprintf("expected StrikeBlockersTool, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "reason":
+			c.Reason = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class StrikeBlockersTool", key))
+
+		}
+	}
+
+}
+
+func (c StrikeBlockersTool) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["reason"] = c.Reason
+
+	return baml.EncodeClass("StrikeBlockersTool", fields, nil)
+}
+
+func (c StrikeBlockersTool) BamlTypeName() string {
+	return "StrikeBlockersTool"
 }
 
 type TunableGate struct {
