@@ -31,32 +31,36 @@ class AgentMessage {
 // one variant with a distinguishing shape. It spent the whole budget retrying
 // and then concluded from evidence it had never received.
 
+// Only the discriminator is required. Everything else is optional, because a
+// step that fails to parse costs the whole investigation: game 176 died at step
+// 5 with five rejected candidates, one of which was a finished verdict missing
+// two fields it had nothing to say for.
 class SquadTimelineTool {
   tool "squad_timeline"
-  reason string @description("What you expect to learn. One line, so the trace reads as an argument rather than a log.")
+  reason string? @description("What you expect to learn. One line, so the trace reads as an argument rather than a log.")
 }
 
 class StrikeBlockersTool {
   tool "strike_blockers"
-  reason string @description("What you expect to learn.")
+  reason string? @description("What you expect to learn.")
 }
 
 class FieldAtTool {
   tool "field_at"
-  tick int @description("The tick to look at. Pick one you have a reason for — where the squad collapsed, where it stopped closing, where the army peaked — not a round number.")
-  reason string @description("What you expect to learn.")
+  tick int? @description("The tick to look at. Pick one you have a reason for — where the squad collapsed, where it stopped closing, where the army peaked — not a round number.")
+  reason string? @description("What you expect to learn.")
 }
 
 class CompareGamesTool {
   tool "compare_games"
-  reason string @description("What you expect to learn. Use this to check whether something is particular to this game or true of the run.")
+  reason string? @description("What you expect to learn. Use this to check whether something is particular to this game or true of the run.")
 }
 
 class FinalInsightTool {
   summary string @description("What happened, in the reader's terms. Not a list of what you queried.")
   findings Finding[]
-  suggestion string @description("The single most useful change. One.")
-  caveat string @description("What this analysis cannot see, or where you are guessing. Say it plainly; the archive is full of confident readings that were wrong.")
+  suggestion string? @description("The single most useful change. One. Omit it rather than inventing one.")
+  caveat string? @description("What this analysis cannot see, or where you are guessing. Say it plainly; the archive is full of confident readings that were wrong.")
   directive_advice DirectiveAdvice?
 }
 

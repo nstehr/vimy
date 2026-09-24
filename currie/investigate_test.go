@@ -84,3 +84,15 @@ func TestSettleRequiresAQuietStream(t *testing.T) {
 		t.Errorf("settleWindow = %ds, too short to outlast a ship cycle", settleWindow)
 	}
 }
+
+// A malformed step must cost a turn, not the investigation.
+//
+// Game 176 died at step 5 because the model tried to finish and omitted two
+// fields it had nothing to say for. BAML rejected all five candidate parses and
+// the run was lost along with four good tool results already in the trace.
+func TestMalformedStepsAreToleratedButBounded(t *testing.T) {
+	if maxMalformedSteps <= 0 || maxMalformedSteps >= maxInvestigationSteps {
+		t.Errorf("maxMalformed = %d against a budget of %d: it must absorb a slip without spending the whole run",
+			maxMalformedSteps, maxInvestigationSteps)
+	}
+}

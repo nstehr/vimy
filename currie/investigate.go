@@ -31,6 +31,11 @@ import (
 // trip against a page a human is waiting on.
 const maxInvestigationSteps = 8
 
+// maxMalformedSteps is how many unparseable replies one investigation absorbs
+// before giving up. Enough for a slip, few enough that a model which cannot
+// produce the schema at all does not spend the whole budget discovering that.
+const maxMalformedSteps = 2
+
 // TraceStep is one call and what it returned, for the page.
 type TraceStep struct {
 	Tool   string
@@ -55,14 +60,30 @@ func (iv *investigator) Investigate(ctx context.Context, r *Replay) (*Insight, [
 	var history []types.AgentMessage
 	var trace []TraceStep
 
+	// A malformed step costs a turn, not the investigation.
+	//
+	// Game 176 died at step 5: the model tried to finish and omitted two fields
+	// it had nothing to say for, so BAML rejected all five candidate parses and
+	// the whole run was lost along with four good tool results. Optional fields
+	// make that rarer; this makes it survivable. The failure is fed back as a
+	// tool message, which is the only thing that has a chance of correcting it.
+	malformed := 0
+
 	for step := range maxInvestigationSteps {
 		res, err := baml_client.InvestigateGameStep(ctx, f, toolMenu, history)
 		if err != nil {
-			return nil, trace, settled, fmt.Errorf("investigate step %d: %w", step, err)
+			malformed++
+			if malformed > maxMalformedSteps {
+				return nil, trace, settled, fmt.Errorf("investigate step %d: %w", step, err)
+			}
+			slog.Warn("malformed investigation step", "game", r.Game.ID, "step", step, "error", err)
+			history = append(history,
+				types.AgentMessage{Role: "user", Content: "That response could not be parsed. Emit exactly one tool object, with its `tool` field set. Every other field is optional - omit what you have nothing to say for rather than leaving the object incomplete."})
+			continue
 		}
 
 		if final := res.AsFinalInsightTool(); final != nil {
-			ins := &Insight{Summary: final.Summary, Suggestion: final.Suggestion, Caveat: final.Caveat}
+			ins := &Insight{Summary: final.Summary, Suggestion: deref(final.Suggestion), Caveat: deref(final.Caveat)}
 			if a := final.Directive_advice; a != nil {
 				ins.Directive = &DirectiveAdvice{Diagnosis: a.Diagnosis, Revision: a.Revision, Confidence: a.Confidence}
 			}
@@ -88,6 +109,16 @@ func (iv *investigator) Investigate(ctx context.Context, r *Replay) (*Insight, [
 	// Out of budget without a conclusion. Returning the trace anyway: eight
 	// tool results are worth reading even when nothing was concluded from them.
 	return nil, trace, settled, fmt.Errorf("no conclusion after %d steps", maxInvestigationSteps)
+}
+
+// deref flattens an optional string. Every field but the discriminator is
+// optional now, because a step that fails to parse costs the whole
+// investigation rather than one turn.
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 func formatCall(name, reason string) string {
@@ -146,14 +177,20 @@ compare_games — the same headline numbers across recent games, to tell what is
 func (iv *investigator) run(ctx context.Context, session string, res types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) (string, string, string) {
 	switch {
 	case res.AsSquadTimelineTool() != nil:
-		return "squad_timeline", res.AsSquadTimelineTool().Reason, iv.squadTimeline(ctx, session)
+		return "squad_timeline", deref(res.AsSquadTimelineTool().Reason), iv.squadTimeline(ctx, session)
 	case res.AsStrikeBlockersTool() != nil:
-		return "strike_blockers", res.AsStrikeBlockersTool().Reason, iv.strikeBlockers(ctx, session)
+		return "strike_blockers", deref(res.AsStrikeBlockersTool().Reason), iv.strikeBlockers(ctx, session)
 	case res.AsFieldAtTool() != nil:
 		t := res.AsFieldAtTool()
-		return "field_at", t.Reason, iv.fieldAt(ctx, session, int(t.Tick))
+		// No tick given means "wherever the game ended", which is a reasonable
+		// default and better than refusing the call.
+		tick := 0
+		if t.Tick != nil {
+			tick = int(*t.Tick)
+		}
+		return "field_at", deref(t.Reason), iv.fieldAt(ctx, session, tick)
 	case res.AsCompareGamesTool() != nil:
-		return "compare_games", res.AsCompareGamesTool().Reason, iv.compareGames(ctx)
+		return "compare_games", deref(res.AsCompareGamesTool().Reason), iv.compareGames(ctx)
 	}
 	return "", "", ""
 }

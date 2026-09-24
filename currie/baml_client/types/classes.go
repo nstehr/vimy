@@ -273,8 +273,8 @@ func (c ClauseSensitivity) BamlTypeName() string {
 }
 
 type CompareGamesTool struct {
-	Tool   string `json:"tool"`
-	Reason string `json:"reason"`
+	Tool   string  `json:"tool"`
+	Reason *string `json:"reason"`
 }
 
 func (c *CompareGamesTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -295,7 +295,7 @@ func (c *CompareGamesTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.Type
 			c.Tool = baml.Decode(valueHolder).Interface().(string)
 
 		case "reason":
-			c.Reason = baml.Decode(valueHolder).Interface().(string)
+			c.Reason = baml.Decode(valueHolder).Interface().(*string)
 
 		default:
 
@@ -537,9 +537,9 @@ func (c DoctrineChoice) BamlTypeName() string {
 }
 
 type FieldAtTool struct {
-	Tool   string `json:"tool"`
-	Tick   int64  `json:"tick"`
-	Reason string `json:"reason"`
+	Tool   string  `json:"tool"`
+	Tick   *int64  `json:"tick"`
+	Reason *string `json:"reason"`
 }
 
 func (c *FieldAtTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -560,10 +560,10 @@ func (c *FieldAtTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) 
 			c.Tool = baml.Decode(valueHolder).Interface().(string)
 
 		case "tick":
-			c.Tick = baml.Decode(valueHolder).Int()
+			c.Tick = baml.Decode(valueHolder).Interface().(*int64)
 
 		case "reason":
-			c.Reason = baml.Decode(valueHolder).Interface().(string)
+			c.Reason = baml.Decode(valueHolder).Interface().(*string)
 
 		default:
 
@@ -593,8 +593,8 @@ func (c FieldAtTool) BamlTypeName() string {
 type FinalInsightTool struct {
 	Summary          string           `json:"summary"`
 	Findings         []Finding        `json:"findings"`
-	Suggestion       string           `json:"suggestion"`
-	Caveat           string           `json:"caveat"`
+	Suggestion       *string          `json:"suggestion"`
+	Caveat           *string          `json:"caveat"`
 	Directive_advice *DirectiveAdvice `json:"directive_advice"`
 }
 
@@ -619,10 +619,10 @@ func (c *FinalInsightTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.Type
 			c.Findings = baml.Decode(valueHolder).Interface().([]Finding)
 
 		case "suggestion":
-			c.Suggestion = baml.Decode(valueHolder).Interface().(string)
+			c.Suggestion = baml.Decode(valueHolder).Interface().(*string)
 
 		case "caveat":
-			c.Caveat = baml.Decode(valueHolder).Interface().(string)
+			c.Caveat = baml.Decode(valueHolder).Interface().(*string)
 
 		case "directive_advice":
 			c.Directive_advice = baml.Decode(valueHolder).Interface().(*DirectiveAdvice)
@@ -999,8 +999,8 @@ func (c MissingThing) BamlTypeName() string {
 }
 
 type SquadTimelineTool struct {
-	Tool   string `json:"tool"`
-	Reason string `json:"reason"`
+	Tool   string  `json:"tool"`
+	Reason *string `json:"reason"`
 }
 
 func (c *SquadTimelineTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -1021,7 +1021,7 @@ func (c *SquadTimelineTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.Typ
 			c.Tool = baml.Decode(valueHolder).Interface().(string)
 
 		case "reason":
-			c.Reason = baml.Decode(valueHolder).Interface().(string)
+			c.Reason = baml.Decode(valueHolder).Interface().(*string)
 
 		default:
 
@@ -1047,8 +1047,8 @@ func (c SquadTimelineTool) BamlTypeName() string {
 }
 
 type StrikeBlockersTool struct {
-	Tool   string `json:"tool"`
-	Reason string `json:"reason"`
+	Tool   string  `json:"tool"`
+	Reason *string `json:"reason"`
 }
 
 func (c *StrikeBlockersTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -1069,7 +1069,7 @@ func (c *StrikeBlockersTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.Ty
 			c.Tool = baml.Decode(valueHolder).Interface().(string)
 
 		case "reason":
-			c.Reason = baml.Decode(valueHolder).Interface().(string)
+			c.Reason = baml.Decode(valueHolder).Interface().(*string)
 
 		default:
 
