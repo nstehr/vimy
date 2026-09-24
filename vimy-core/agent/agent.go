@@ -395,6 +395,18 @@ func (a *Agent) sampleUnits(gs model.GameState) {
 		})
 	}
 
+	// Neutral capturables - oil derricks above all, at ten times the value of
+	// an unknown one in the ranking rules. They are fixed, contested and worth
+	// continuous cash, so they explain where an army went as well as any
+	// objective on the map, and capture_priority is a knob the doctrine sets
+	// blind without ever seeing where they are.
+	for _, cp := range gs.Capturables {
+		a.WAL.WriteUnit(wal.Unit{
+			Tick: gs.Tick, ID: cp.ID, Type: cp.Type, Side: "neutral",
+			X: cp.X, Y: cp.Y, HP: cp.HP, Building: true,
+		})
+	}
+
 	// And what it BELIEVES is out there. Sight is fleeting - 223 visible-enemy
 	// rows against 12071 of ours in game 175 - while targeting and the approach
 	// router run off remembered intel. A map without this shows an empty enemy

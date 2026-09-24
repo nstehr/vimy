@@ -70,6 +70,7 @@ type fieldView struct {
 	Ours     int
 	Enemy    int
 	Believed int
+	Neutral  int
 	Note     string
 
 	// Side of the square viewport, in SVG units.
@@ -111,8 +112,13 @@ type unitRow struct {
 // was the army", and an economy that fills the screen hides it.
 func markerClass(r unitRow) (class string, radius float64) {
 	side := "enemy"
-	if r.Side == "ours" {
+	switch r.Side {
+	case "ours":
 		side = "ours"
+	case "neutral":
+		// Objectives rather than combatants: drawn as their own thing so they
+		// never read as either army's.
+		return "neutral", 5.5
 	}
 	switch {
 	case r.Remembered:
@@ -200,6 +206,8 @@ func loadField(ctx context.Context, c *ch.Client, session string, tick int) *fie
 			v.Believed++
 		case r.Side == "ours":
 			v.Ours++
+		case r.Side == "neutral":
+			v.Neutral++
 		default:
 			v.Enemy++
 		}

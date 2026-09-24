@@ -70,6 +70,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
 .field .cliff{fill:var(--ink);fill-opacity:.13}
 .field .bridge{fill:#b58b4a;fill-opacity:.5}
 .field .threat{fill:var(--sole)}
+.field .neutral{fill:#c9a227;stroke:var(--ink);stroke-width:.6;stroke-opacity:.35}
 .field .ours{fill:var(--calm)}
 .field .enemy{fill:var(--sole)}
 .field .building{fill-opacity:.95}
@@ -125,6 +126,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     <span><i style="background:var(--calm)"></i>ours &mdash; {{.Ours}}</span>
     <span><i style="background:var(--sole)"></i>enemy seen &mdash; {{.Enemy}}</span>
     <span><i style="border:1.5px dashed var(--sole);background:none"></i>believed &mdash; {{.Believed}}</span>
+    <span><i style="background:#c9a227"></i>capturable &mdash; {{.Neutral}}</span>
     <span><i style="background:var(--sole);opacity:.3"></i>threat &mdash; {{len .Threat}} zones</span>
     {{if .Live}}
     <span class="live on">live</span>
