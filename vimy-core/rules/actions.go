@@ -2874,6 +2874,14 @@ func squadStructureTarget(env RuleEnv, name string) *model.Enemy {
 	}
 	target := env.BestGroundTargetFrom(cx, cy)
 	if target == nil {
+		// Nothing in sight, but something may be remembered. A building that
+		// went back into fog used to stop existing here, which is what
+		// blind-at-base was counting: the squad standing on the enemy base with
+		// nothing to shoot. Only worth using in reach - walking to a memory is
+		// the assault's job, not the strike's.
+		if st := env.NearestRememberedStructure(cx, cy); st != nil && withinStrikeReach(env, cx, cy, st.X, st.Y) {
+			return st
+		}
 		// Whether it has arrived decides what this means. Standing on the
 		// remembered base and seeing nothing is a targeting defect; still
 		// walking is just walking.
@@ -3104,10 +3112,31 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 		}
 		maxStep := huntMaxStep(mapDim, radius)
 
+		// A remembered building beats the search. huntOffset spirals outward
+		// from the base centroid because, until enemy structure positions were
+		// kept, there was nothing better to aim at: a building that went back
+		// into fog stopped existing and the squad arrived to blind-at-base, 37
+		// times in game 173. When something IS remembered, walk to it.
+		//
+		// The hunt stays as the fallback rather than being deleted. Memory can
+		// be wrong - a razed base leaves stale entries until one of ours stands
+		// on the site - and the ring search is what finds the last outlying
+		// barracks that nothing ever sighted.
 		if state.Step > 0 {
-			dx, dy := huntOffset(state.Step, radius)
-			tx = base.X + dx
-			ty = base.Y + dy
+			fromX, fromY := base.X, base.Y
+			if sx, sy, ok := squadCentroid(env, name); ok {
+				fromX, fromY = sx, sy
+			}
+			st := env.NearestRememberedStructure(fromX, fromY)
+			if st != nil {
+				tx, ty = st.X, st.Y
+				slog.Debug("squad targeting remembered structure",
+					"squad", name, "type", st.Type, "x", tx, "y", ty)
+			} else {
+				dx, dy := huntOffset(state.Step, radius)
+				tx = base.X + dx
+				ty = base.Y + dy
+			}
 
 			tx = max(0, min(tx, env.State.MapWidth-1))
 			ty = max(0, min(ty, env.State.MapHeight-1))

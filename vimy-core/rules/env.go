@@ -1272,6 +1272,33 @@ func (e RuleEnv) BestGroundTarget() *model.Enemy {
 // unit at 1, and the divisor undid that: five measured games destroyed 0, 0, 0,
 // 1 and 0 enemy buildings while killing 184750 credits of enemy units in the
 // last of them.
+// NearestRememberedStructure is the closest enemy building whose position is
+// known, whether or not anything can currently see it.
+//
+// Sight is fleeting and memory is not. Without this the assault had nothing to
+// aim at once a building went back into fog, so it spiralled outward from the
+// base centroid on huntOffset and recorded blind-at-base when it arrived and
+// saw nothing - 37 times in game 173, with the squad standing on the enemy
+// base. Scored by distance alone: the value table needs a live actor, and the
+// question here is only "where is there something to break".
+//
+// Returns a synthetic Enemy so callers that already take a target need no
+// special case. The zero ActorID marks it as remembered rather than sighted,
+// which matters because an attack order needs a real actor - a caller that
+// wants to SHOOT must find the thing when it arrives, not fire at a memory.
+func (e RuleEnv) NearestRememberedStructure(fromX, fromY int) *model.Enemy {
+	best := math.MaxFloat64
+	var out *model.Enemy
+	for _, st := range getEnemyStructures(e.Memory) {
+		dx, dy := float64(st.X-fromX), float64(st.Y-fromY)
+		if d := dx*dx + dy*dy; d < best {
+			best = d
+			out = &model.Enemy{ID: st.ActorID, Type: st.Type, X: st.X, Y: st.Y}
+		}
+	}
+	return out
+}
+
 func (e RuleEnv) BestGroundTargetFrom(bx, by int) *model.Enemy {
 	if len(e.State.Enemies) == 0 {
 		return nil

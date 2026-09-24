@@ -418,3 +418,69 @@ func TestFocusFireOnlyEngagesWhatIsInReach(t *testing.T) {
 		t.Errorf("chased a distant target: %d orders issued", n)
 	}
 }
+
+// The assault walks to a remembered building rather than spiralling.
+//
+// huntOffset searches outward from the base centroid because, until enemy
+// structure positions were kept, there was nothing better to aim at: a building
+// that went back into fog stopped existing. blind-at-base fired 37 times in
+// game 173, which is the squad standing on the enemy base with nothing visible
+// and nothing remembered to shoot.
+func TestAssaultPrefersARememberedBuildingToTheHunt(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	build := func(withMemory bool) map[string]any {
+		mem := map[string]any{
+			"squads": map[string]*Squad{
+				"ground-attack": {Name: "ground-attack", Domain: "ground", Role: "attack",
+					UnitIDs: []int{1, 2}, TargetSize: 2},
+			},
+			"enemyBases": map[string]EnemyBaseIntel{
+				"red": {Owner: "red", X: 60, Y: 60, Tick: 1, FromBuildings: true},
+			},
+			// Mid-assault: step past zero is where the hunt takes over.
+			"squadAttackState": map[string]squadAttackState{
+				"ground-attack": {TargetX: 60, TargetY: 60, Attacking: true, LastTick: 1},
+			},
+		}
+		if withMemory {
+			mem["enemyStructures"] = map[int]EnemyDefenseIntel{
+				7: {ActorID: 7, Type: "proc", X: 90, Y: 20, Tick: 500},
+			}
+		}
+		return mem
+	}
+	units := []model.Unit{
+		{ID: 1, Type: "2tnk", X: 58, Y: 58},
+		{ID: 2, Type: "2tnk", X: 59, Y: 58},
+	}
+	run := func(mem map[string]any) (int, int) {
+		env := RuleEnv{
+			State:  model.GameState{Tick: 9000, MapWidth: 128, MapHeight: 128, Units: units},
+			Memory: mem,
+		}
+		// Two passes: the first is the approach at step zero, the second is
+		// where the hunt branch - and now the remembered target - takes over.
+		if err := SquadAttackKnownBase("ground-attack", 1.0)(env, conn); err != nil {
+			t.Fatalf("assault: %v", err)
+		}
+		if err := SquadAttackKnownBase("ground-attack", 1.0)(env, conn); err != nil {
+			t.Fatalf("assault 2: %v", err)
+		}
+		sent := memoryMap[int, attackMoveEntry](mem, "attackMoveSent")
+		return sent[1].X, sent[1].Y
+	}
+
+	mx, my := run(build(true))
+	if mx != 90 || my != 20 {
+		t.Errorf("with a remembered refinery at (90,20) the squad was sent to (%d,%d)", mx, my)
+	}
+
+	// And without memory the ring search still runs, because a razed base
+	// leaves stale entries and something has to find the last outlier.
+	hx, hy := run(build(false))
+	if hx == 90 && hy == 20 {
+		t.Error("went to the remembered position with nothing remembered")
+	}
+}
