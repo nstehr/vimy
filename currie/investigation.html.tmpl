@@ -1,0 +1,62 @@
+{{define "investigation"}}
+{{if not .Started}}
+<section class="insight" id="investigation">
+  <div class="ins-body">
+    <p class="ins-caveat" style="margin-bottom:.6rem">
+      The reading above works from a fixed set of facts. An investigation lets the model
+      follow a thread instead &mdash; the squad timeline, the blockers, the field at a tick it
+      chooses &mdash; and shows every question it asked.
+    </p>
+    {{if .Error}}
+    <p class="ins-caveat">{{.Error}}</p>
+    {{else}}
+    <button class="live" hx-post="/game/{{.GameID}}/investigate"
+            hx-target="#investigation" hx-swap="outerHTML">investigate this game</button>
+    {{end}}
+  </div>
+</section>
+{{else if .Pending}}
+<section class="insight" id="investigation" hx-get="{{.URL}}" hx-trigger="load delay:2s" hx-swap="outerHTML">
+  <div class="ins-body">
+    <p class="ins-pending"><span class="pulse" aria-hidden="true"></span>Following the thread&hellip; this is several questions, so it takes longer than the reading above.</p>
+  </div>
+</section>
+{{else}}
+<section class="insight" id="investigation">
+  <div class="figure-head" style="border:1px solid var(--rule);border-bottom:0">
+    <span class="figure-title">What it went and looked at</span>
+    <span class="legend"><span style="font-family:var(--mono)">{{len .Trace}} questions</span></span>
+  </div>
+  <div class="ins-body">
+    {{if .Error}}
+    <p class="ins-caveat">The investigation did not finish: {{.Error}}{{if .Trace}} &mdash; what it managed to ask is below.{{end}}</p>
+    {{end}}
+
+    {{with .Insight}}
+    <p class="ins-summary">{{.Summary}}</p>
+    {{range .Findings}}
+    <p class="ins-find"><b>{{.Claim}}</b> <span class="ins-ev">{{.Evidence}}</span></p>
+    {{end}}
+    {{with .Suggestion}}<p class="ins-do"><b>Most likely to help:</b> {{.}}</p>{{end}}
+    {{with .Caveat}}<p class="ins-caveat">{{.}}</p>{{end}}
+    {{end}}
+
+    {{if .Trace}}
+    <details style="margin-top:1rem">
+      <summary style="font-family:var(--mono);font-size:.72rem;color:var(--ink-3);cursor:pointer">
+        the evidence, in the order it was asked for
+      </summary>
+      {{range .Trace}}
+      <div style="margin-top:.8rem;padding-left:.8rem;border-left:2px solid var(--rule)">
+        <p style="font-family:var(--mono);font-size:.72rem;color:var(--ink-3);margin:0">
+          {{.Tool}}{{with .Reason}} &mdash; {{.}}{{end}}
+        </p>
+        <pre style="font-family:var(--mono);font-size:.72rem;white-space:pre-wrap;margin:.3rem 0 0;color:var(--ink-2)">{{.Result}}</pre>
+      </div>
+      {{end}}
+    </details>
+    {{end}}
+  </div>
+</section>
+{{end}}
+{{end}}

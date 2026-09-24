@@ -199,6 +199,10 @@ type view struct {
 	// Where the page fetches the model's reading once loaded; empty when no model
 	// is configured.
 	InsightURL string
+	// InvestigateID mounts the on-demand investigation. Separate from
+	// InsightURL because the insight loads itself and this one waits to be
+	// asked: it is eight model calls rather than one.
+	InvestigateID int64
 	SweepURL   string
 
 	// What the engine recorded about how the game went. The blame explains why

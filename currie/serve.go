@@ -19,7 +19,7 @@ import (
 	"github.com/nstehr/vimy/vimy-core/store"
 )
 
-//go:embed index.html.tmpl report.html.tmpl insight.html.tmpl sweep.html.tmpl live.html.tmpl field.html.tmpl
+//go:embed index.html.tmpl report.html.tmpl insight.html.tmpl sweep.html.tmpl live.html.tmpl field.html.tmpl investigation.html.tmpl
 var pages embed.FS
 
 // The web app.
@@ -47,6 +47,9 @@ type server struct {
 	cache    map[int64]*Replay
 	insights map[int64]*insightJob
 	sweeps   map[int64]*sweepJob
+	// Investigations are on demand rather than automatic: one is eight model
+	// calls against a page a human is waiting on, where the insight is one.
+	investigations map[int64]*investigationJob
 }
 
 // sweepJob is one game's parameter sweep. A few hundred vimyc runs, so like the
@@ -65,6 +68,13 @@ type sweepJob struct {
 type insightJob struct {
 	done    chan struct{}
 	insight *Insight
+	err     error
+}
+
+type investigationJob struct {
+	done    chan struct{}
+	insight *Insight
+	trace   []TraceStep
 	err     error
 }
 
@@ -107,9 +117,10 @@ func newServer(dir, rulesDir, engineRules, bin string, st *store.Store, ins insi
 	return &server{
 		dir: dir, rulesDir: rulesDir, engineRules: engineRules, bin: bin, store: st,
 		tmpl: t, insight: ins, cached: stored, ch: chc,
-		cache:    map[int64]*Replay{},
-		insights: map[int64]*insightJob{},
-		sweeps:   map[int64]*sweepJob{},
+		cache:          map[int64]*Replay{},
+		insights:       map[int64]*insightJob{},
+		sweeps:         map[int64]*sweepJob{},
+		investigations: map[int64]*investigationJob{},
 	}, nil
 }
 
@@ -119,6 +130,8 @@ func (s *server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /game/{id}", s.handleGame)
 	mux.HandleFunc("GET /game/{id}/insight", s.handleInsight)
 	mux.HandleFunc("GET /game/{id}/sweep", s.handleSweep)
+	mux.HandleFunc("POST /game/{id}/investigate", s.handleInvestigate)
+	mux.HandleFunc("GET /game/{id}/investigation", s.handleInvestigation)
 	mux.HandleFunc("POST /link/{id}", s.handleLink)
 	// The game as it is played. A page of its own rather than a section of the
 	// report: the report is about a game that finished, and this one has no id
@@ -282,6 +295,7 @@ func (s *server) handleGame(w http.ResponseWriter, r *http.Request) {
 	if s.insight != nil {
 		s.startInsight(id, rep)
 		v.InsightURL = fmt.Sprintf("/game/%d/insight", id)
+		v.InvestigateID = id
 	}
 	if knobs := sweepKnobs(v.Sensitivity, firstParams(rep)); len(knobs) > 0 {
 		s.startSweep(id, rep, knobs)
@@ -425,6 +439,99 @@ func (s *server) startInsight(id int64, rep *Replay) {
 		s.cached.write(id, job.insight)
 		slog.Info("insight ready", "game", id, "took", time.Since(started))
 	}()
+}
+
+// startInvestigation runs the tool loop in the background, once per game.
+//
+// Not cached the way the insight is. An insight under fixed facts is the same
+// answer every time, so caching it is free; an investigation chooses its own
+// path and a second run against more telemetry is a different, and possibly
+// better, answer.
+func (s *server) startInvestigation(id int64, rep *Replay) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.investigations[id]; ok {
+		return
+	}
+	job := &investigationJob{done: make(chan struct{})}
+	s.investigations[id] = job
+
+	go func() {
+		defer close(job.done)
+		// Its own context, and a longer one than the insight: eight round trips
+		// rather than one.
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
+		defer cancel()
+		started := time.Now()
+		iv := &investigator{ch: s.ch}
+		job.insight, job.trace, job.err = iv.Investigate(ctx, rep)
+		if job.err != nil {
+			slog.Warn("investigation failed", "game", id, "error", job.err,
+				"steps", len(job.trace), "took", time.Since(started))
+			return
+		}
+		slog.Info("investigation ready", "game", id, "steps", len(job.trace), "took", time.Since(started))
+	}()
+}
+
+type investigationView struct {
+	URL     string
+	GameID  int64
+	Started bool
+	Pending bool
+	Insight *Insight
+	Trace   []TraceStep
+	Error   string
+}
+
+// handleInvestigate starts one. A POST because it spends money.
+func (s *server) handleInvestigate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "not a game id", http.StatusBadRequest)
+		return
+	}
+	if s.insight == nil {
+		s.render(w, "investigation", investigationView{GameID: id, Error: "no model configured"})
+		return
+	}
+	rep, err := s.replay(r.Context(), id)
+	if err != nil {
+		s.render(w, "investigation", investigationView{GameID: id, Error: errText(err)})
+		return
+	}
+	s.startInvestigation(id, rep)
+	s.renderInvestigation(w, id)
+}
+
+// handleInvestigation serves the fragment while it runs and when it lands.
+func (s *server) handleInvestigation(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "not a game id", http.StatusBadRequest)
+		return
+	}
+	s.renderInvestigation(w, id)
+}
+
+func (s *server) renderInvestigation(w http.ResponseWriter, id int64) {
+	s.mu.Lock()
+	job := s.investigations[id]
+	s.mu.Unlock()
+
+	v := investigationView{URL: fmt.Sprintf("/game/%d/investigation", id), GameID: id}
+	if job == nil {
+		s.render(w, "investigation", v)
+		return
+	}
+	v.Started = true
+	select {
+	case <-job.done:
+		v.Insight, v.Trace, v.Error = job.insight, job.trace, errText(job.err)
+	default:
+		v.Pending = true
+	}
+	s.render(w, "investigation", v)
 }
 
 // handleInsight serves the prose when it is ready, and a placeholder that asks

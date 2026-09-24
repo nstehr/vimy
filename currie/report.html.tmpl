@@ -204,6 +204,10 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
   <div hx-get="{{.}}" hx-trigger="load" hx-swap="outerHTML"></div>
   {{end}}
 
+  {{if .InvestigateID}}
+  <div hx-get="/game/{{.InvestigateID}}/investigation" hx-trigger="load" hx-swap="outerHTML"></div>
+  {{end}}
+
   <div class="stats">
     <div class="stat"><div class="stat-n">{{.States}}</div><div class="stat-l">states replayed</div></div>
     <div class="stat"><div class="stat-n{{if .Approximate}} hot{{end}}">{{.Windows}}</div><div class="stat-l">doctrine windows{{if .Approximate}} · paired by tick, rules have changed{{else if .Orphaned}} · {{.Orphaned}} unmatched{{end}}</div></div>
