@@ -150,3 +150,80 @@ func TestSquadClumpTrivialCasesStayClumped(t *testing.T) {
 		}
 	}
 }
+
+// An unscouted base is not a safe base.
+//
+// ThreatField was built only from defences actually SIGHTED, so a base nobody
+// had scouted scored zero threat everywhere. Game 173 had observed one flame
+// tower; the direct corridor scored 0.00 against an openEnoughThreshold of 1.0,
+// so BestApproachAxis declared the front door open and disabled the detour
+// while the squad walked into towers it had never seen. Assuming no defences is
+// a stronger claim than assuming some, and it fails in the dangerous direction.
+func TestUnscoutedBaseCarriesPresumedThreat(t *testing.T) {
+	terrain := &model.TerrainGrid{Cols: 32, Rows: 32, CellW: 4, CellH: 4}
+	env := RuleEnv{
+		Terrain: terrain,
+		State:   model.GameState{Tick: 5000, MapWidth: 128, MapHeight: 128},
+		Memory: map[string]any{
+			"enemyBases": map[string]EnemyBaseIntel{
+				"red": {Owner: "red", X: 100, Y: 100, Tick: 1, FromBuildings: true},
+			},
+		},
+	}
+	f := env.ThreatField()
+	if f == nil {
+		t.Fatal("no threat field")
+	}
+	var total float64
+	for c := 0; c < f.Cols; c++ {
+		for r := 0; r < f.Rows; r++ {
+			total += f.At(c, r)
+		}
+	}
+	if total <= 0 {
+		t.Fatal("a known but unscouted base painted zero threat: the detour will switch itself off")
+	}
+
+	// And the presumption fades once real defences are known, so it cannot
+	// drown out the actual field.
+	withIntel := env
+	defs := map[int]EnemyDefenseIntel{}
+	for i := 0; i < presumedFadesAfter; i++ {
+		defs[i] = EnemyDefenseIntel{Type: Pillbox, X: 100 + i, Y: 100}
+	}
+	withIntel.Memory = map[string]any{
+		"enemyBases":    env.Memory["enemyBases"],
+		"enemyDefenses": defs,
+	}
+	var presumed float64
+	fi := withIntel.ThreatField()
+	for c := 0; c < fi.Cols; c++ {
+		for r := 0; r < fi.Rows; r++ {
+			presumed += fi.At(c, r)
+		}
+	}
+	// AddSource paints 1 + 4*(1/2) + 4*(1/3) = 4.333 per unit of weight, so four
+	// real pillboxes at 1.0 come to 17.33. Anything above that is the
+	// presumption still contributing when it should have faded to nothing.
+	const fourRealPillboxes = 4 * 4.3333
+	if presumed > fourRealPillboxes+0.01 {
+		t.Errorf("presumed threat did not fade with intel: total %.2f, real defences alone are %.2f", presumed, fourRealPillboxes)
+	}
+}
+
+// A death is evidence of a threat even when nothing was ever sighted.
+func TestDeathsAreRememberedAsThreat(t *testing.T) {
+	terrain := &model.TerrainGrid{Cols: 32, Rows: 32, CellW: 4, CellH: 4}
+	mem := map[string]any{}
+	RecordDeathSite(mem, 60, 60, 1000)
+	env := RuleEnv{Terrain: terrain, State: model.GameState{Tick: 1100, MapWidth: 128, MapHeight: 128}, Memory: mem}
+	if got := env.ThreatField().At(60/4, 60/4); got <= 0 {
+		t.Errorf("a death site painted no threat: %v", got)
+	}
+
+	// And it expires, because an old battle is not a standing defence.
+	stale := RuleEnv{Terrain: terrain, State: model.GameState{Tick: 1000 + deathMemoryTicks + 1, MapWidth: 128, MapHeight: 128}, Memory: mem}
+	if got := stale.ThreatField().At(60/4, 60/4); got != 0 {
+		t.Errorf("a death from %d ticks ago still counts: %v", deathMemoryTicks+1, got)
+	}
+}

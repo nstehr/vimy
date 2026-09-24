@@ -2027,14 +2027,101 @@ func (e RuleEnv) ThreatField() *model.ThreatField {
 		return nil
 	}
 	f := model.NewThreatField(e.Terrain)
+	seen := 0
 	for _, d := range getEnemyDefenses(e.Memory) {
 		w, ok := defenseThreatWeight[d.Type]
 		if !ok {
 			w = 1.0
 		}
 		f.AddSource(e.Terrain, d.X, d.Y, w)
+		seen++
 	}
+	e.addPresumedBaseThreat(f, seen)
+	e.addRememberedDeaths(f)
 	return f
+}
+
+// A death is evidence of a threat even when whatever caused it was never seen.
+//
+// This is the observation-only version of scouting: if six riflemen died at a
+// spot, that spot is dangerous whether or not the tower that killed them was
+// ever sighted. It needs no unit-type knowledge, it cannot be fooled by fog,
+// and it is exactly what a human infers from watching their army evaporate at
+// the same place twice.
+//
+// Weighted below a confirmed defence - a death says something killed you there,
+// not what or whether it is still there - and expired, because a battle site
+// from forty thousand ticks ago is not a standing threat.
+const (
+	deathThreatWeight   = 0.8
+	deathMemoryTicks    = 20000
+	maxRememberedDeaths = 64
+)
+
+// DeathSite is where one of ours was lost.
+type DeathSite struct{ X, Y, Tick int }
+
+func getDeathSites(memory map[string]any) []DeathSite {
+	v, _ := memory["deathSites"].([]DeathSite)
+	return v
+}
+
+// RecordDeathSite remembers where a unit was lost, dropping the oldest once the
+// list is full so a long game cannot grow it without bound.
+func RecordDeathSite(memory map[string]any, x, y, tick int) {
+	sites := append(getDeathSites(memory), DeathSite{X: x, Y: y, Tick: tick})
+	if len(sites) > maxRememberedDeaths {
+		sites = sites[len(sites)-maxRememberedDeaths:]
+	}
+	memory["deathSites"] = sites
+}
+
+func (e RuleEnv) addRememberedDeaths(f *model.ThreatField) {
+	for _, d := range getDeathSites(e.Memory) {
+		if e.State.Tick-d.Tick > deathMemoryTicks {
+			continue
+		}
+		f.AddSource(e.Terrain, d.X, d.Y, deathThreatWeight)
+	}
+}
+
+// presumedDefenceWeight is what an unscouted base is assumed to be defended
+// with, and presumedRingCells is how far out that assumption is painted.
+//
+// The field was built only from defences actually SIGHTED, which meant an
+// unscouted base looked completely safe. Game 173 had observed one flame tower
+// all game; the direct corridor scored 0.00 against an openEnoughThreshold of
+// 1.0, so BestApproachAxis declared the front door open and switched the whole
+// detour mechanism off while the squad walked into towers it had never seen.
+//
+// Every Red Alert base has defences. Assuming none is a stronger claim than
+// assuming some, and it fails in the dangerous direction. So a known base
+// carries a presumed ring until real sightings replace it - the weight is
+// scaled down as defences are actually observed, reaching zero once enough are
+// known that the real field speaks for itself.
+const (
+	presumedDefenceWeight = 1.2
+	presumedRingCells     = 6
+	presumedFadesAfter    = 4
+)
+
+// addPresumedBaseThreat paints a ring around each known enemy base, faded by
+// how much real intel exists.
+func (e RuleEnv) addPresumedBaseThreat(f *model.ThreatField, observed int) {
+	if observed >= presumedFadesAfter {
+		return
+	}
+	fade := 1.0 - float64(observed)/float64(presumedFadesAfter)
+	w := presumedDefenceWeight * fade
+	radius := presumedRingCells * maxInt(e.Terrain.CellW, e.Terrain.CellH)
+	for _, base := range getEnemyBases(e.Memory) {
+		for i := 0; i < 8; i++ {
+			angle := float64(i) * math.Pi / 4
+			x := base.X + int(float64(radius)*math.Cos(angle))
+			y := base.Y + int(float64(radius)*math.Sin(angle))
+			f.AddSource(e.Terrain, clampInt(x, 0, e.State.MapWidth-1), clampInt(y, 0, e.State.MapHeight-1), w)
+		}
+	}
 }
 
 // airDefenseThreatWeight covers only what actually shoots aircraft. Weighted

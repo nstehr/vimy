@@ -31,11 +31,29 @@ func updateSquads(env RuleEnv) {
 	squads := getSquads(env.Memory)
 	aliveIDs := makeUnitIDSet(env.State.Units)
 
+	// Where each member stood last tick. A unit that vanishes is already gone
+	// from State.Units, so its position has to have been kept beforehand -
+	// otherwise the only thing a death tells us is that it happened.
+	posNow := make(map[int][2]int, len(env.State.Units))
+	for _, u := range env.State.Units {
+		posNow[u.ID] = [2]int{u.X, u.Y}
+	}
+	lastSeen, _ := env.Memory["squadLastSeen"].(map[int][2]int)
+	if lastSeen == nil {
+		lastSeen = map[int][2]int{}
+	}
+
 	for name, sq := range squads {
 		alive := sq.UnitIDs[:0]
 		for _, id := range sq.UnitIDs {
 			if aliveIDs[id] {
 				alive = append(alive, id)
+				continue
+			}
+			// Lost. Remember where, so the threat field learns the spot even
+			// though whatever killed it was never sighted.
+			if p, ok := lastSeen[id]; ok {
+				RecordDeathSite(env.Memory, p[0], p[1], env.State.Tick)
 			}
 		}
 		sq.UnitIDs = alive
@@ -45,6 +63,19 @@ func updateSquads(env RuleEnv) {
 			delete(env.Memory, "huntBase:"+name)
 		}
 	}
+	// Keep positions only for units still rostered, so the map tracks the
+	// squads rather than growing for the whole game.
+	kept := make(map[int][2]int)
+	for _, sq := range squads {
+		for _, id := range sq.UnitIDs {
+			if p, ok := posNow[id]; ok {
+				kept[id] = p
+			} else if p, ok := lastSeen[id]; ok {
+				kept[id] = p
+			}
+		}
+	}
+	env.Memory["squadLastSeen"] = kept
 	env.Memory["squads"] = squads
 }
 
