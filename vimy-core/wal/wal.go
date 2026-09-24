@@ -90,6 +90,19 @@ type Session struct {
 	Revision    string `json:"revision,omitempty"`
 	Modified    bool   `json:"modified,omitempty"`
 
+	// The coarse terrain grid, one character per zone, row-major: '.' land,
+	// '~' water, '#' cliff, '=' bridge. The sidecar has had this since it
+	// gained terrain awareness and nothing has ever drawn it, so every map of
+	// a game has been units floating on a blank square.
+	//
+	// It goes on the session rather than into a stream because it is static for
+	// the whole game: 1024 characters once, not 1024 rows per sample.
+	TerrainCols  int    `json:"terrain_cols,omitempty"`
+	TerrainRows  int    `json:"terrain_rows,omitempty"`
+	TerrainCellW int    `json:"terrain_cell_w,omitempty"`
+	TerrainCellH int    `json:"terrain_cell_h,omitempty"`
+	Terrain      string `json:"terrain,omitempty"`
+
 	// Filled in by Finish. A session whose RowsDropped is non-zero has holes,
 	// and any count taken from it is a floor rather than a number.
 	RowsWritten uint64 `json:"rows_written,omitempty"`

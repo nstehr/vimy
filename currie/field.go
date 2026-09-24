@@ -32,9 +32,20 @@ type fieldMarker struct {
 	Label string // hover text: type and id
 }
 
+// fieldZone is one terrain cell of the background.
+type fieldZone struct {
+	X, Y, W, H float64
+	Class      string
+}
+
 type fieldView struct {
 	Session string
 	Tick    int
+
+	// The ground. The sidecar has had this grid since it gained terrain
+	// awareness and nothing ever drew it, so every map of a game so far has
+	// been units floating on a blank square.
+	Zones []fieldZone
 
 	// The timeline, as a range input rather than a row of buttons: a long game
 	// is 200 scrub positions and clicking through them is not scrubbing.
@@ -54,6 +65,9 @@ type fieldView struct {
 
 	// Side of the square viewport, in SVG units.
 	Size float64
+	// TerrainSpan is the map width the terrain grid covers, so markers can be
+	// scaled to the same ground rather than to whatever they happen to span.
+	TerrainSpan float64
 }
 
 // fieldPoll is how often a live field asks again. Slower than the live panel:
@@ -124,6 +138,7 @@ func loadField(ctx context.Context, c *ch.Client, session string, tick int) *fie
 		v.Note = "no unit telemetry for this session yet"
 		return v
 	}
+	v.loadTerrain(ctx, c, session)
 	v.Lo, v.Hi, v.Stride = ext.Lo, ext.Hi, fieldScrubStride
 	// tick <= 0 means "wherever the game is now", which is also what a live
 	// frame asks for on every poll.
@@ -160,7 +175,13 @@ func loadField(ctx context.Context, c *ch.Client, session string, tick int) *fie
 			maxXY = r.Y
 		}
 	}
+	// Prefer the terrain's own span: scaling markers to their observed extent
+	// makes the field breathe as units move, and puts them out of register with
+	// the ground. Fall back to the extent when a session predates the grid.
 	scale := fieldSize / float64(maxXY+4)
+	if v.TerrainSpan > 0 {
+		scale = fieldSize / v.TerrainSpan
+	}
 
 	for _, r := range rows {
 		class, radius := markerClass(r)
@@ -193,4 +214,63 @@ func (s *server) handleFieldFrame(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
 	tick, _ := strconv.Atoi(r.URL.Query().Get("tick"))
 	s.render(w, "fieldframe", loadField(r.Context(), s.ch, session, tick))
+}
+
+// terrainClass maps the encoded grid to a style. Bridges get their own because
+// they are the chokepoints - a land corridor over water is where an assault can
+// actually be stopped, and seeing one explains a defence line that otherwise
+// looks arbitrary.
+func terrainClass(c byte) string {
+	switch c {
+	case '~':
+		return "water"
+	case '#':
+		return "cliff"
+	case '=':
+		return "bridge"
+	default:
+		return "land"
+	}
+}
+
+type terrainRow struct {
+	Cols  int    `json:"terrain_cols"`
+	Rows  int    `json:"terrain_rows"`
+	CellW int    `json:"terrain_cell_w"`
+	CellH int    `json:"terrain_cell_h"`
+	Grid  string `json:"terrain"`
+}
+
+// loadTerrain paints the background. Silent when a session predates the grid
+// being recorded: an older game still draws, just on blank ground.
+func (v *fieldView) loadTerrain(ctx context.Context, c *ch.Client, session string) {
+	t, err := ch.One[terrainRow](ctx, c,
+		`SELECT terrain_cols, terrain_rows, terrain_cell_w, terrain_cell_h, terrain
+		 FROM stream_sessions WHERE session_id = {session:String} LIMIT 1`,
+		map[string]any{"session": session})
+	if err != nil || t.Cols <= 0 || len(t.Grid) < t.Cols*t.Rows {
+		return
+	}
+	// Zones are scaled to the same viewport the markers use, which is sized
+	// from the observed unit extent - so the ground and the actors agree even
+	// though neither knows the map dimensions.
+	span := float64(t.Cols * t.CellW)
+	if span <= 0 {
+		return
+	}
+	zw := fieldSize / float64(t.Cols)
+	zh := fieldSize / float64(t.Rows)
+	v.TerrainSpan = span
+	for row := 0; row < t.Rows; row++ {
+		for col := 0; col < t.Cols; col++ {
+			class := terrainClass(t.Grid[row*t.Cols+col])
+			if class == "land" {
+				continue // the default ground; drawing it is 1024 wasted rects
+			}
+			v.Zones = append(v.Zones, fieldZone{
+				X: float64(col) * zw, Y: float64(row) * zh, W: zw + .5, H: zh + .5,
+				Class: class,
+			})
+		}
+	}
 }

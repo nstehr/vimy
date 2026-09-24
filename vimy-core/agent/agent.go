@@ -24,6 +24,10 @@ type Agent struct {
 	Engine     *rules.Engine
 	Strategist *Strategist
 	Store      *store.Store
+	// terrain is kept so the session record can carry it: static for the whole
+	// game, written down once rather than sampled.
+	terrain *model.TerrainGrid
+
 	// WAL is the telemetry log for this game, opened at Hello and nil until
 	// then. Sealed once the retrospective knows which archive row the game
 	// became.
@@ -57,12 +61,18 @@ func (a *Agent) startTelemetry() {
 	}
 	cfg := a.Telemetry
 	sink, err := a.Engine.AttachEvents(func() (rules.TelemetrySink, error) {
-		return wal.Open(cfg.Dir, wal.Session{
+		sess := wal.Session{
 			ID:          cfg.NewID(),
 			RulesDigest: cfg.RulesDigest,
 			Revision:    cfg.Revision,
 			Modified:    cfg.Modified,
-		}, wal.LogOptions{})
+		}
+		if g := a.terrain; g != nil {
+			sess.TerrainCols, sess.TerrainRows = g.Cols, g.Rows
+			sess.TerrainCellW, sess.TerrainCellH = g.CellW, g.CellH
+			sess.Terrain = encodeTerrain(g)
+		}
+		return wal.Open(cfg.Dir, sess, wal.LogOptions{})
 	})
 	if err != nil {
 		// Telemetry is never worth a game.
@@ -104,8 +114,6 @@ func (a *Agent) HandleHello(env ipc.Envelope) (*ipc.Envelope, error) {
 		"player", a.Player,
 		"faction", a.Faction,
 		"opponents", opponentSummary)
-	a.startTelemetry()
-
 	a.lastState.Store(time.Now().UnixNano())
 	go a.watchForStall(stallAfter/3, stallAfter)
 
@@ -121,9 +129,14 @@ func (a *Agent) HandleHello(env ipc.Envelope) (*ipc.Envelope, error) {
 			grid.Grid[i] = model.TerrainType(v)
 		}
 		a.Engine.SetTerrain(grid)
+		a.terrain = grid
 	} else {
 		slog.Warn("no terrain data in hello — terrain awareness disabled")
 	}
+
+	// After the terrain, so the session record carries it: it is static for the
+	// whole game and belongs written down once rather than sampled.
+	a.startTelemetry()
 
 	if a.Strategist != nil {
 		a.Strategist.SetFaction(hello.Faction)
@@ -370,4 +383,27 @@ func (a *Agent) sampleUnits(gs model.GameState) {
 	for _, u := range remembered {
 		a.WAL.WriteUnit(u)
 	}
+}
+
+// encodeTerrain flattens the grid to one character per zone, row-major.
+//
+// A string rather than an array because it is written once per session and read
+// by a renderer: 1024 characters is smaller than 1024 JSON numbers, and it is
+// legible in a raw row, which matters for a field that will be looked at by a
+// human before it is looked at by code.
+func encodeTerrain(g *model.TerrainGrid) string {
+	out := make([]byte, 0, len(g.Grid))
+	for _, t := range g.Grid {
+		switch t {
+		case model.Water:
+			out = append(out, '~')
+		case model.Cliff:
+			out = append(out, '#')
+		case model.Bridge:
+			out = append(out, '=')
+		default:
+			out = append(out, '.')
+		}
+	}
+	return string(out)
 }

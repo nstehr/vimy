@@ -66,6 +66,9 @@ tr.silent td.r{color:var(--sole)}
 footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padding-top:1rem}
 
 .field{background:var(--panel);border:1px solid var(--rule);border-radius:2px}
+.field .water{fill:#4a6fa5;fill-opacity:.22}
+.field .cliff{fill:var(--ink);fill-opacity:.13}
+.field .bridge{fill:#b58b4a;fill-opacity:.5}
 .field .ours{fill:var(--calm)}
 .field .enemy{fill:var(--sole)}
 .field .building{fill-opacity:.95}
@@ -129,6 +132,9 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
   </div>
 
   <svg class="field" viewBox="0 0 {{.Size}} {{.Size}}" width="100%" style="aspect-ratio:1">
+    {{range .Zones}}
+    <rect class="{{.Class}}" x="{{.X}}" y="{{.Y}}" width="{{.W}}" height="{{.H}}"/>
+    {{end}}
     {{range .Markers}}
     <circle class="{{.Class}}" cx="{{.X}}" cy="{{.Y}}" r="{{.R}}"><title>{{.Label}}</title></circle>
     {{end}}

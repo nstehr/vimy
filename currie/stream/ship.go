@@ -314,11 +314,14 @@ func (s *Shipper) upsertSession(ctx context.Context, sess wal.Session) error {
 	}
 	q := url.Values{}
 	q.Set("query", fmt.Sprintf(
-		`INSERT INTO stream_sessions (session_id, started_at, game_id, rules_digest, revision, modified, rows_written, rows_dropped) `+
-			`VALUES (%s, toDateTime(%d), %d, %s, %s, %d, %d, %d)`,
+		`INSERT INTO stream_sessions (session_id, started_at, game_id, rules_digest, revision, modified, rows_written, rows_dropped, `+
+			`terrain_cols, terrain_rows, terrain_cell_w, terrain_cell_h, terrain) `+
+			`VALUES (%s, toDateTime(%d), %d, %s, %s, %d, %d, %d, %d, %d, %d, %d, %s)`,
 		quote(sess.ID), started.Unix(), sess.GameID,
 		quote(sess.RulesDigest), quote(sess.Revision), b2i(sess.Modified),
-		sess.RowsWritten, sess.RowsDropped))
+		sess.RowsWritten, sess.RowsDropped,
+		sess.TerrainCols, sess.TerrainRows, sess.TerrainCellW, sess.TerrainCellH,
+		quote(sess.Terrain)))
 	_, err := s.do(ctx, q, nil)
 	return err
 }
