@@ -60,3 +60,27 @@ func indexOf(hay, needle string) int {
 	}
 	return -1
 }
+
+// Only a finished game whose stream has stopped arriving may be cached.
+//
+// "The game is over" and "the data is all here" are not the same moment: the
+// shipper moves sealed segments every few seconds, so the last of them land
+// after the archive row is already written. Caching in that window would freeze
+// a reading of half a game and serve it forever.
+func TestSettleRequiresAQuietStream(t *testing.T) {
+	// No stream at all: the archive is written at game end, so the replay facts
+	// are as final as they will get and there is nothing to wait for.
+	iv := &investigator{ch: nil}
+	if !iv.settled(t.Context(), "") {
+		t.Error("a game with no stream should count as settled")
+	}
+	if !iv.settled(t.Context(), "some-session") {
+		t.Error("no ClickHouse client means nothing to wait on")
+	}
+
+	// The window has to be longer than a ship cycle, or a settled game is one
+	// that merely paused between segments.
+	if settleWindow < 30 {
+		t.Errorf("settleWindow = %ds, too short to outlast a ship cycle", settleWindow)
+	}
+}

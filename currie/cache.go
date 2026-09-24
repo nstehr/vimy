@@ -155,3 +155,55 @@ func (c *cache) Readings(ctx context.Context) (map[int64]string, error) {
 	}
 	return out, nil
 }
+
+// investigationBody is what a settled investigation stores: the reading and the
+// evidence chain together, because the trace is the point of the thing and a
+// cached conclusion without it is the fixed projection again.
+type investigationBody struct {
+	Insight *Insight
+	Trace   []TraceStep
+}
+
+// readInvestigation returns a stored investigation, or nil.
+func (c *cache) readInvestigation(game int64) (*Insight, []TraceStep) {
+	if c == nil {
+		return nil, nil
+	}
+	blob, err := c.queries.GetInvestigation(context.Background(),
+		db.GetInvestigationParams{GameID: game, Rules: c.rules})
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			slog.Warn("cannot read cached investigation", "game", game, "error", err)
+		}
+		return nil, nil
+	}
+	var body investigationBody
+	if err := json.Unmarshal([]byte(blob), &body); err != nil {
+		slog.Warn("cannot decode cached investigation", "game", game, "error", err)
+		return nil, nil
+	}
+	return body.Insight, body.Trace
+}
+
+// writeInvestigation stores one. Callers must only reach here for a settled
+// game: see settled().
+func (c *cache) writeInvestigation(game int64, ins *Insight, trace []TraceStep) {
+	if c == nil || ins == nil {
+		return
+	}
+	blob, err := json.Marshal(investigationBody{Insight: ins, Trace: trace})
+	if err != nil {
+		slog.Warn("cannot encode investigation", "game", game, "error", err)
+		return
+	}
+	if err := c.queries.PutInvestigation(context.Background(), db.PutInvestigationParams{
+		GameID:    game,
+		Rules:     c.rules,
+		CreatedAt: time.Now().Unix(),
+		Summary:   ins.Summary,
+		Steps:     int64(len(trace)),
+		BodyJson:  string(blob),
+	}); err != nil {
+		slog.Warn("cannot store investigation", "game", game, "error", err)
+	}
+}

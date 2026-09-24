@@ -44,9 +44,13 @@ type investigator struct {
 	ch *ch.Client
 }
 
-func (iv *investigator) Investigate(ctx context.Context, r *Replay) (*Insight, []TraceStep, error) {
+func (iv *investigator) Investigate(ctx context.Context, r *Replay) (*Insight, []TraceStep, bool, error) {
 	f := facts(r)
 	session := iv.sessionFor(ctx, r.Game.ID)
+	// Decided before the loop runs, not after: by the time eight calls have
+	// finished, more of the stream may have landed and the reading would then
+	// be cached as though it had seen it.
+	settled := iv.settled(ctx, session)
 
 	var history []types.AgentMessage
 	var trace []TraceStep
@@ -54,7 +58,7 @@ func (iv *investigator) Investigate(ctx context.Context, r *Replay) (*Insight, [
 	for step := range maxInvestigationSteps {
 		res, err := baml_client.InvestigateGameStep(ctx, f, toolMenu, history)
 		if err != nil {
-			return nil, trace, fmt.Errorf("investigate step %d: %w", step, err)
+			return nil, trace, settled, fmt.Errorf("investigate step %d: %w", step, err)
 		}
 
 		if final := res.AsFinalInsightTool(); final != nil {
@@ -65,7 +69,7 @@ func (iv *investigator) Investigate(ctx context.Context, r *Replay) (*Insight, [
 			for _, fd := range final.Findings {
 				ins.Findings = append(ins.Findings, Finding{Claim: fd.Claim, Evidence: fd.Evidence, Confidence: fd.Confidence})
 			}
-			return ins, trace, nil
+			return ins, trace, settled, nil
 		}
 
 		name, reason, result := iv.run(ctx, session, res)
@@ -83,7 +87,7 @@ func (iv *investigator) Investigate(ctx context.Context, r *Replay) (*Insight, [
 
 	// Out of budget without a conclusion. Returning the trace anyway: eight
 	// tool results are worth reading even when nothing was concluded from them.
-	return nil, trace, fmt.Errorf("no conclusion after %d steps", maxInvestigationSteps)
+	return nil, trace, settled, fmt.Errorf("no conclusion after %d steps", maxInvestigationSteps)
 }
 
 func formatCall(name, reason string) string {
@@ -314,4 +318,40 @@ func (iv *investigator) compareGames(ctx context.Context) string {
 			r.ID, r.Ticks, r.Killed, r.PerTick, r.Trade)
 	}
 	return b.String()
+}
+
+// settleWindow is how long a session's stream must be quiet before its
+// telemetry counts as complete.
+//
+// The shipper moves sealed segments every few seconds, and the last of them
+// land after the game has already archived - so "the game is over" and "the
+// data is all here" are not the same moment. Sixty seconds is comfortably more
+// than a ship cycle and costs only a re-run if it is wrong.
+const settleWindow = 60
+
+// settled reports whether a game is finished AND its telemetry has stopped
+// arriving, which is the only state in which an investigation is worth keeping.
+//
+// A live game is deliberately never cached: it would freeze a reading of half a
+// game and serve it forever, and a second look at more data is a different and
+// probably better answer. A finished one is answered once.
+func (iv *investigator) settled(ctx context.Context, session string) bool {
+	if iv.ch == nil || session == "" {
+		// No stream to settle. The replay facts are from the archive, which is
+		// written at game end, so the reading is as final as it will get.
+		return true
+	}
+	type row struct {
+		Quiet int `json:"quiet"`
+	}
+	r, err := ch.One[row](ctx, iv.ch,
+		`SELECT toInt32(dateDiff('second', max(ingested_at), now())) AS quiet
+		 FROM stream_segments WHERE session_id = {session:String}`,
+		map[string]any{"session": session})
+	if err != nil {
+		// Unknown is not settled: caching on a failed check is how a partial
+		// reading becomes permanent.
+		return false
+	}
+	return r.Quiet >= settleWindow
 }

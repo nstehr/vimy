@@ -20,3 +20,16 @@ DELETE FROM insights WHERE game_id = ? AND rules = ?;
 SELECT game_id, summary, suggestion, created_at FROM insights
 WHERE rules = ?
 ORDER BY created_at DESC;
+
+-- name: GetInvestigation :one
+SELECT body_json FROM investigations
+WHERE game_id = ? AND rules = ?;
+
+-- name: PutInvestigation :exec
+INSERT INTO investigations (game_id, rules, created_at, summary, steps, body_json)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (game_id, rules) DO UPDATE SET
+    created_at = excluded.created_at,
+    summary    = excluded.summary,
+    steps      = excluded.steps,
+    body_json  = excluded.body_json;

@@ -12,3 +12,12 @@ type Insight struct {
 	Suggestion  string `json:"suggestion"`
 	InsightJson string `json:"insight_json"`
 }
+
+type Investigation struct {
+	GameID    int64  `json:"game_id"`
+	Rules     string `json:"rules"`
+	CreatedAt int64  `json:"created_at"`
+	Summary   string `json:"summary"`
+	Steps     int64  `json:"steps"`
+	BodyJson  string `json:"body_json"`
+}

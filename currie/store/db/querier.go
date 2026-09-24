@@ -11,10 +11,12 @@ import (
 type Querier interface {
 	DropInsight(ctx context.Context, arg DropInsightParams) error
 	GetInsight(ctx context.Context, arg GetInsightParams) (string, error)
+	GetInvestigation(ctx context.Context, arg GetInvestigationParams) (string, error)
 	// Every reading made against one rule set, newest first. What the cross-game
 	// work reads.
 	ListInsights(ctx context.Context, rules string) ([]ListInsightsRow, error)
 	PutInsight(ctx context.Context, arg PutInsightParams) error
+	PutInvestigation(ctx context.Context, arg PutInvestigationParams) error
 }
 
 var _ Querier = (*Queries)(nil)

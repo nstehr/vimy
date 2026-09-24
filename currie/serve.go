@@ -456,6 +456,15 @@ func (s *server) startInvestigation(id int64, rep *Replay) {
 	job := &investigationJob{done: make(chan struct{})}
 	s.investigations[id] = job
 
+	// A settled game was answered once and kept; serve that rather than paying
+	// for eight more calls to reach the same conclusion.
+	if ins, trace := s.cached.readInvestigation(id); ins != nil {
+		job.insight, job.trace = ins, trace
+		close(job.done)
+		slog.Info("investigation from cache", "game", id, "steps", len(trace))
+		return
+	}
+
 	go func() {
 		defer close(job.done)
 		// Its own context, and a longer one than the insight: eight round trips
@@ -464,13 +473,20 @@ func (s *server) startInvestigation(id int64, rep *Replay) {
 		defer cancel()
 		started := time.Now()
 		iv := &investigator{ch: s.ch}
-		job.insight, job.trace, job.err = iv.Investigate(ctx, rep)
+		var settled bool
+		job.insight, job.trace, settled, job.err = iv.Investigate(ctx, rep)
 		if job.err != nil {
 			slog.Warn("investigation failed", "game", id, "error", job.err,
 				"steps", len(job.trace), "took", time.Since(started))
 			return
 		}
-		slog.Info("investigation ready", "game", id, "steps", len(job.trace), "took", time.Since(started))
+		// Kept only when the game is over and its stream has stopped arriving.
+		// Caching a reading of half a game would serve it forever.
+		if settled {
+			s.cached.writeInvestigation(id, job.insight, job.trace)
+		}
+		slog.Info("investigation ready", "game", id, "steps", len(job.trace),
+			"settled", settled, "took", time.Since(started))
 	}()
 }
 

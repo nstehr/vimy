@@ -40,6 +40,23 @@ func (q *Queries) GetInsight(ctx context.Context, arg GetInsightParams) (string,
 	return insight_json, err
 }
 
+const getInvestigation = `-- name: GetInvestigation :one
+SELECT body_json FROM investigations
+WHERE game_id = ? AND rules = ?
+`
+
+type GetInvestigationParams struct {
+	GameID int64  `json:"game_id"`
+	Rules  string `json:"rules"`
+}
+
+func (q *Queries) GetInvestigation(ctx context.Context, arg GetInvestigationParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getInvestigation, arg.GameID, arg.Rules)
+	var body_json string
+	err := row.Scan(&body_json)
+	return body_json, err
+}
+
 const listInsights = `-- name: ListInsights :many
 SELECT game_id, summary, suggestion, created_at FROM insights
 WHERE rules = ?
@@ -110,6 +127,37 @@ func (q *Queries) PutInsight(ctx context.Context, arg PutInsightParams) error {
 		arg.Summary,
 		arg.Suggestion,
 		arg.InsightJson,
+	)
+	return err
+}
+
+const putInvestigation = `-- name: PutInvestigation :exec
+INSERT INTO investigations (game_id, rules, created_at, summary, steps, body_json)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT (game_id, rules) DO UPDATE SET
+    created_at = excluded.created_at,
+    summary    = excluded.summary,
+    steps      = excluded.steps,
+    body_json  = excluded.body_json
+`
+
+type PutInvestigationParams struct {
+	GameID    int64  `json:"game_id"`
+	Rules     string `json:"rules"`
+	CreatedAt int64  `json:"created_at"`
+	Summary   string `json:"summary"`
+	Steps     int64  `json:"steps"`
+	BodyJson  string `json:"body_json"`
+}
+
+func (q *Queries) PutInvestigation(ctx context.Context, arg PutInvestigationParams) error {
+	_, err := q.db.ExecContext(ctx, putInvestigation,
+		arg.GameID,
+		arg.Rules,
+		arg.CreatedAt,
+		arg.Summary,
+		arg.Steps,
+		arg.BodyJson,
 	)
 	return err
 }
