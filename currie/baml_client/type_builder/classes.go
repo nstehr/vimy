@@ -211,6 +211,10 @@ func (t *CompareGamesToolClassView) ListProperties() ([]ClassPropertyView, error
 	return builders, nil
 }
 
+func (t *CompareGamesToolClassView) PropertyTool() (ClassPropertyView, error) {
+	return t.inner.Property("tool")
+}
+
 func (t *CompareGamesToolClassView) PropertyReason() (ClassPropertyView, error) {
 	return t.inner.Property("reason")
 }
@@ -397,6 +401,10 @@ func (t *FieldAtToolClassView) ListProperties() ([]ClassPropertyView, error) {
 		builders[i] = p
 	}
 	return builders, nil
+}
+
+func (t *FieldAtToolClassView) PropertyTool() (ClassPropertyView, error) {
+	return t.inner.Property("tool")
 }
 
 func (t *FieldAtToolClassView) PropertyTick() (ClassPropertyView, error) {
@@ -727,6 +735,10 @@ func (t *SquadTimelineToolClassView) ListProperties() ([]ClassPropertyView, erro
 	return builders, nil
 }
 
+func (t *SquadTimelineToolClassView) PropertyTool() (ClassPropertyView, error) {
+	return t.inner.Property("tool")
+}
+
 func (t *SquadTimelineToolClassView) PropertyReason() (ClassPropertyView, error) {
 	return t.inner.Property("reason")
 }
@@ -757,6 +769,10 @@ func (t *StrikeBlockersToolClassView) ListProperties() ([]ClassPropertyView, err
 		builders[i] = p
 	}
 	return builders, nil
+}
+
+func (t *StrikeBlockersToolClassView) PropertyTool() (ClassPropertyView, error) {
+	return t.inner.Property("tool")
 }
 
 func (t *StrikeBlockersToolClassView) PropertyReason() (ClassPropertyView, error) {

@@ -273,6 +273,7 @@ func (c ClauseSensitivity) BamlTypeName() string {
 }
 
 type CompareGamesTool struct {
+	Tool   string `json:"tool"`
 	Reason string `json:"reason"`
 }
 
@@ -290,6 +291,9 @@ func (c *CompareGamesTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.Type
 		valueHolder := field.Value
 		switch key {
 
+		case "tool":
+			c.Tool = baml.Decode(valueHolder).Interface().(string)
+
 		case "reason":
 			c.Reason = baml.Decode(valueHolder).Interface().(string)
 
@@ -304,6 +308,8 @@ func (c *CompareGamesTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.Type
 
 func (c CompareGamesTool) Encode() (*cffi.HostValue, error) {
 	fields := map[string]any{}
+
+	fields["tool"] = c.Tool
 
 	fields["reason"] = c.Reason
 
@@ -531,6 +537,7 @@ func (c DoctrineChoice) BamlTypeName() string {
 }
 
 type FieldAtTool struct {
+	Tool   string `json:"tool"`
 	Tick   int64  `json:"tick"`
 	Reason string `json:"reason"`
 }
@@ -549,6 +556,9 @@ func (c *FieldAtTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) 
 		valueHolder := field.Value
 		switch key {
 
+		case "tool":
+			c.Tool = baml.Decode(valueHolder).Interface().(string)
+
 		case "tick":
 			c.Tick = baml.Decode(valueHolder).Int()
 
@@ -566,6 +576,8 @@ func (c *FieldAtTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) 
 
 func (c FieldAtTool) Encode() (*cffi.HostValue, error) {
 	fields := map[string]any{}
+
+	fields["tool"] = c.Tool
 
 	fields["tick"] = c.Tick
 
@@ -987,6 +999,7 @@ func (c MissingThing) BamlTypeName() string {
 }
 
 type SquadTimelineTool struct {
+	Tool   string `json:"tool"`
 	Reason string `json:"reason"`
 }
 
@@ -1004,6 +1017,9 @@ func (c *SquadTimelineTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.Typ
 		valueHolder := field.Value
 		switch key {
 
+		case "tool":
+			c.Tool = baml.Decode(valueHolder).Interface().(string)
+
 		case "reason":
 			c.Reason = baml.Decode(valueHolder).Interface().(string)
 
@@ -1019,6 +1035,8 @@ func (c *SquadTimelineTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.Typ
 func (c SquadTimelineTool) Encode() (*cffi.HostValue, error) {
 	fields := map[string]any{}
 
+	fields["tool"] = c.Tool
+
 	fields["reason"] = c.Reason
 
 	return baml.EncodeClass("SquadTimelineTool", fields, nil)
@@ -1029,6 +1047,7 @@ func (c SquadTimelineTool) BamlTypeName() string {
 }
 
 type StrikeBlockersTool struct {
+	Tool   string `json:"tool"`
 	Reason string `json:"reason"`
 }
 
@@ -1046,6 +1065,9 @@ func (c *StrikeBlockersTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.Ty
 		valueHolder := field.Value
 		switch key {
 
+		case "tool":
+			c.Tool = baml.Decode(valueHolder).Interface().(string)
+
 		case "reason":
 			c.Reason = baml.Decode(valueHolder).Interface().(string)
 
@@ -1060,6 +1082,8 @@ func (c *StrikeBlockersTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.Ty
 
 func (c StrikeBlockersTool) Encode() (*cffi.HostValue, error) {
 	fields := map[string]any{}
+
+	fields["tool"] = c.Tool
 
 	fields["reason"] = c.Reason
 
