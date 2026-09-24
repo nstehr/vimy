@@ -147,7 +147,10 @@ CREATE TABLE IF NOT EXISTS stream_units
     x          UInt16,
     y          UInt16,
     hp         UInt16,
-    idle       Bool
+    idle       Bool,
+    -- What holds ground versus what moves over it. A map without bases on it
+    -- cannot be read.
+    is_building Bool
 )
 ENGINE = MergeTree
 -- tick first after the session: every question here is "what did the field look

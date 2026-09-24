@@ -330,10 +330,19 @@ func (a *Agent) sampleUnits(gs model.GameState) {
 			X: u.X, Y: u.Y, HP: u.HP, Idle: u.Idle,
 		})
 	}
+	for _, b := range gs.Buildings {
+		a.WAL.WriteUnit(wal.Unit{
+			Tick: gs.Tick, ID: b.ID, Type: b.Type, Side: "ours",
+			X: b.X, Y: b.Y, HP: b.HP, Building: true,
+		})
+	}
+	// Enemies carries their buildings too - the game state does not separate
+	// them - so the type decides which it is, the same way the targeting rules
+	// decide it.
 	for _, e := range gs.Enemies {
 		a.WAL.WriteUnit(wal.Unit{
 			Tick: gs.Tick, ID: e.ID, Type: e.Type, Side: "enemy",
-			X: e.X, Y: e.Y, HP: e.HP,
+			X: e.X, Y: e.Y, HP: e.HP, Building: rules.IsKnownBuildingType(e.Type),
 		})
 	}
 }

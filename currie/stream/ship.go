@@ -302,8 +302,8 @@ var streams = map[string]streamSpec{
 	},
 	wal.UnitsPrefix: {
 		table:   "stream_units",
-		columns: "tick, unit_id, type, side, x, y, hp, idle",
-		input:   "tick UInt32, unit_id UInt32, type String, side String, x UInt16, y UInt16, hp UInt16, idle Bool",
+		columns: "tick, unit_id, type, side, x, y, hp, idle, is_building",
+		input:   "tick UInt32, unit_id UInt32, type String, side String, x UInt16, y UInt16, hp UInt16, idle Bool, is_building Bool",
 	},
 }
 

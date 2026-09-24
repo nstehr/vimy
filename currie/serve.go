@@ -19,7 +19,7 @@ import (
 	"github.com/nstehr/vimy/vimy-core/store"
 )
 
-//go:embed index.html.tmpl report.html.tmpl insight.html.tmpl sweep.html.tmpl live.html.tmpl
+//go:embed index.html.tmpl report.html.tmpl insight.html.tmpl sweep.html.tmpl live.html.tmpl field.html.tmpl
 var pages embed.FS
 
 // The web app.
@@ -125,6 +125,8 @@ func (s *server) routes() *http.ServeMux {
 	// to hang off yet.
 	mux.HandleFunc("GET /live", s.handleLive)
 	mux.HandleFunc("GET /live/panel", s.handleLivePanel)
+	mux.HandleFunc("GET /field/{session}", s.handleField)
+	mux.HandleFunc("GET /field/{session}/frame", s.handleFieldFrame)
 	return mux
 }
 

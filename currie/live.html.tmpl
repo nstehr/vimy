@@ -97,6 +97,9 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
   {{else}}
 
   <section>
+    <p class="eyebrow" style="margin-bottom:.6rem">
+      <a href="/field/{{.Session.SessionID}}">see the field &rarr;</a>
+    </p>
     <div class="stats">
       <div class="stat">
         <div class="stat-n">{{if .Live}}<span class="pill on"><span class="pulse" aria-hidden="true"></span>live</span>{{else}}<span class="pill off">last session</span>{{end}}</div>

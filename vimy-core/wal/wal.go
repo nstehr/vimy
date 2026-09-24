@@ -134,6 +134,9 @@ type Unit struct {
 	Y    int    `json:"y"`
 	HP   int    `json:"hp"`
 	Idle bool   `json:"idle"`
+	// Building separates what holds ground from what moves over it. Both are
+	// actors on the field and a map without bases on it cannot be read.
+	Building bool `json:"is_building"`
 }
 
 // Segment is a sealed file waiting to be shipped.

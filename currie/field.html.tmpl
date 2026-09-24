@@ -1,0 +1,135 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Currie · the field as Vimy saw it</title>
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+<style>
+:root {
+  --bg:#faf9f7; --panel:#fff; --ink:#14161a; --ink-2:#3d4149; --ink-3:#6b7079;
+  --rule:rgba(20,22,26,.13); --rule-soft:rgba(20,22,26,.07);
+  --sole:#b3452b; --calm:#2f6b4f; --other:#8a8f98;
+  --display:"Iowan Old Style",Georgia,serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#131417; --panel:#191b1f; --ink:#e8e9ec; --ink-2:#b9bcc2; --ink-3:#878b93;
+    --rule:rgba(232,233,236,.16); --rule-soft:rgba(232,233,236,.08);
+    --sole:#e0754f; --calm:#6fb391; --other:#7d838c;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#131417; --panel:#191b1f; --ink:#e8e9ec; --ink-2:#b9bcc2; --ink-3:#878b93;
+  --rule:rgba(232,233,236,.16); --rule-soft:rgba(232,233,236,.08);
+  --sole:#e0754f; --calm:#6fb391; --other:#7d838c;
+}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 var(--display)}
+.wrap{max-width:60rem;margin:0 auto;padding-block:2.4rem;padding-inline:16px;display:flex;flex-direction:column;gap:2rem}
+.eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+.eyebrow a{color:inherit;text-decoration:none;border-bottom:1px solid var(--rule)}
+h1{font-size:2rem;line-height:1.15;margin:.35rem 0 0;letter-spacing:-.015em}
+h2{font-size:1.15rem;margin:0 0 .6rem;letter-spacing:-.01em}
+.lede{color:var(--ink-2);max-width:66ch;margin:.2rem 0 1rem}
+section{margin:0}
+.figure{border:1px solid var(--rule);background:var(--panel)}
+.figure-head{padding:.8rem 1.1rem;border-bottom:1px solid var(--rule);display:flex;flex-wrap:wrap;gap:.4rem 1.4rem;align-items:baseline;justify-content:space-between}
+.figure-title{font-weight:600}
+.legend{font-family:var(--mono);font-size:.74rem;color:var(--ink-3)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule)}
+.stat{background:var(--panel);padding:.9rem 1.05rem;display:flex;flex-direction:column;gap:.25rem}
+.stat-n{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:1.65rem;font-weight:600;line-height:1;letter-spacing:-.02em}
+.stat-n.bad{color:var(--sole)} .stat-n.good{color:var(--calm)}
+.stat-l{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+.stat-sub{font-size:.8rem;color:var(--ink-2)}
+.pill{display:inline-flex;align-items:center;gap:.4rem;font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;padding:.2rem .5rem;border:1px solid var(--rule);border-radius:99px;color:var(--ink-3)}
+.pill.on{color:var(--calm);border-color:var(--calm)}
+.pill.off{color:var(--ink-3)}
+.pulse{width:7px;height:7px;border-radius:50%;background:var(--calm);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.pulse{animation:none;opacity:.8}}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th{text-align:left;font-family:var(--mono);font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);font-weight:400;padding:.5rem .7rem;border-bottom:1px solid var(--rule)}
+td{padding:.4rem .7rem;border-bottom:1px solid var(--rule-soft);vertical-align:baseline}
+td.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.r{font-family:var(--mono);font-size:.85rem;overflow-wrap:anywhere}
+tr.silent td.r{color:var(--sole)}
+.scroll{overflow-x:auto}
+.track{position:relative;height:.45rem;background:var(--rule-soft);border-radius:.23rem;min-width:70px;overflow:hidden}
+.track i{position:absolute;inset:0 auto 0 0;background:var(--other);display:block}
+.note{margin:0;padding:.9rem 1.1rem;color:var(--ink-2);font-size:.9rem}
+.spark{display:block;width:100%;height:auto}
+.spark-wrap{padding:1rem 1.1rem;display:flex;flex-direction:column;gap:.7rem}
+.spark-key{font-family:var(--mono);font-size:.74rem;color:var(--ink-3);display:flex;flex-wrap:wrap;gap:.3rem 1.2rem}
+.spark-key b{font-weight:400;color:var(--ink-2)}
+.swatch{display:inline-block;width:14px;height:2px;vertical-align:middle;margin-right:.35rem}
+footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padding-top:1rem}
+
+.field{background:var(--panel);border:1px solid var(--rule);border-radius:2px}
+.field .ours{fill:var(--calm)}
+.field .enemy{fill:var(--sole)}
+.field .building{fill-opacity:.95}
+.field .unit{fill-opacity:.85}
+.field .harv{fill-opacity:.35}
+.scrub{display:flex;flex-wrap:wrap;gap:.3rem;align-items:center;font-family:var(--mono);font-size:.72rem}
+.scrub a{color:var(--ink-3);text-decoration:none;border:1px solid var(--rule);border-radius:2px;padding:.15rem .4rem}
+.scrub a.on{color:var(--ink);border-color:var(--ink-3)}
+.legend{display:flex;gap:1.2rem;font-family:var(--mono);font-size:.72rem;color:var(--ink-3)}
+.legend i{display:inline-block;width:.6rem;height:.6rem;border-radius:50%;margin-right:.3rem;vertical-align:middle}
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow"><a href="/">Currie</a> · field</p>
+    <h1>The field, as Vimy saw it</h1>
+    <p>
+      Every diagnosis in this project has come from scalars &mdash; spread, members, a distance
+      ratio &mdash; and scalars were read wrong more than once. A squad that looked like it was
+      arriving turned out to be two stragglers; an approach that looked like bad routing turned
+      out to be missing intel. This is the thing those numbers are summaries of.
+    </p>
+    <p class="note">
+      Enemies appear only where Vimy has seen them, so blank ground is ignorance, not safety.
+    </p>
+  </header>
+
+  <div id="frame">
+    {{template "fieldframe" .}}
+  </div>
+
+  <footer>
+    Sampled every 20 ticks from the sidecar&rsquo;s write-ahead log. Fog is real: an enemy
+    building shown here is one that was sighted at some point, at the position it was sighted.
+  </footer>
+</div>
+
+{{define "fieldframe"}}
+<div id="frame" style="display:flex;flex-direction:column;gap:1rem">
+  {{if .Note}}
+  <section class="figure"><p class="note">{{.Note}}</p></section>
+  {{else}}
+
+  <div class="legend">
+    <span><i style="background:var(--calm)"></i>ours &mdash; {{.Ours}}</span>
+    <span><i style="background:var(--sole)"></i>enemy seen &mdash; {{.Enemy}}</span>
+    <span>tick {{.Tick}}</span>
+  </div>
+
+  <svg class="field" viewBox="0 0 {{.Size}} {{.Size}}" width="100%" style="aspect-ratio:1">
+    {{range .Markers}}
+    <circle class="{{.Class}}" cx="{{.X}}" cy="{{.Y}}" r="{{.R}}"><title>{{.Label}}</title></circle>
+    {{end}}
+  </svg>
+
+  <div class="scrub">
+    <a hx-get="{{.PrevURL}}" hx-target="#frame" hx-swap="outerHTML">&larr;</a>
+    {{range .Ticks}}
+    <a hx-get="/field/{{$.Session}}/frame?tick={{.}}" hx-target="#frame" hx-swap="outerHTML"
+       {{if eq . $.Tick}}class="on"{{end}}>{{.}}</a>
+    {{end}}
+    <a hx-get="{{.NextURL}}" hx-target="#frame" hx-swap="outerHTML">&rarr;</a>
+  </div>
+
+  {{end}}
+</div>
+{{end}}
