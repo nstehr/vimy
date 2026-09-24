@@ -2,6 +2,7 @@ package rules
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/nstehr/vimy/vimy-core/model"
@@ -304,5 +305,46 @@ func TestOnlyRealTechStructuresAreNeutral(t *testing.T) {
 	// Faction suffixes must not defeat it.
 	if !IsNeutralTechStructure("oilb.ukraine") {
 		t.Error("a faction-suffixed derrick was not recognised")
+	}
+}
+
+// An engineer cannot capture a tank.
+//
+// GameState.Capturables carries whatever something could take: in one game the
+// enemy's APCs, flak trucks, heavy tanks, harvesters and a husk, alongside
+// their base and four derricks. Everything unrecognised scored
+// capturableValueDefault, so walking an engineer at an enemy heavy tank was a
+// legal choice and sometimes the highest-scoring one.
+func TestCaptureTargetsMustBeStructures(t *testing.T) {
+	at := func(ty string, x, y int) model.Enemy {
+		return model.Enemy{ID: len(ty) + x, Type: ty, X: x, Y: y, HP: 500, MaxHP: 500}
+	}
+	env := func(caps ...model.Enemy) RuleEnv {
+		return RuleEnv{
+			State: model.GameState{
+				MapWidth: 128, MapHeight: 128,
+				Buildings:   []model.Building{{ID: 1, X: 10, Y: 10}},
+				Capturables: caps,
+			},
+			Memory: map[string]any{},
+		}
+	}
+
+	// Only vehicles on offer: nothing is a valid capture.
+	if got := env(at("3tnk", 20, 20), at("apc", 22, 20), at("harv", 24, 20), at("3tnk.husk", 26, 20)).BestCapturable(); got != nil {
+		t.Errorf("chose %s: an engineer cannot capture a vehicle", got.Type)
+	}
+
+	// An enemy structure is a legitimate target - taking their refinery is a
+	// real tactic - and must still be chosen over a nearer tank.
+	if got := env(at("3tnk", 12, 12), at("proc", 40, 40)).BestCapturable(); got == nil || got.Type != "proc" {
+		t.Errorf("got %v, want the refinery even though the tank is nearer", got)
+	}
+
+	// A faction-suffixed derrick must rank on its real value, not the default.
+	// Placed FURTHER away than an enemy power plant, so only its value can win.
+	got := env(at("powr", 20, 20), at("oilb.ukraine", 60, 60)).BestCapturable()
+	if got == nil || !strings.HasPrefix(got.Type, "oilb") {
+		t.Errorf("got %v, want the derrick: value 10 over a power plant's default 2", got)
 	}
 }

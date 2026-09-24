@@ -1133,7 +1133,23 @@ func (e RuleEnv) BestCapturable() *model.Enemy {
 		if dist < 1 {
 			dist = 1
 		}
-		val := capturableValue[strings.ToLower(c.Type)]
+		// An engineer cannot capture a tank.
+		//
+		// GameState.Capturables carries whatever something could take: in one
+		// game the enemy's APCs, flak trucks, heavy tanks, harvesters and a
+		// husk, alongside their base and four derricks. Everything unrecognised
+		// scored capturableValueDefault, so an engineer walking at an enemy
+		// heavy tank was a legal, and occasionally the best, choice.
+		//
+		// The test is structure, not neutrality: taking the enemy's refinery is
+		// a real tactic and engineers do it. A husk fails this because
+		// baseTypeName reduces "3tnk.husk" to a vehicle.
+		if !IsNeutralTechStructure(c.Type) && !IsKnownBuildingType(c.Type) {
+			continue
+		}
+		// Keyed on the base type. "oilb.ukraine" missed the table and took the
+		// default, so a faction-suffixed derrick ranked level with an unknown.
+		val := capturableValue[baseTypeName(c.Type)]
 		if val == 0 {
 			val = capturableValueDefault
 		}
