@@ -279,3 +279,30 @@ func TestEnemyBuildingPositionsAreRemembered(t *testing.T) {
 		t.Error("a razed refinery is still remembered after standing on its site")
 	}
 }
+
+// GameState.Capturables is not a list of neutral objectives.
+//
+// In one game it carried the enemy's construction yard, refineries, power, a
+// SAM site and a flame tower, plus their APCs, flak trucks, heavy tanks,
+// harvesters and a tank husk - alongside four oil derricks. Everything in it is
+// capturable by something; only a few are NEUTRAL, and only those are what
+// capture_priority and the capture rules are written about. Treating the whole
+// list as neutral put yellow objective markers on enemy armour.
+func TestOnlyRealTechStructuresAreNeutral(t *testing.T) {
+	neutral := []string{"oilb", "fcom", "miss", "bio", "hosp"}
+	for _, ty := range neutral {
+		if !IsNeutralTechStructure(ty) {
+			t.Errorf("%s is a neutral tech structure and was not recognised", ty)
+		}
+	}
+	// Everything actually observed in that list which is not one.
+	for _, ty := range []string{"apc", "ftrk", "3tnk", "harv", "3tnk.husk", "proc", "powr", "ftur", "fact", "sam", "badr"} {
+		if IsNeutralTechStructure(ty) {
+			t.Errorf("%s was treated as a neutral objective", ty)
+		}
+	}
+	// Faction suffixes must not defeat it.
+	if !IsNeutralTechStructure("oilb.ukraine") {
+		t.Error("a faction-suffixed derrick was not recognised")
+	}
+}

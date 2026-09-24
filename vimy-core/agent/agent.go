@@ -388,22 +388,39 @@ func (a *Agent) sampleUnits(gs model.GameState) {
 	// Enemies carries their buildings too - the game state does not separate
 	// them - so the type decides which it is, the same way the targeting rules
 	// decide it.
+	seenEnemy := make(map[int]bool, len(gs.Enemies))
 	for _, e := range gs.Enemies {
+		seenEnemy[e.ID] = true
 		a.WAL.WriteUnit(wal.Unit{
 			Tick: gs.Tick, ID: e.ID, Type: e.Type, Side: "enemy",
 			X: e.X, Y: e.Y, HP: e.HP, Building: rules.IsKnownBuildingType(e.Type),
 		})
 	}
 
-	// Neutral capturables - oil derricks above all, at ten times the value of
-	// an unknown one in the ranking rules. They are fixed, contested and worth
-	// continuous cash, so they explain where an army went as well as any
-	// objective on the map, and capture_priority is a knob the doctrine sets
-	// blind without ever seeing where they are.
+	// Capturables, classified rather than taken at their word.
+	//
+	// The list is not what its name suggests: in one game it carried the
+	// enemy's construction yard, refineries, power, a SAM site and a flame
+	// tower, plus their APCs, flak trucks, heavy tanks, harvesters and a husk,
+	// alongside four oil derricks. Drawing all of that as neutral objectives
+	// put yellow markers on enemy armour.
+	//
+	// So only the genuine neutral tech structures are neutral; the rest are the
+	// enemy, and are emitted as such if they were not already seen this tick.
 	for _, cp := range gs.Capturables {
+		if rules.IsNeutralTechStructure(cp.Type) {
+			a.WAL.WriteUnit(wal.Unit{
+				Tick: gs.Tick, ID: cp.ID, Type: cp.Type, Side: "neutral",
+				X: cp.X, Y: cp.Y, HP: cp.HP, Building: true,
+			})
+			continue
+		}
+		if seenEnemy[cp.ID] {
+			continue // already emitted from Enemies; one row per actor per tick
+		}
 		a.WAL.WriteUnit(wal.Unit{
-			Tick: gs.Tick, ID: cp.ID, Type: cp.Type, Side: "neutral",
-			X: cp.X, Y: cp.Y, HP: cp.HP, Building: true,
+			Tick: gs.Tick, ID: cp.ID, Type: cp.Type, Side: "enemy",
+			X: cp.X, Y: cp.Y, HP: cp.HP, Building: rules.IsKnownBuildingType(cp.Type),
 		})
 	}
 

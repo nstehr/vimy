@@ -1088,6 +1088,20 @@ var capturableValue = map[string]float64{
 
 const capturableValueDefault = 2 // unknown capturable types
 
+// IsNeutralTechStructure reports whether a type is one of the genuine neutral
+// objectives, as opposed to whatever else turns up in GameState.Capturables.
+//
+// That list is not what its name suggests. In one game it carried the enemy's
+// construction yard, refineries, power, a SAM site and a flame tower, plus
+// their APCs, flak trucks, heavy tanks, harvesters and a tank husk - alongside
+// four oil derricks. Everything in it is capturable by something; only a few of
+// them are NEUTRAL, and only those are the objectives the capture rules and the
+// doctrine's capture_priority are written about.
+func IsNeutralTechStructure(t string) bool {
+	_, ok := capturableValue[baseTypeName(t)]
+	return ok
+}
+
 func (e RuleEnv) NearestCapturable() *model.Enemy {
 	return e.BestCapturable()
 }
