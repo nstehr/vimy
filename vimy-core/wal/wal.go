@@ -137,6 +137,12 @@ type Unit struct {
 	// Building separates what holds ground from what moves over it. Both are
 	// actors on the field and a map without bases on it cannot be read.
 	Building bool `json:"is_building"`
+	// Remembered marks intel rather than sight: where the AI believes something
+	// is, not where it can currently see one. GameState.Enemies carries only
+	// what is visible this instant, which is a small minority of samples, while
+	// targeting and the threat field run off memory. Drawing only the former
+	// gives an empty enemy half of the map during a battle.
+	Remembered bool `json:"remembered"`
 }
 
 // Segment is a sealed file waiting to be shipped.

@@ -47,9 +47,10 @@ type fieldView struct {
 	Poll string
 
 	Markers []fieldMarker
-	Ours    int
-	Enemy   int
-	Note    string
+	Ours     int
+	Enemy    int
+	Believed int
+	Note     string
 
 	// Side of the square viewport, in SVG units.
 	Size float64
@@ -77,8 +78,9 @@ type unitRow struct {
 	X        int    `json:"x"`
 	Y        int    `json:"y"`
 	HP       int    `json:"hp"`
-	Idle     bool   `json:"idle"`
-	Building bool   `json:"is_building"`
+	Idle       bool `json:"idle"`
+	Building   bool `json:"is_building"`
+	Remembered bool `json:"remembered"`
 }
 
 // markerClass picks the visual weight. Harvesters and buildings read
@@ -90,6 +92,9 @@ func markerClass(r unitRow) (class string, radius float64) {
 		side = "ours"
 	}
 	switch {
+	case r.Remembered:
+		// Belief, not sight: drawn hollow so it never reads as a live sighting.
+		return side + " remembered", 6
 	case r.Building:
 		return side + " building", 5
 	case strings.HasPrefix(strings.ToLower(r.Type), "harv"):
@@ -131,7 +136,7 @@ func loadField(ctx context.Context, c *ch.Client, session string, tick int) *fie
 	// The sample at or just before the requested tick, so a scrub position
 	// between samples shows the last known field rather than an empty one.
 	rows, err := ch.Query[unitRow](ctx, c,
-		`SELECT tick, unit_id, type, side, x, y, hp, idle, is_building
+		`SELECT tick, unit_id, type, side, x, y, hp, idle, is_building, remembered
 		 FROM stream_units
 		 WHERE session_id = {session:String}
 		   AND tick = (SELECT max(tick) FROM stream_units
@@ -159,9 +164,12 @@ func loadField(ctx context.Context, c *ch.Client, session string, tick int) *fie
 
 	for _, r := range rows {
 		class, radius := markerClass(r)
-		if r.Side == "ours" {
+		switch {
+		case r.Remembered:
+			v.Believed++
+		case r.Side == "ours":
 			v.Ours++
-		} else {
+		default:
 			v.Enemy++
 		}
 		v.Markers = append(v.Markers, fieldMarker{

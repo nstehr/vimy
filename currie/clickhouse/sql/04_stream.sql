@@ -150,7 +150,12 @@ CREATE TABLE IF NOT EXISTS stream_units
     idle       Bool,
     -- What holds ground versus what moves over it. A map without bases on it
     -- cannot be read.
-    is_building Bool
+    is_building Bool,
+    -- Intel rather than sight. GameState.Enemies carries only what is visible
+    -- this instant - a small minority of samples - while targeting and the
+    -- approach router run off what the AI remembers. Drawing only the visible
+    -- gives an empty enemy half of the map during a battle.
+    remembered  Bool
 )
 ENGINE = MergeTree
 -- tick first after the session: every question here is "what did the field look

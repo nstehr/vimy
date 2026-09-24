@@ -2013,6 +2013,24 @@ func updateDefenseIntel(env RuleEnv) {
 	env.Memory["enemyDefenses"] = defs
 }
 
+// RememberedEnemyBases and RememberedEnemyDefenses expose what the AI actually
+// reasons from, as opposed to what is on screen this instant.
+//
+// GameState.Enemies holds only CURRENTLY VISIBLE enemies, which over a whole
+// game is a small minority of samples - 223 rows against 12071 of ours in game
+// 175 - so a map drawn from it shows an empty enemy half while the squad is
+// fighting. Targeting, the threat field and every approach decision run off
+// this remembered intel instead, and it is the honest answer to "what does
+// Vimy think is out there".
+func RememberedEnemyBases(memory map[string]any) map[string]EnemyBaseIntel {
+	return getEnemyBases(memory)
+}
+
+// RememberedEnemyDefenses is the defences the AI still believes are standing.
+func RememberedEnemyDefenses(memory map[string]any) map[int]EnemyDefenseIntel {
+	return getEnemyDefenses(memory)
+}
+
 func getEnemyDefenses(memory map[string]any) map[int]EnemyDefenseIntel {
 	if v, ok := memory["enemyDefenses"].(map[int]EnemyDefenseIntel); ok {
 		return v

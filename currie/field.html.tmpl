@@ -71,6 +71,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
 .field .building{fill-opacity:.95}
 .field .unit{fill-opacity:.85}
 .field .harv{fill-opacity:.35}
+.field .remembered{fill:none;stroke:var(--sole);stroke-width:1.4;stroke-dasharray:3 2;opacity:.75}
 .scrub{display:flex;gap:.8rem;align-items:center;font-family:var(--mono);font-size:.72rem;color:var(--ink-3)}
 .scrub input[type=range]{flex:1;accent-color:var(--sole);height:1.4rem}
 .scrub .tick{min-width:5.5rem;text-align:right;color:var(--ink)}
@@ -119,6 +120,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
   <div class="legend">
     <span><i style="background:var(--calm)"></i>ours &mdash; {{.Ours}}</span>
     <span><i style="background:var(--sole)"></i>enemy seen &mdash; {{.Enemy}}</span>
+    <span><i style="border:1.5px dashed var(--sole);background:none"></i>believed &mdash; {{.Believed}}</span>
     {{if .Live}}
     <span class="live on">live</span>
     {{else}}
