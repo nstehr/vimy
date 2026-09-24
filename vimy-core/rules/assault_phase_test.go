@@ -365,3 +365,48 @@ func TestBaseAssaultOrdersSiegeToADifferentPlace(t *testing.T) {
 		t.Errorf("artillery holds %.1f cells out, beyond its own 20-cell gun", gap)
 	}
 }
+
+// Focus fire concentrates on what the squad can already shoot; it does not
+// chase.
+//
+// bestTargetForSquad scores from the squad position but returns anything,
+// including targets behind it, and sendAttack on a distant actor is a move
+// order in disguise. squad-focus-fire is category combat, so it acted alongside
+// the exclusive assault winner: game 173 issued 522 attack-moves at the enemy
+// base and 88 focus-fire orders elsewhere, and the squad sawtoothed roughly 23
+// cells back and forth while its membership drained 17 to 12.
+func TestFocusFireOnlyEngagesWhatIsInReach(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	units := []model.Unit{
+		{ID: 1, Type: "2tnk", X: 50, Y: 50},
+		{ID: 2, Type: "2tnk", X: 51, Y: 50},
+	}
+	run := func(enemyX, enemyY int) int {
+		mem := map[string]any{"squads": map[string]*Squad{
+			"ground-attack": {Name: "ground-attack", Domain: "ground", Role: "attack",
+				UnitIDs: []int{1, 2}, TargetSize: 2},
+		}}
+		env := RuleEnv{
+			State: model.GameState{
+				Tick: 4000, MapWidth: 128, MapHeight: 128, Units: units,
+				Enemies: []model.Enemy{{ID: 90, Type: "e1", X: enemyX, Y: enemyY, HP: 100, MaxHP: 100}},
+			},
+			Memory: mem,
+		}
+		if err := SquadFocusFire("ground-attack")(env, conn); err != nil {
+			t.Fatalf("focus fire: %v", err)
+		}
+		return len(memoryMap[int, attackOrderEntry](mem, "attackOrderSent"))
+	}
+
+	// In contact: concentrating fire is the whole point of the rule.
+	if run(54, 52) == 0 {
+		t.Error("a target four cells away was not engaged")
+	}
+	// Most of a map away: that is a chase, and the assault rules own movement.
+	if n := run(120, 120); n != 0 {
+		t.Errorf("chased a distant target: %d orders issued", n)
+	}
+}

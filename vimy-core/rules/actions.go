@@ -3673,11 +3673,36 @@ func SquadDisengage(name string) ActionFunc {
 
 // SquadFocusFire concentrates the whole squad on one high-value target rather
 // than letting each member pick its own.
+// focusFireReachCells is how close a target must be for concentrating on it to
+// be concentration rather than a chase.
+//
+// bestTargetForSquad scores from the squad's position but can return anything,
+// including something behind it, and sendAttack on a distant actor is a move
+// order wearing an attack order's clothes. squad-focus-fire is category combat,
+// so it acts ALONGSIDE the exclusive assault winner rather than competing with
+// it: game 173 issued 522 attack-moves at the enemy base and 88 focus-fire
+// orders at whatever scored best, and the squad sawtoothed between 0.07 and
+// 0.25 of the map diagonal - roughly 23 cells forward and back - while its
+// membership drained from 17 to 12. The same shape as the squad-reengage bug.
+//
+// Ten cells is past every infantry and tank weapon in the mod, so a target
+// inside it is one the squad can already shoot without relocating.
+const focusFireReachCells = 10
+
 func SquadFocusFire(name string) ActionFunc {
 	return func(env RuleEnv, conn *ipc.Connection) error {
 		target := bestTargetForSquad(env, name)
 		if target == nil {
 			return nil
+		}
+		// Concentrate on what the squad is already in contact with. Anything
+		// further is the assault rules' business, and issuing both is what
+		// makes the squad dance.
+		if cx, cy, ok := squadCentroid(env, name); ok {
+			dx, dy := float64(target.X-cx), float64(target.Y-cy)
+			if math.Hypot(dx, dy) > focusFireReachCells {
+				return nil
+			}
 		}
 		ids := squadAssaultActorIDs(env, name)
 		if len(ids) == 0 {
