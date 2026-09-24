@@ -305,9 +305,9 @@ rule produce-heavy-vehicle {
 rule produce-scout-vehicle {
   priority 465
   category produce-vehicle exclusive
+  because "the gate was `not has-enemy-intel()`, which means build a scout only while we know nothing. HasEnemyIntel is true the moment ANY enemy building has ever been sighted, so first contact switched scout production off permanently: game 176 discovered the enemy base at tick 4110 of 54820 and never fired this rule again in 5368 evaluations, finishing the game knowing the position of six enemy objects. Everything downstream followed - an empty threat field, 706 no-target-en-route, blind-at-base, and an approach router scoring every corridor clear because it had nothing to score. The intel gate was never the thing preventing scout spam either: `not has-scout()` below already caps it at one alive, and designateScout clears the designation when that one dies, so the rule re-arms on its own. Removing it gives continuous reconnaissance - keep a scout alive - which is what a human does and what scouting is for"
   do produce-scout-vehicle
   require vehicle-weight > 0.1
-  require not has-enemy-intel()
   require has-role(war-factory)
   require queue-depth(Vehicle) < 2
   require can-build-role(ranger) or can-build-role(light-tank)
