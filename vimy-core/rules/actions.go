@@ -2557,14 +2557,26 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 			if squadAssaulting(env, name) {
 				return nil
 			}
-			need := sq.TargetSize - len(sq.UnitIDs)
+			need := sq.TargetSize - len(sq.UnitIDs) - len(sq.Joining)
+			if need <= 0 {
+				return nil
+			}
 			add := min(need, len(pool))
+			joiners := make([]uint32, 0, add)
 			for i := range add {
-				sq.UnitIDs = append(sq.UnitIDs, pool[i].ID)
+				sq.Joining = append(sq.Joining, pool[i].ID)
+				joiners = append(joiners, uint32(pool[i].ID))
 			}
 			env.Memory["squads"] = squads
 			markEffect(env)
-			slog.Info("squad reinforced", "name", name, "added", add, "size", len(sq.UnitIDs), "target", sq.TargetSize)
+			slog.Info("squad reinforced", "name", name, "dispatched", add,
+				"members", len(sq.UnitIDs), "joining", len(sq.Joining), "target", sq.TargetSize)
+			// Send them to the squad rather than to the objective. They become
+			// members when they arrive, so until then they must not be counted
+			// in cohesion and must not be walked into a fight alone.
+			if cx, cy, ok := squadCentroid(env, name); ok && len(joiners) > 0 {
+				return sendAttackMove(env, conn, joiners, cx, cy)
+			}
 			return nil
 		}
 

@@ -500,8 +500,11 @@ func TestFormSquadReinforcement(t *testing.T) {
 		Memory: memory,
 	}
 
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
 	action := FormSquad("test-squad", "ground", 4, "attack")
-	err := action(env, nil)
+	err := action(env, conn)
 	if err != nil {
 		t.Fatalf("FormSquad reinforcement returned error: %v", err)
 	}
@@ -511,8 +514,11 @@ func TestFormSquadReinforcement(t *testing.T) {
 	if sq == nil {
 		t.Fatal("expected test-squad to exist")
 	}
-	if len(sq.UnitIDs) != 4 {
-		t.Errorf("expected 4 units after reinforcement, got %d", len(sq.UnitIDs))
+	// Reinforcements are dispatched, not enlisted: they join the roster once
+	// they reach the squad, so the total is what tops up to TargetSize.
+	if got := len(sq.UnitIDs) + len(sq.Joining); got != 4 {
+		t.Errorf("expected 4 units dispatched or enlisted, got %d (%d members, %d joining)",
+			got, len(sq.UnitIDs), len(sq.Joining))
 	}
 	// Original units should still be present.
 	if sq.UnitIDs[0] != 1 || sq.UnitIDs[1] != 2 {
@@ -692,4 +698,68 @@ func TestDisengagedUnitsAreNotImmediatelySentBack(t *testing.T) {
 	if ids := squadIdleActorIDs(env(1000+disengageHoldTicks+1, true), "ground-attack"); len(ids) != 2 {
 		t.Errorf("units stayed benched after the hold expired: got %d, want 2", len(ids))
 	}
+}
+
+// A joiner becomes a member when it arrives, not when it is dispatched.
+//
+// Counting it on dispatch is what let a 20-member squad sit at spread 60 with
+// ZERO members inside the clump radius: the units enlisted from base were sixty
+// cells behind by definition. That failed the clump gate, which cleared
+// Attacking, which reset the approach to step zero, which sent the squad back
+// out to the detour waypoint - a loop swinging across 45% of the map diagonal.
+func TestJoinersCountOnArrivalNotOnDispatch(t *testing.T) {
+	mem := map[string]any{"squads": map[string]*Squad{
+		"ground-attack": {
+			Name: "ground-attack", Domain: "ground", Role: "attack",
+			UnitIDs: []int{1, 2}, Joining: []int{3, 4}, TargetSize: 4,
+		},
+	}}
+	// 1 and 2 hold the line at (100,100). 3 is still walking; 4 has arrived.
+	env := RuleEnv{
+		State: model.GameState{Tick: 9000, Units: []model.Unit{
+			{ID: 1, Type: "2tnk", X: 100, Y: 100},
+			{ID: 2, Type: "2tnk", X: 102, Y: 100},
+			{ID: 3, Type: "2tnk", X: 20, Y: 20},
+			{ID: 4, Type: "2tnk", X: 104, Y: 101},
+		}},
+		Memory: mem,
+	}
+	updateSquads(env)
+	sq := getSquads(mem)["ground-attack"]
+
+	if !containsID(sq.UnitIDs, 4) {
+		t.Error("a joiner standing with the squad was not enlisted")
+	}
+	if containsID(sq.UnitIDs, 3) {
+		t.Error("a joiner 80 cells away was enlisted: it will read as a scattered squad")
+	}
+	if !containsID(sq.Joining, 3) {
+		t.Error("the distant joiner was dropped instead of kept walking")
+	}
+
+	// Cohesion must judge the squad that exists, not the one in transit.
+	env2 := RuleEnv{State: env.State, Memory: mem}
+	members, _, _ := env2.SquadClump("ground-attack", 8)
+	if members != 3 {
+		t.Errorf("clump saw %d members, want 3 - the walker must not count", members)
+	}
+
+	// A dead joiner is dropped rather than walked forever.
+	mem2 := map[string]any{"squads": map[string]*Squad{
+		"ground-attack": {Name: "ground-attack", Domain: "ground", UnitIDs: []int{1}, Joining: []int{9}, TargetSize: 2},
+	}}
+	dead := RuleEnv{State: model.GameState{Tick: 9100, Units: []model.Unit{{ID: 1, Type: "2tnk", X: 5, Y: 5}}}, Memory: mem2}
+	updateSquads(dead)
+	if got := getSquads(mem2)["ground-attack"]; len(got.Joining) != 0 {
+		t.Errorf("a dead joiner is still joining: %v", got.Joining)
+	}
+}
+
+func containsID(xs []int, v int) bool {
+	for _, x := range xs {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }

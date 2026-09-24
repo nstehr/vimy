@@ -147,8 +147,15 @@ func TestSquadReinforcesWhileTravellingButNotInContact(t *testing.T) {
 	if err := FormSquad("ground-attack", "ground", 8, "attack")(env, conn); err != nil {
 		t.Fatalf("travelling: %v", err)
 	}
-	if got := len(getSquads(mem)["ground-attack"].UnitIDs); got <= 4 {
-		t.Errorf("squad = %d members, want it to absorb recruits while travelling", got)
+	sq := getSquads(mem)["ground-attack"]
+	if got := len(sq.UnitIDs) + len(sq.Joining); got <= 4 {
+		t.Errorf("squad = %d dispatched or enlisted, want it to absorb recruits while travelling", got)
+	}
+	// The recruits are at base and the squad is not, so they must be JOINING
+	// rather than members - counting them immediately is what left a 20-member
+	// squad with zero of them inside the clump radius.
+	if len(sq.Joining) == 0 {
+		t.Error("recruits from across the map were enlisted directly, not dispatched")
 	}
 
 	// Enemy base under the squad's feet: it is in contact and must not
@@ -160,8 +167,9 @@ func TestSquadReinforcesWhileTravellingButNotInContact(t *testing.T) {
 	if err := FormSquad("ground-attack", "ground", 8, "attack")(env2, conn); err != nil {
 		t.Fatalf("in contact: %v", err)
 	}
-	if got := len(getSquads(mem2)["ground-attack"].UnitIDs); got != 4 {
-		t.Errorf("squad = %d members, want 4: a squad at the gate must not take joiners", got)
+	sq2 := getSquads(mem2)["ground-attack"]
+	if got := len(sq2.UnitIDs) + len(sq2.Joining); got != 4 {
+		t.Errorf("squad = %d, want 4: a squad at the gate must not take joiners", got)
 	}
 }
 
