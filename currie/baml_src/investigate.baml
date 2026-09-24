@@ -51,6 +51,17 @@ class FieldAtTool {
   reason string? @description("What you expect to learn.")
 }
 
+// The escape hatch from the four fixed tools.
+//
+// Those four still anticipate the question, which is the same objection that
+// retired the fixed projection. Most of the queries that actually diagnosed
+// this project were shapes nobody had named in advance.
+class QueryTool {
+  tool "query"
+  sql string @description("One SELECT against the telemetry. The connection is readonly and results are capped, so the worst a bad query costs is a turn. Use {session:String} as a parameter for the session id rather than pasting it.")
+  reason string? @description("What you expect to learn.")
+}
+
 class CompareGamesTool {
   tool "compare_games"
   reason string? @description("What you expect to learn. Use this to check whether something is particular to this game or true of the run.")
@@ -68,7 +79,7 @@ function InvestigateGameStep(
   facts: GameFacts,
   tools: string,
   history: AgentMessage[]
-) -> SquadTimelineTool | StrikeBlockersTool | FieldAtTool | CompareGamesTool | FinalInsightTool {
+) -> SquadTimelineTool | StrikeBlockersTool | FieldAtTool | CompareGamesTool | QueryTool | FinalInsightTool {
   client CustomGPT5Mini
   prompt #"
     {{ _.role("system") }}

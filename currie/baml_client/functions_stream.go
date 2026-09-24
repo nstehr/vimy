@@ -43,7 +43,7 @@ func (s *StreamValue[TStream, TFinal]) Stream() *TStream {
 }
 
 // / Streaming version of InvestigateGameStep
-func (*stream) InvestigateGameStep(ctx context.Context, facts types.GameFacts, tools string, history []types.AgentMessage, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool, types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool], error) {
+func (*stream) InvestigateGameStep(ctx context.Context, facts types.GameFacts, tools string, history []types.AgentMessage, opts ...CallOptionFunc) (<-chan StreamValue[stream_types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool, types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool], error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -84,11 +84,11 @@ func (*stream) InvestigateGameStep(ctx context.Context, facts types.GameFacts, t
 		return nil, err
 	}
 
-	channel := make(chan StreamValue[stream_types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool, types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool])
+	channel := make(chan StreamValue[stream_types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool, types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool])
 	go func() {
 		for result := range internal_channel {
 			if result.Error != nil {
-				channel <- StreamValue[stream_types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool, types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool]{
+				channel <- StreamValue[stream_types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool, types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool]{
 					IsError: true,
 					Error:   result.Error,
 				}
@@ -96,14 +96,14 @@ func (*stream) InvestigateGameStep(ctx context.Context, facts types.GameFacts, t
 				return
 			}
 			if result.HasData {
-				data := (result.Data).(types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool)
-				channel <- StreamValue[stream_types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool, types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool]{
+				data := (result.Data).(types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool)
+				channel <- StreamValue[stream_types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool, types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool]{
 					IsFinal:  true,
 					as_final: &data,
 				}
 			} else {
-				data := (result.StreamData).(stream_types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool)
-				channel <- StreamValue[stream_types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool, types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool]{
+				data := (result.StreamData).(stream_types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool)
+				channel <- StreamValue[stream_types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool, types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool]{
 					IsFinal:   false,
 					as_stream: &data,
 				}

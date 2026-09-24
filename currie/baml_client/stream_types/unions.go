@@ -21,7 +21,7 @@ import (
 	"github.com/boundaryml/baml/engine/language_client_go/pkg/cffi"
 )
 
-type Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool struct {
+type Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool struct {
 	variant string
 
 	variant_SquadTimelineTool *SquadTimelineTool
@@ -32,10 +32,12 @@ type Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrS
 
 	variant_CompareGamesTool *CompareGamesTool
 
+	variant_QueryTool *QueryTool
+
 	variant_FinalInsightTool *FinalInsightTool
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) Decode(holder *cffi.CFFIValueUnionVariant, typeMap baml.TypeMap) {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) Decode(holder *cffi.CFFIValueUnionVariant, typeMap baml.TypeMap) {
 	valueHolder := holder.Value
 	variantName := holder.ValueOptionName
 	switch variantName {
@@ -55,6 +57,10 @@ func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToo
 		u.variant = "CompareGamesTool"
 		value := baml.Decode(valueHolder).Interface().(CompareGamesTool)
 		u.variant_CompareGamesTool = &value
+	case "QueryTool":
+		u.variant = "QueryTool"
+		value := baml.Decode(valueHolder).Interface().(QueryTool)
+		u.variant_QueryTool = &value
 	case "FinalInsightTool":
 		u.variant = "FinalInsightTool"
 		value := baml.Decode(valueHolder).Interface().(FinalInsightTool)
@@ -65,7 +71,7 @@ func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToo
 	}
 }
 
-func (u Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) Encode() (*cffi.HostValue, error) {
+func (u Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) Encode() (*cffi.HostValue, error) {
 	switch u.variant {
 
 	case "SquadTimelineTool":
@@ -80,6 +86,9 @@ func (u Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineTool
 	case "CompareGamesTool":
 		return baml.EncodeValue(*u.variant_CompareGamesTool)
 
+	case "QueryTool":
+		return baml.EncodeValue(*u.variant_QueryTool)
+
 	case "FinalInsightTool":
 		return baml.EncodeValue(*u.variant_FinalInsightTool)
 
@@ -90,11 +99,11 @@ func (u Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineTool
 	return nil, fmt.Errorf("invalid union variant: %s", u.variant)
 }
 
-func (u Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) BamlTypeName() string {
-	return "Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool"
+func (u Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) BamlTypeName() string {
+	return "Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool"
 }
 
-func (u Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) MarshalJSON() ([]byte, error) {
+func (u Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) MarshalJSON() ([]byte, error) {
 	switch u.variant {
 
 	case "SquadTimelineTool":
@@ -109,6 +118,9 @@ func (u Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineTool
 	case "CompareGamesTool":
 		return json.Marshal(u.variant_CompareGamesTool)
 
+	case "QueryTool":
+		return json.Marshal(u.variant_QueryTool)
+
 	case "FinalInsightTool":
 		return json.Marshal(u.variant_FinalInsightTool)
 
@@ -117,7 +129,7 @@ func (u Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineTool
 	return nil, fmt.Errorf("invalid union variant: %s", u.variant)
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) UnmarshalJSON(data []byte) error {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) UnmarshalJSON(data []byte) error {
 	var err error
 
 	err = json.Unmarshal(data, &u.variant_SquadTimelineTool)
@@ -152,6 +164,14 @@ func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToo
 		u.variant_CompareGamesTool = nil
 	}
 
+	err = json.Unmarshal(data, &u.variant_QueryTool)
+	if err == nil {
+		u.variant = "QueryTool"
+		return nil
+	} else {
+		u.variant_QueryTool = nil
+	}
+
 	err = json.Unmarshal(data, &u.variant_FinalInsightTool)
 	if err == nil {
 		u.variant = "FinalInsightTool"
@@ -163,15 +183,15 @@ func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToo
 	return fmt.Errorf("invalid union variant: %s", string(data))
 }
 
-func Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool__NewSquadTimelineTool(v SquadTimelineTool) Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool {
+func Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool__NewSquadTimelineTool(v SquadTimelineTool) Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool {
 
-	return Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{
+	return Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool{
 		variant:                   "SquadTimelineTool",
 		variant_SquadTimelineTool: &v,
 	}
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) SetSquadTimelineTool(v SquadTimelineTool) {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) SetSquadTimelineTool(v SquadTimelineTool) {
 
 	u.variant = "SquadTimelineTool"
 	u.variant_SquadTimelineTool = &v
@@ -182,30 +202,32 @@ func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToo
 
 	u.variant_CompareGamesTool = nil
 
+	u.variant_QueryTool = nil
+
 	u.variant_FinalInsightTool = nil
 
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) IsSquadTimelineTool() bool {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) IsSquadTimelineTool() bool {
 	return u.variant == "SquadTimelineTool"
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) AsSquadTimelineTool() *SquadTimelineTool {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) AsSquadTimelineTool() *SquadTimelineTool {
 	if u.variant != "SquadTimelineTool" {
 		return nil
 	}
 	return u.variant_SquadTimelineTool
 }
 
-func Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool__NewStrikeBlockersTool(v StrikeBlockersTool) Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool {
+func Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool__NewStrikeBlockersTool(v StrikeBlockersTool) Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool {
 
-	return Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{
+	return Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool{
 		variant:                    "StrikeBlockersTool",
 		variant_StrikeBlockersTool: &v,
 	}
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) SetStrikeBlockersTool(v StrikeBlockersTool) {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) SetStrikeBlockersTool(v StrikeBlockersTool) {
 
 	u.variant = "StrikeBlockersTool"
 	u.variant_StrikeBlockersTool = &v
@@ -216,30 +238,32 @@ func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToo
 
 	u.variant_CompareGamesTool = nil
 
+	u.variant_QueryTool = nil
+
 	u.variant_FinalInsightTool = nil
 
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) IsStrikeBlockersTool() bool {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) IsStrikeBlockersTool() bool {
 	return u.variant == "StrikeBlockersTool"
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) AsStrikeBlockersTool() *StrikeBlockersTool {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) AsStrikeBlockersTool() *StrikeBlockersTool {
 	if u.variant != "StrikeBlockersTool" {
 		return nil
 	}
 	return u.variant_StrikeBlockersTool
 }
 
-func Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool__NewFieldAtTool(v FieldAtTool) Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool {
+func Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool__NewFieldAtTool(v FieldAtTool) Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool {
 
-	return Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{
+	return Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool{
 		variant:             "FieldAtTool",
 		variant_FieldAtTool: &v,
 	}
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) SetFieldAtTool(v FieldAtTool) {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) SetFieldAtTool(v FieldAtTool) {
 
 	u.variant = "FieldAtTool"
 	u.variant_FieldAtTool = &v
@@ -250,30 +274,32 @@ func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToo
 
 	u.variant_CompareGamesTool = nil
 
+	u.variant_QueryTool = nil
+
 	u.variant_FinalInsightTool = nil
 
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) IsFieldAtTool() bool {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) IsFieldAtTool() bool {
 	return u.variant == "FieldAtTool"
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) AsFieldAtTool() *FieldAtTool {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) AsFieldAtTool() *FieldAtTool {
 	if u.variant != "FieldAtTool" {
 		return nil
 	}
 	return u.variant_FieldAtTool
 }
 
-func Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool__NewCompareGamesTool(v CompareGamesTool) Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool {
+func Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool__NewCompareGamesTool(v CompareGamesTool) Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool {
 
-	return Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{
+	return Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool{
 		variant:                  "CompareGamesTool",
 		variant_CompareGamesTool: &v,
 	}
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) SetCompareGamesTool(v CompareGamesTool) {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) SetCompareGamesTool(v CompareGamesTool) {
 
 	u.variant = "CompareGamesTool"
 	u.variant_CompareGamesTool = &v
@@ -284,30 +310,68 @@ func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToo
 
 	u.variant_FieldAtTool = nil
 
+	u.variant_QueryTool = nil
+
 	u.variant_FinalInsightTool = nil
 
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) IsCompareGamesTool() bool {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) IsCompareGamesTool() bool {
 	return u.variant == "CompareGamesTool"
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) AsCompareGamesTool() *CompareGamesTool {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) AsCompareGamesTool() *CompareGamesTool {
 	if u.variant != "CompareGamesTool" {
 		return nil
 	}
 	return u.variant_CompareGamesTool
 }
 
-func Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool__NewFinalInsightTool(v FinalInsightTool) Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool {
+func Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool__NewQueryTool(v QueryTool) Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool {
 
-	return Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{
+	return Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool{
+		variant:           "QueryTool",
+		variant_QueryTool: &v,
+	}
+}
+
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) SetQueryTool(v QueryTool) {
+
+	u.variant = "QueryTool"
+	u.variant_QueryTool = &v
+
+	u.variant_SquadTimelineTool = nil
+
+	u.variant_StrikeBlockersTool = nil
+
+	u.variant_FieldAtTool = nil
+
+	u.variant_CompareGamesTool = nil
+
+	u.variant_FinalInsightTool = nil
+
+}
+
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) IsQueryTool() bool {
+	return u.variant == "QueryTool"
+}
+
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) AsQueryTool() *QueryTool {
+	if u.variant != "QueryTool" {
+		return nil
+	}
+	return u.variant_QueryTool
+}
+
+func Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool__NewFinalInsightTool(v FinalInsightTool) Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool {
+
+	return Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool{
 		variant:                  "FinalInsightTool",
 		variant_FinalInsightTool: &v,
 	}
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) SetFinalInsightTool(v FinalInsightTool) {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) SetFinalInsightTool(v FinalInsightTool) {
 
 	u.variant = "FinalInsightTool"
 	u.variant_FinalInsightTool = &v
@@ -320,13 +384,15 @@ func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToo
 
 	u.variant_CompareGamesTool = nil
 
+	u.variant_QueryTool = nil
+
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) IsFinalInsightTool() bool {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) IsFinalInsightTool() bool {
 	return u.variant == "FinalInsightTool"
 }
 
-func (u *Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) AsFinalInsightTool() *FinalInsightTool {
+func (u *Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) AsFinalInsightTool() *FinalInsightTool {
 	if u.variant != "FinalInsightTool" {
 		return nil
 	}

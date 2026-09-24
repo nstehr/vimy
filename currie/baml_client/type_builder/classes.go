@@ -719,6 +719,46 @@ func (t *MissingThingClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }
 
+type QueryToolClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *QueryToolClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *QueryToolClassView) PropertyTool() (ClassPropertyView, error) {
+	return t.inner.Property("tool")
+}
+
+func (t *QueryToolClassView) PropertySql() (ClassPropertyView, error) {
+	return t.inner.Property("sql")
+}
+
+func (t *QueryToolClassView) PropertyReason() (ClassPropertyView, error) {
+	return t.inner.Property("reason")
+}
+
+func (t *TypeBuilder) QueryTool() (*QueryToolClassView, error) {
+	bld, err := t.inner.Class("QueryTool")
+	if err != nil {
+		return nil, err
+	}
+	return &QueryToolClassView{inner: bld}, nil
+}
+
+func (t *QueryToolClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
 type SquadTimelineToolClassView struct {
 	inner baml.ClassBuilder
 }

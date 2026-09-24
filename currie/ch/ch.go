@@ -78,6 +78,17 @@ func (c *Client) Ping(ctx context.Context) error {
 // `map[string]any{"game": id}`. Nothing is interpolated into the statement,
 // which matters less today -- every caller is in this repo -- than it will
 // when the model is choosing the arguments.
+// The caps a query runs under.
+//
+// maxResultRows is what can come back: enough for a tick-banded summary or a
+// few hundred units, far short of a table. maxRowsToRead is what it may scan
+// getting there - stream_rule_evals alone holds ten million rows, and an
+// unbounded scan of it is a minute of CPU for an answer nobody can read.
+const (
+	maxResultRows = 500
+	maxRowsToRead = 50_000_000
+)
+
 func Query[T any](ctx context.Context, c *Client, sql string, params map[string]any) ([]T, error) {
 	if c == nil {
 		return nil, errors.New("ch: no client configured")
@@ -107,6 +118,16 @@ func Query[T any](ctx context.Context, c *Client, sql string, params map[string]
 	if c.Timeout > 0 {
 		q.Set("max_execution_time", fmt.Sprintf("%d", int(c.Timeout.Seconds())))
 	}
+	// Bounds, applied to every query and not only the model's. readonly=2 stops
+	// a write; these stop a SELECT that is merely enormous, which is the other
+	// half of handing the SQL to something that does not know how big a table
+	// is. result_overflow_mode=break truncates rather than erroring: a hundred
+	// rows of an answer beats a failure message.
+	q.Set("max_result_rows", fmt.Sprintf("%d", maxResultRows))
+	q.Set("result_overflow_mode", "break")
+	q.Set("max_rows_to_read", fmt.Sprintf("%d", maxRowsToRead))
+	q.Set("read_overflow_mode", "break")
+
 	for k, v := range params {
 		q.Set("param_"+k, fmt.Sprint(v))
 	}

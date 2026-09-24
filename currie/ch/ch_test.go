@@ -169,3 +169,34 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// Every query runs under caps, not only the ones a human wrote.
+//
+// readonly=2 stops a write; these stop a SELECT that is merely enormous, which
+// is the other half of handing the SQL to something that does not know how big
+// a table is. stream_rule_evals alone holds ten million rows.
+func TestQueryIsBounded(t *testing.T) {
+	f := newFake("")
+	defer f.Close()
+
+	if _, err := Query[row](context.Background(), New(f.URL, "currie", "u", "p"), `SELECT 1`, nil); err != nil {
+		t.Fatal(err)
+	}
+	for k, want := range map[string]string{
+		"max_result_rows":      "500",
+		"result_overflow_mode": "break",
+		"read_overflow_mode":   "break",
+	} {
+		if got := f.last.Get(k); got != want {
+			t.Errorf("%s = %q, want %q", k, got, want)
+		}
+	}
+	if f.last.Get("max_rows_to_read") == "" {
+		t.Error("no scan cap: an unbounded read of the eval stream is a minute of CPU")
+	}
+	// Truncating beats failing: a hundred rows of an answer is worth more than
+	// an error message, and the model cannot see how big a table was.
+	if f.last.Get("result_overflow_mode") != "break" {
+		t.Error("overflow must truncate rather than error")
+	}
+}

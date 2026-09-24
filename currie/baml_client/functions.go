@@ -21,7 +21,7 @@ import (
 	"github.com/nstehr/vimy/currie/baml_client/types"
 )
 
-func InvestigateGameStep(ctx context.Context, facts types.GameFacts, tools string, history []types.AgentMessage, opts ...CallOptionFunc) (types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool, error) {
+func InvestigateGameStep(ctx context.Context, facts types.GameFacts, tools string, history []types.AgentMessage, opts ...CallOptionFunc) (types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool, error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -65,33 +65,33 @@ func InvestigateGameStep(ctx context.Context, facts types.GameFacts, tools strin
 	if callOpts.onTick == nil {
 		result, err := bamlRuntime.CallFunction(ctx, "InvestigateGameStep", encoded, callOpts.onTick)
 		if err != nil {
-			return types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{}, err
+			return types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool{}, err
 		}
 
 		if result.Error != nil {
-			return types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{}, result.Error
+			return types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool{}, result.Error
 		}
 
-		casted := (result.Data).(types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool)
+		casted := (result.Data).(types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool)
 
 		return casted, nil
 	} else {
 		channel, err := bamlRuntime.CallFunctionStream(ctx, "InvestigateGameStep", encoded, callOpts.onTick)
 		if err != nil {
-			return types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{}, err
+			return types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool{}, err
 		}
 
 		for result := range channel {
 			if result.Error != nil {
-				return types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{}, result.Error
+				return types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool{}, result.Error
 			}
 
 			if result.HasData {
-				return result.Data.(types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool), nil
+				return result.Data.(types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool), nil
 			}
 		}
 
-		return types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{}, fmt.Errorf("No data returned from stream")
+		return types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool{}, fmt.Errorf("No data returned from stream")
 	}
 }
 

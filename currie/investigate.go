@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 
 	"github.com/nstehr/vimy/currie/baml_client"
@@ -167,6 +168,31 @@ field_at — every actor at one tick, with the threat map: ours, enemies seen,
   approach router scores corridors against. An empty threat field means nothing
   was scouted, NOT that the ground was safe.
 
+query — one SELECT against the telemetry, for anything the tools above do not
+  answer. The connection is read-only and results are capped, so a bad query
+  costs a turn and nothing else. Pass the session id as {session:String}.
+
+  stream_units(session_id, tick, unit_id, type, side, x, y, hp, idle,
+    is_building, remembered) - every actor at a sampled tick, 20 ticks apart.
+    side is ours|enemy|neutral. remembered means the AI believes it is there
+    rather than currently seeing it.
+  stream_events(session_id, tick, kind, squad, reason, members, idle, near,
+    spread, attrs) - kind is rally|transit|strike-blocked|approach. members and
+    spread mean the same for every kind; idle and near do NOT - idle is the
+    subset an order can reach (rally), near is the subset inside the cohesion
+    radius (transit). attrs['target_fraction'] is distance to target over the
+    map diagonal.
+  stream_threat(session_id, tick, col, row, value) - the danger map, sparse,
+    on a 32x32 grid, sampled every 200 ticks.
+  stream_rule_evals(session_id, tick, rule, rule_set, state, fired, skipped) -
+    every rule evaluation, unsampled. Ten million rows; always filter by
+    session and rule.
+  stream_sessions(session_id, started_at, game_id, revision, modified,
+    terrain...) - revision is the sidecar build, which says whether a fix was
+    in this game.
+  games(id, duration_ticks, won, engine_buildings_killed, engine_earned,
+    engine_kills_cost, engine_deaths_cost, our_army_peak, infantry_lost...)
+
 compare_games — the same headline numbers across recent games, to tell what is
   particular to this one from what is true of the run. Income per tick has
   predicted the outcome in every game measured.
@@ -174,7 +200,7 @@ compare_games — the same headline numbers across recent games, to tell what is
 
 // run executes whichever tool the model picked. Returns the tool name, the
 // model's stated reason, and the result to feed back.
-func (iv *investigator) run(ctx context.Context, session string, res types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool) (string, string, string) {
+func (iv *investigator) run(ctx context.Context, session string, res types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool) (string, string, string) {
 	switch {
 	case res.AsSquadTimelineTool() != nil:
 		return "squad_timeline", deref(res.AsSquadTimelineTool().Reason), iv.squadTimeline(ctx, session)
@@ -189,6 +215,9 @@ func (iv *investigator) run(ctx context.Context, session string, res types.Union
 			tick = int(*t.Tick)
 		}
 		return "field_at", deref(t.Reason), iv.fieldAt(ctx, session, tick)
+	case res.AsQueryTool() != nil:
+		t := res.AsQueryTool()
+		return "query", deref(t.Reason), iv.rawQuery(ctx, session, t.Sql)
 	case res.AsCompareGamesTool() != nil:
 		return "compare_games", deref(res.AsCompareGamesTool().Reason), iv.compareGames(ctx)
 	}
@@ -391,4 +420,53 @@ func (iv *investigator) settled(ctx context.Context, session string) bool {
 		return false
 	}
 	return r.Quiet >= settleWindow
+}
+
+// rawQuery runs the model's own SELECT.
+//
+// The guards are the database's, not a regex over the SQL: the client connects
+// readonly=2, which permits SELECT and refuses everything that writes, and caps
+// both the rows returned and the rows scanned. A string check would be one
+// clever encoding away from useless; the server-side setting is not.
+//
+// Results come back as generic rows because the shape is whatever was asked
+// for. An error is returned to the model rather than swallowed - a failed query
+// it can see is a query it can fix, and it has turns to spare for that.
+func (iv *investigator) rawQuery(ctx context.Context, session, sql string) string {
+	if iv.ch == nil {
+		return "no ClickHouse configured."
+	}
+	if strings.TrimSpace(sql) == "" {
+		return "empty query."
+	}
+	rows, err := ch.Query[map[string]any](ctx, iv.ch, sql, map[string]any{"session": session})
+	if err != nil {
+		return "query failed: " + err.Error() + "\nCheck the column names against the schema above, and remember the connection is read-only."
+	}
+	if len(rows) == 0 {
+		return "no rows. That is an answer: the thing asked about did not happen, or the filter excluded it."
+	}
+
+	// Column order is not stable across a map, so take it from the first row
+	// and sort it: an unstable header makes two runs of the same query look
+	// like different results.
+	cols := make([]string, 0, len(rows[0]))
+	for k := range rows[0] {
+		cols = append(cols, k)
+	}
+	sort.Strings(cols)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%d rows.\n", len(rows))
+	b.WriteString(strings.Join(cols, " | "))
+	b.WriteString("\n")
+	for _, r := range rows {
+		parts := make([]string, 0, len(cols))
+		for _, c := range cols {
+			parts = append(parts, fmt.Sprint(r[c]))
+		}
+		b.WriteString(strings.Join(parts, " | "))
+		b.WriteString("\n")
+	}
+	return b.String()
 }

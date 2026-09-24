@@ -47,6 +47,8 @@ var typeMap = map[string]reflect.Type{
 	"STREAM_TYPES.Insight":            reflect.TypeOf(stream_types.Insight{}),
 	"TYPES.MissingThing":              reflect.TypeOf(types.MissingThing{}),
 	"STREAM_TYPES.MissingThing":       reflect.TypeOf(stream_types.MissingThing{}),
+	"TYPES.QueryTool":                 reflect.TypeOf(types.QueryTool{}),
+	"STREAM_TYPES.QueryTool":          reflect.TypeOf(stream_types.QueryTool{}),
 	"TYPES.SquadTimelineTool":         reflect.TypeOf(types.SquadTimelineTool{}),
 	"STREAM_TYPES.SquadTimelineTool":  reflect.TypeOf(stream_types.SquadTimelineTool{}),
 	"TYPES.StrikeBlockersTool":        reflect.TypeOf(types.StrikeBlockersTool{}),
@@ -54,7 +56,7 @@ var typeMap = map[string]reflect.Type{
 	"TYPES.TunableGate":               reflect.TypeOf(types.TunableGate{}),
 	"STREAM_TYPES.TunableGate":        reflect.TypeOf(stream_types.TunableGate{}),
 
-	"TYPES.CompareGamesTool__FieldAtTool__FinalInsightTool__SquadTimelineTool__StrikeBlockersTool": reflect.TypeOf(types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{}),
+	"TYPES.CompareGamesTool__FieldAtTool__FinalInsightTool__QueryTool__SquadTimelineTool__StrikeBlockersTool": reflect.TypeOf(types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool{}),
 
-	"STREAM_TYPES.CompareGamesTool__FieldAtTool__FinalInsightTool__SquadTimelineTool__StrikeBlockersTool": reflect.TypeOf(stream_types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{}),
+	"STREAM_TYPES.CompareGamesTool__FieldAtTool__FinalInsightTool__QueryTool__SquadTimelineTool__StrikeBlockersTool": reflect.TypeOf(stream_types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool{}),
 }

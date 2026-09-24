@@ -998,6 +998,60 @@ func (c MissingThing) BamlTypeName() string {
 	return "MissingThing"
 }
 
+type QueryTool struct {
+	Tool   string  `json:"tool"`
+	Sql    string  `json:"sql"`
+	Reason *string `json:"reason"`
+}
+
+func (c *QueryTool) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "QueryTool" {
+		panic(fmt.Sprintf("expected QueryTool, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "tool":
+			c.Tool = baml.Decode(valueHolder).Interface().(string)
+
+		case "sql":
+			c.Sql = baml.Decode(valueHolder).Interface().(string)
+
+		case "reason":
+			c.Reason = baml.Decode(valueHolder).Interface().(*string)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class QueryTool", key))
+
+		}
+	}
+
+}
+
+func (c QueryTool) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["tool"] = c.Tool
+
+	fields["sql"] = c.Sql
+
+	fields["reason"] = c.Reason
+
+	return baml.EncodeClass("QueryTool", fields, nil)
+}
+
+func (c QueryTool) BamlTypeName() string {
+	return "QueryTool"
+}
+
 type SquadTimelineTool struct {
 	Tool   string  `json:"tool"`
 	Reason *string `json:"reason"`

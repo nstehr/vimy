@@ -25,8 +25,8 @@ type parse struct{}
 
 var Parse = &parse{}
 
-// / Parse version of InvestigateGameStep (Takes in string and returns types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool)
-func (*parse) InvestigateGameStep(text string, opts ...CallOptionFunc) (types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool, error) {
+// / Parse version of InvestigateGameStep (Takes in string and returns types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool)
+func (*parse) InvestigateGameStep(text string, opts ...CallOptionFunc) (types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool, error) {
 
 	var callOpts callOption
 	for _, opt := range opts {
@@ -64,10 +64,10 @@ func (*parse) InvestigateGameStep(text string, opts ...CallOptionFunc) (types.Un
 
 	result, err := bamlRuntime.CallFunctionParse(context.Background(), "InvestigateGameStep", encoded)
 	if err != nil {
-		return types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool{}, err
+		return types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool{}, err
 	}
 
-	casted := (result).(types.Union5CompareGamesToolOrFieldAtToolOrFinalInsightToolOrSquadTimelineToolOrStrikeBlockersTool)
+	casted := (result).(types.Union6CompareGamesToolOrFieldAtToolOrFinalInsightToolOrQueryToolOrSquadTimelineToolOrStrikeBlockersTool)
 
 	return casted, nil
 }
