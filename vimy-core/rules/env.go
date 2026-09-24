@@ -2089,23 +2089,36 @@ const openEnoughThreshold = 1.0
 // routing. False when data is missing, the direct corridor is already open, or
 // no flank is meaningfully cleaner.
 func (e RuleEnv) BestApproachAxis(destX, destY int) (int, int, bool) {
-	return e.bestApproachAxisWithField(destX, destY, e.ThreatField())
+	x, y, ok, why, direct, best := e.bestApproachAxisWithField(destX, destY, e.ThreatField())
+	// Only the ground side is recorded. Four outcomes look identical from the
+	// call site - it returns false three different ways - so "the squad walked
+	// the front door" could not be told from "it checked and the front door was
+	// the best option". Game 172 walked into flame towers repeatedly while
+	// having observed exactly one of them, which is the no-intel case, but
+	// nothing in the archive could say so.
+	recordApproachChoice(e, why, direct, best)
+	return x, y, ok
 }
 
 // BestAirApproachAxis is the AA-only counterpart of BestApproachAxis.
 func (e RuleEnv) BestAirApproachAxis(destX, destY int) (int, int, bool) {
-	return e.bestApproachAxisWithField(destX, destY, e.AirThreatField())
+	x, y, ok, _, _, _ := e.bestApproachAxisWithField(destX, destY, e.AirThreatField())
+	return x, y, ok
 }
 
-func (e RuleEnv) bestApproachAxisWithField(destX, destY int, field *model.ThreatField) (int, int, bool) {
+// bestApproachAxisWithField also reports WHY, so the three different ways of
+// returning false can be told apart afterwards.
+func (e RuleEnv) bestApproachAxisWithField(destX, destY int, field *model.ThreatField) (int, int, bool, string, float64, float64) {
 	if e.Terrain == nil || e.Terrain.CellW <= 0 || e.Terrain.CellH <= 0 || field == nil {
-		return 0, 0, false
+		return 0, 0, false, ApproachNoData, 0, 0
 	}
 	centX, centY := e.BuildingCentroid()
 
 	directScore := corridorThreatSum(field, e.Terrain, centX, centY, destX, destY)
 	if directScore < openEnoughThreshold {
-		return 0, 0, false
+		// Below the threshold the corridor counts as open and the whole
+		// mechanism switches off. With one defence observed it is always below.
+		return 0, 0, false, ApproachOpen, directScore, 0
 	}
 
 	radiusMap := approachAxisRadiusCells * maxInt(e.Terrain.CellW, e.Terrain.CellH)
@@ -2128,9 +2141,9 @@ func (e RuleEnv) bestApproachAxisWithField(destX, destY int, field *model.Threat
 
 	// A margin, not a strict win: near-tied candidates would re-route constantly.
 	if bestScore >= directScore*0.8 {
-		return 0, 0, false
+		return 0, 0, false, ApproachNoBetterFlank, directScore, bestScore
 	}
-	return bestX, bestY, true
+	return bestX, bestY, true, ApproachDetour, directScore, bestScore
 }
 
 // corridorThreatSum sums threat field cells in the bounding box between two

@@ -214,3 +214,39 @@ func TestNudgeMovesOnlyTheStragglers(t *testing.T) {
 		}
 	}
 }
+
+// The three ways of declining a detour must be distinguishable.
+//
+// BestApproachAxis returns false when it has no data, when the direct corridor
+// scores as already open, and when no flank is meaningfully cleaner. From the
+// call site all three look the same: the squad walks the direct line into the
+// defences. Game 172 did exactly that while having observed one flame tower,
+// which is the no-intel case wearing the already-open case's clothes.
+func TestApproachChoiceIsRecordedWithItsReason(t *testing.T) {
+	// No terrain: the no-data path.
+	env := RuleEnv{Memory: map[string]any{}, State: model.GameState{MapWidth: 128, MapHeight: 128}}
+	if _, _, ok := env.BestApproachAxis(50, 50); ok {
+		t.Fatal("expected no detour without terrain")
+	}
+	if got := env.ApproachChoices()[ApproachNoData]; got != 1 {
+		t.Errorf("no-data count = %d, want 1", got)
+	}
+
+	// Terrain present and nothing remembered: every corridor scores zero, which
+	// is the case that has been silently reading as "the front door is fine".
+	terrain := &model.TerrainGrid{Cols: 32, Rows: 32, CellW: 4, CellH: 4}
+	open := RuleEnv{
+		Memory:  map[string]any{},
+		State:   model.GameState{MapWidth: 128, MapHeight: 128, Buildings: []model.Building{{ID: 1, X: 10, Y: 10}}},
+		Terrain: terrain,
+	}
+	if _, _, ok := open.BestApproachAxis(100, 100); ok {
+		t.Fatal("expected no detour with an empty threat field")
+	}
+	if got := open.ApproachChoices()[ApproachOpen]; got != 1 {
+		t.Errorf("already-open count = %d, want 1 — this is the no-intel case and must be visible", got)
+	}
+	if got := open.ApproachChoices()[ApproachNoData]; got != 0 {
+		t.Errorf("no-data leaked into a run that had terrain: %d", got)
+	}
+}

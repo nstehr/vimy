@@ -147,6 +147,49 @@ type rallyShape struct {
 	SpreadSum  int
 }
 
+// Why the squad did or did not route around the defences on its way in.
+//
+// BestApproachAxis returns false three different ways and true once, and from
+// the call site they are indistinguishable - the squad simply walks the direct
+// line. Game 172 was toasted entering the base while having observed ONE flame
+// tower and one SAM; with that little intel every corridor scores under
+// openEnoughThreshold, the mechanism declares the front door already open and
+// switches itself off. That is an intel failure, not a routing failure, and
+// nothing recorded could tell them apart.
+const (
+	ApproachNoData        = "no-data"
+	ApproachOpen          = "already-open"
+	ApproachNoBetterFlank = "no-better-flank"
+	ApproachDetour        = "detour"
+)
+
+type approachChoices struct{ Counts map[string]int }
+
+// recordApproachChoice counts one approach decision and emits it with the
+// corridor scores, so "open because genuinely open" can be separated from
+// "open because we have seen nothing".
+func recordApproachChoice(env RuleEnv, why string, direct, best float64) {
+	emit(env, wal.Event{
+		Kind: "approach", Reason: why,
+		Attrs: map[string]float64{"direct": direct, "best": best},
+	})
+	c, _ := env.Memory["approachChoices"].(*approachChoices)
+	if c == nil {
+		c = &approachChoices{Counts: map[string]int{}}
+		env.Memory["approachChoices"] = c
+	}
+	c.Counts[why]++
+}
+
+// ApproachChoices is the per-game tally, for the postmortem.
+func (e RuleEnv) ApproachChoices() map[string]int {
+	c, _ := e.Memory["approachChoices"].(*approachChoices)
+	if c == nil {
+		return nil
+	}
+	return c.Counts
+}
+
 // recordRallyShape notes one rally: how many members the squad had, how many
 // of them could actually be commanded, how far the furthest had strayed from
 // the centroid, and how many were inside the radius the gate actually measures.
