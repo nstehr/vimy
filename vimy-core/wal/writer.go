@@ -176,6 +176,7 @@ func (l *Log) run(opt LogOptions) {
 		EvalsPrefix:  NewSegmentWriter(l.dir, EvalsPrefix, opt.RowsPerSegment, opt.MaxAge),
 		EventsPrefix: NewSegmentWriter(l.dir, EventsPrefix, opt.RowsPerSegment, opt.MaxAge),
 		UnitsPrefix:  NewSegmentWriter(l.dir, UnitsPrefix, opt.RowsPerSegment, opt.MaxAge),
+		ThreatPrefix: NewSegmentWriter(l.dir, ThreatPrefix, opt.RowsPerSegment, opt.MaxAge),
 	}
 	defer func() {
 		for _, w := range writers {
@@ -221,6 +222,9 @@ func (l *Log) WriteRow(r Row) { l.offer(EvalsPrefix, r) }
 // WriteUnit queues one unit sample. Never blocks, and drops under pressure
 // like every other stream: a missing frame is a gap in a replay, not a fault.
 func (l *Log) WriteUnit(u Unit) { l.offer(UnitsPrefix, u) }
+
+// WriteThreat queues one zone of the danger map. Never blocks.
+func (l *Log) WriteThreat(t Threat) { l.offer(ThreatPrefix, t) }
 
 // WriteEvent queues one event. Never blocks.
 func (l *Log) WriteEvent(e Event) { l.offer(EventsPrefix, e) }

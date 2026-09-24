@@ -300,6 +300,11 @@ var streams = map[string]streamSpec{
 		columns: "tick, kind, squad, reason, members, idle, near, spread, attrs",
 		input:   "tick UInt32, kind String, squad String, reason String, members Int32, idle Int32, near Int32, spread Int32, attrs Map(String, Float64)",
 	},
+	wal.ThreatPrefix: {
+		table:   "stream_threat",
+		columns: "tick, col, row, value",
+		input:   "tick UInt32, col UInt16, row UInt16, value Float32",
+	},
 	wal.UnitsPrefix: {
 		table:   "stream_units",
 		columns: "tick, unit_id, type, side, x, y, hp, idle, is_building, remembered",

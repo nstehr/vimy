@@ -56,6 +56,12 @@ const (
 	EvalsPrefix  = "evals-"
 	EventsPrefix = "events-"
 
+	// ThreatPrefix carries the AI's own danger map: the field that decides
+	// whether an approach detours or drives straight in. Sparse - only zones
+	// carrying threat - because most of the map is empty and an empty one is
+	// the interesting case, not a gap.
+	ThreatPrefix = "threat-"
+
 	// UnitsPrefix carries one row per unit per sampled state: where everything
 	// on the field was, ours and theirs. Every diagnosis this telemetry has
 	// supported so far has been made from scalars - spread, members, a distance
@@ -158,6 +164,20 @@ type Unit struct {
 	Remembered bool `json:"remembered"`
 }
 
+// Threat is one zone of the danger map at one sampled tick.
+//
+// This is the field BestApproachAxis scores corridors against, so it is the
+// difference between "the front door was genuinely the best way in" and "we
+// had seen nothing, so every corridor scored zero and the detour switched
+// itself off". The latter cost an evening and a squad walked into flame towers
+// it had never sighted. Drawn, it is obvious at a glance.
+type Threat struct {
+	Tick  int     `json:"tick"`
+	Col   int     `json:"col"`
+	Row   int     `json:"row"`
+	Value float64 `json:"value"`
+}
+
 // Segment is a sealed file waiting to be shipped.
 type Segment struct {
 	Session string // session id, i.e. the directory name
@@ -187,7 +207,7 @@ func SegmentName(prefix string, seq int) string {
 // segment at all.
 func StreamOf(name string) string {
 	name = strings.TrimSuffix(name, CompressedExt)
-	for _, p := range []string{EvalsPrefix, EventsPrefix, UnitsPrefix} {
+	for _, p := range []string{EvalsPrefix, EventsPrefix, UnitsPrefix, ThreatPrefix} {
 		if strings.HasPrefix(name, p) && strings.HasSuffix(name, SegmentExt) {
 			return p
 		}

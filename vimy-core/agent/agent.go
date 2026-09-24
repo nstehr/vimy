@@ -227,6 +227,7 @@ func (a *Agent) HandleGameState(env ipc.Envelope) (*ipc.Envelope, error) {
 	}
 
 	a.sampleUnits(gs)
+	a.sampleThreat(gs)
 
 	unitTypes := make(map[string]int)
 	for _, u := range gs.Units {
@@ -307,6 +308,41 @@ func (a *Agent) watchForStall(poll, after time.Duration) {
 				slog.Error("no game state processed since the handshake — the sidecar is not driving this game",
 					"player", a.Player, "idle", idle.Round(time.Second))
 				warned = true
+			}
+		}
+	}
+}
+
+// threatSampleTicks is how often the danger map is written down.
+//
+// Far coarser than the unit feed because threat only moves when intel does - a
+// defence sighted, a base found, one of ours dying somewhere new - and those
+// are rare. Two hundred ticks is about 500 samples across a long game, and the
+// field is sparse, so the whole thing is a few tens of thousands of rows.
+const threatSampleTicks = 200
+
+// sampleThreat records the field BestApproachAxis scores corridors against.
+//
+// It is the difference between "the front door was genuinely the best way in"
+// and "we had seen nothing, so every corridor scored zero and the detour
+// switched itself off". Establishing which cost an evening and a new counter;
+// drawn on the map it is a glance.
+func (a *Agent) sampleThreat(gs model.GameState) {
+	if a.WAL == nil || a.terrain == nil || gs.Tick%threatSampleTicks != 0 {
+		return
+	}
+	a.Engine.LockMemory()
+	f := rules.ThreatFieldFor(a.Engine.Memory, a.terrain, gs)
+	a.Engine.UnlockMemory()
+	if f == nil {
+		return
+	}
+	// Sparse on purpose: most zones are empty, and an empty field is the
+	// finding rather than a gap in the data.
+	for row := 0; row < f.Rows; row++ {
+		for col := 0; col < f.Cols; col++ {
+			if v := f.At(col, row); v > 0 {
+				a.WAL.WriteThreat(wal.Threat{Tick: gs.Tick, Col: col, Row: row, Value: v})
 			}
 		}
 	}

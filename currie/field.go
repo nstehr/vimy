@@ -36,11 +36,20 @@ type fieldMarker struct {
 type fieldZone struct {
 	X, Y, W, H float64
 	Class      string
+	// Opacity is set only for the threat overlay, where intensity is the point:
+	// where the danger is concentrated, not merely where it is non-zero.
+	Opacity string
 }
 
 type fieldView struct {
 	Session string
 	Tick    int
+
+	// The danger map the approach router actually reads. An empty one is the
+	// finding, not a gap: it means nothing has been scouted and every corridor
+	// scores clear.
+	Threat    []fieldZone
+	ThreatMax float64
 
 	// The ground. The sidecar has had this grid since it gained terrain
 	// awareness and nothing ever drew it, so every map of a game so far has
@@ -139,6 +148,7 @@ func loadField(ctx context.Context, c *ch.Client, session string, tick int) *fie
 		return v
 	}
 	v.loadTerrain(ctx, c, session)
+	v.loadThreat(ctx, c, session, tick)
 	v.Lo, v.Hi, v.Stride = ext.Lo, ext.Hi, fieldScrubStride
 	// tick <= 0 means "wherever the game is now", which is also what a live
 	// frame asks for on every poll.
@@ -274,3 +284,54 @@ func (v *fieldView) loadTerrain(ctx context.Context, c *ch.Client, session strin
 		}
 	}
 }
+
+type threatCell struct {
+	Col   int     `json:"col"`
+	Row   int     `json:"row"`
+	Value float64 `json:"value"`
+}
+
+// loadThreat paints the danger map for the nearest sample at or before the
+// tick. Opacity is scaled to the frame's own maximum rather than an absolute:
+// the interesting question is where the danger is concentrated, and an absolute
+// scale makes an early game with one sighting look identical to a blank one.
+func (v *fieldView) loadThreat(ctx context.Context, c *ch.Client, session string, tick int) {
+	if v.TerrainSpan <= 0 {
+		return
+	}
+	cells, err := ch.Query[threatCell](ctx, c,
+		`SELECT col, row, value FROM stream_threat
+		 WHERE session_id = {session:String}
+		   AND tick = (SELECT max(tick) FROM stream_threat
+		               WHERE session_id = {session:String} AND tick <= {tick:UInt32})`,
+		map[string]any{"session": session, "tick": tick})
+	if err != nil || len(cells) == 0 {
+		return
+	}
+	for _, c := range cells {
+		if c.Value > v.ThreatMax {
+			v.ThreatMax = c.Value
+		}
+	}
+	// Zone size comes from the terrain grid, which shares this geometry.
+	zw := fieldSize / float64(threatCols)
+	zh := fieldSize / float64(threatRows)
+	for _, cell := range cells {
+		// Relative to this frame's own maximum, not an absolute: an early game
+		// with a single sighting would otherwise be indistinguishable from a
+		// blank field, and that distinction is the whole reason to draw it.
+		share := cell.Value / v.ThreatMax
+		v.Threat = append(v.Threat, fieldZone{
+			X: float64(cell.Col) * zw, Y: float64(cell.Row) * zh, W: zw + .5, H: zh + .5,
+			Class:   "threat",
+			Opacity: strconv.FormatFloat(0.10+0.45*share, 'f', 3, 64),
+		})
+	}
+}
+
+// The threat field is rastered onto the terrain grid, which is fixed at 32x32
+// whatever the map size.
+const (
+	threatCols = 32
+	threatRows = 32
+)

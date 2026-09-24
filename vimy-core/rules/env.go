@@ -2061,6 +2061,16 @@ func updateDefenseIntel(env RuleEnv) {
 	env.Memory["enemyDefenses"] = defs
 }
 
+// ThreatFieldFor computes the danger map from outside the rule loop, so
+// telemetry can record what the router is actually reading. Same inputs the
+// rules use; nil when there is no terrain to raster onto.
+func ThreatFieldFor(memory map[string]any, terrain *model.TerrainGrid, state model.GameState) *model.ThreatField {
+	if terrain == nil {
+		return nil
+	}
+	return RuleEnv{Memory: memory, Terrain: terrain, State: state}.ThreatField()
+}
+
 func getEnemyStructures(memory map[string]any) map[int]EnemyDefenseIntel {
 	if v, ok := memory["enemyStructures"].(map[int]EnemyDefenseIntel); ok {
 		return v

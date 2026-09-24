@@ -162,3 +162,27 @@ ENGINE = MergeTree
 -- like at time T", and a replay scans consecutive ticks.
 ORDER BY (session_id, tick, unit_id)
 SETTINGS non_replicated_deduplication_window = 1000;
+
+-- stream_threat: the AI's own danger map, sparse.
+--
+-- This is the field BestApproachAxis scores corridors against, so it decides
+-- whether an approach detours around the defences or drives straight in. It is
+-- built from REMEMBERED defences, which means an unscouted base scores zero and
+-- reads as safe: game 173 had observed one flame tower, every corridor scored
+-- 0.00 against a threshold of 1.0, the detour switched itself off and the squad
+-- walked into towers it had never seen. Establishing that took an evening and a
+-- new counter. Drawn on the map it is a glance.
+--
+-- Sparse because most zones are empty and an empty field is the finding, not a
+-- gap. Sampled far more coarsely than units: threat only moves when intel does.
+CREATE TABLE IF NOT EXISTS stream_threat
+(
+    session_id LowCardinality(String),
+    tick       UInt32,
+    col        UInt16,
+    row        UInt16,
+    value      Float32
+)
+ENGINE = MergeTree
+ORDER BY (session_id, tick, row, col)
+SETTINGS non_replicated_deduplication_window = 1000;
