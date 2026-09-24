@@ -25,3 +25,38 @@ func TestToolsDistinguishAbsentTelemetryFromQuiet(t *testing.T) {
 		}
 	}
 }
+
+// A feed that was not running is not an empty map.
+//
+// The first live investigation concluded that game 174 lost for want of
+// scouting, on the strength of this tool reporting an empty threat map. The
+// threat emitter did not exist when that game was played: zero rows meant no
+// feed, and the tool asserted it meant no intel. Absence of data presented as
+// evidence - the exact error the tool menu warns the model about.
+func TestEmptyFeedIsNotAnEmptyMap(t *testing.T) {
+	iv := &investigator{ch: nil}
+	got := iv.fieldAt(t.Context(), "", 1000)
+	if got != noTelemetry {
+		t.Fatalf("no client: %q", got)
+	}
+	// The distinction the tool must draw, stated so a future edit that collapses
+	// the two branches fails here rather than in a conclusion.
+	for _, want := range []string{"NOT RECORDED", "Do not read this as an empty map"} {
+		if !containsStr(fieldAtAbsentFeedNote, want) {
+			t.Errorf("the absent-feed note has lost %q", want)
+		}
+	}
+}
+
+func containsStr(hay, needle string) bool {
+	return len(hay) >= len(needle) && (hay == needle || indexOf(hay, needle) >= 0)
+}
+
+func indexOf(hay, needle string) int {
+	for i := 0; i+len(needle) <= len(hay); i++ {
+		if hay[i:i+len(needle)] == needle {
+			return i
+		}
+	}
+	return -1
+}

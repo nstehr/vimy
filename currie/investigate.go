@@ -154,6 +154,10 @@ func (iv *investigator) run(ctx context.Context, session string, res types.Union
 	return "", "", ""
 }
 
+// fieldAtAbsentFeedNote is what a missing feed says, kept as a constant so the
+// distinction between "not recorded" and "recorded and empty" is testable.
+const fieldAtAbsentFeedNote = "threat map: NOT RECORDED for this game. The feed did not exist when it was played, so nothing can be concluded about what had or had not been scouted. Do not read this as an empty map.\n"
+
 // noTelemetry is returned rather than an empty result so the model knows the
 // difference between "nothing happened" and "this game predates the feed".
 const noTelemetry = "no telemetry for this game: it was played before the stream existed, or the shipper was not running. Do not read this as an absence of activity."
@@ -236,10 +240,24 @@ func (iv *investigator) fieldAt(ctx context.Context, session string, tick int) s
 	if err != nil || len(rows) == 0 {
 		return fmt.Sprintf("no field sample at or before tick %d.", tick)
 	}
+	// Whether the feed ran at all, before reading anything into a zero.
+	//
+	// The first live investigation concluded that game 174 failed for want of
+	// scouting, on the strength of this tool reporting an empty threat map.
+	// The threat emitter did not exist when that game was played. Zero rows
+	// meant no feed, and the tool asserted it meant no intel - absence of data
+	// presented as evidence, which is the exact error the tool menu warns the
+	// model about.
 	type trow struct {
 		Zones int     `json:"zones"`
 		Peak  float64 `json:"peak"`
 	}
+	type anyrow struct {
+		N int `json:"n"`
+	}
+	ever, _ := ch.One[anyrow](ctx, iv.ch,
+		`SELECT count() AS n FROM stream_threat WHERE session_id = {session:String}`,
+		map[string]any{"session": session})
 	th, _ := ch.One[trow](ctx, iv.ch,
 		`SELECT count() AS zones, round(max(value),2) AS peak FROM stream_threat
 		 WHERE session_id = {session:String}
@@ -259,11 +277,13 @@ func (iv *investigator) fieldAt(ctx context.Context, session string, tick int) s
 		}
 		fmt.Fprintf(&b, "%s %s: %d\n", r.Side, kind, r.N)
 	}
-	fmt.Fprintf(&b, "threat map: %d zones carrying danger, peak %.2f. ", th.Zones, th.Peak)
-	if th.Zones == 0 {
-		b.WriteString("An empty threat map means nothing had been scouted, so the approach router saw every corridor as clear. That is ignorance, not safety.\n")
-	} else {
-		b.WriteString("\n")
+	switch {
+	case ever.N == 0:
+		b.WriteString(fieldAtAbsentFeedNote)
+	case th.Zones == 0:
+		fmt.Fprintf(&b, "threat map: 0 zones here, though %d rows exist elsewhere in this game, so the feed was running. Nothing had been scouted at this point: the approach router saw every corridor as clear, which is ignorance rather than safety.\n", ever.N)
+	default:
+		fmt.Fprintf(&b, "threat map: %d zones carrying danger, peak %.2f.\n", th.Zones, th.Peak)
 	}
 	return b.String()
 }
