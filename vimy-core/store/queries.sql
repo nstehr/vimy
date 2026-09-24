@@ -64,14 +64,40 @@ FROM games WHERE id = ?;
 -- name: QueryExemplarDoctrines :many
 -- Opponent faction is NOT filtered here; the librarian judges cross-opponent
 -- relevance semantically. SQL only scopes to our faction + rating quality.
+--
+-- Gated on the per-doctrine rating, not on the game quality_tag, because that
+-- tag requires won=true and this bot has never won. 158 games, every one tagged
+-- cautionary or mixed, so this query returned nothing for its entire history
+-- while its cautionary counterpart accumulated 1276 patterns. The library could
+-- only ever say what to avoid.
+--
+-- The asymmetry was structural: cautionary passes one gate, the doctrine rating
+-- alone, and this passed two, the second unreachable. Both now trust the same
+-- signal. Game 141 - 226600 ticks, 19 buildings destroyed, a 0.98 trade, the
+-- best game on record - contributed 6 failure patterns and 0 successes, because
+-- it was a loss. Its 20 strong and adequate doctrines become visible here.
+--
+-- Only TopKExemplars rows reach the librarian - two - so this ORDER BY decides
+-- what the strategist ever sees, and recency is the wrong tiebreak. Ordered by
+-- recency it returned two doctrines from game 169, which ran 25790 ticks and
+-- destroyed nothing, ahead of game 141. So rank by what the game achieved:
+-- genuinely exemplary first, then strong over adequate, then buildings
+-- destroyed, then recency. Buildings destroyed is the measure that correlates
+-- with every other outcome in 32 games and is the only one about winning.
+--
+-- A doctrine rated strong inside a lost game is still weaker evidence than one
+-- from a win. The context line carries the result, so the librarian and the
+-- strategist both see that the game was lost.
 SELECT d.doctrine_json, d.rating, d.rating_reason,
        g.won, g.quality_tag, g.opponent_faction, g.played_at
 FROM archived_doctrines d
 JOIN games g ON d.game_id = g.id
 WHERE g.our_faction = @our_faction
-  AND g.quality_tag = 'exemplary'
   AND d.rating IN ('strong', 'adequate')
-ORDER BY g.played_at DESC
+ORDER BY CASE WHEN g.quality_tag = 'exemplary' THEN 0 ELSE 1 END,
+         CASE WHEN d.rating = 'strong' THEN 0 ELSE 1 END,
+         g.engine_buildings_killed DESC,
+         g.played_at DESC
 LIMIT @lim;
 
 -- name: QueryCautionaryDoctrines :many
