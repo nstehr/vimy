@@ -35,9 +35,17 @@ type fieldMarker struct {
 type fieldView struct {
 	Session string
 	Tick    int
-	Ticks   []int // the scrub positions, coarse
-	PrevURL string
-	NextURL string
+
+	// The timeline, as a range input rather than a row of buttons: a long game
+	// is 200 scrub positions and clicking through them is not scrubbing.
+	Lo, Hi, Stride int
+
+	// Live follows the newest sample and keeps polling. Dragging the timeline
+	// pins a tick and stops it, because a frame that jumps out from under the
+	// cursor cannot be read.
+	Live bool
+	Poll string
+
 	Markers []fieldMarker
 	Ours    int
 	Enemy   int
@@ -47,14 +55,19 @@ type fieldView struct {
 	Size float64
 }
 
+// fieldPoll is how often a live field asks again. Slower than the live panel:
+// a frame is a few hundred shapes and the game moves 20 ticks between samples,
+// so a faster poll redraws the same field.
+const fieldPoll = "3s"
+
 // fieldSize is the rendered square. The map is square in every game recorded so
 // far (91x91), and a fixed viewport keeps the scrub from jumping.
 const fieldSize = 720
 
-// fieldScrubStride is how far apart the scrub positions are. State arrives
-// every 10 ticks and units are sampled every 20, so 500 is roughly a
-// twenty-second step: coarse enough to cross a long game in a few clicks.
-const fieldScrubStride = 500
+// fieldScrubStride is the timeline's step. Units are sampled every 20 ticks and
+// the loader snaps to the nearest sample at or before the requested tick, so
+// this only has to be fine enough that dragging feels continuous.
+const fieldScrubStride = 20
 
 type unitRow struct {
 	Tick     int    `json:"tick"`
@@ -106,11 +119,13 @@ func loadField(ctx context.Context, c *ch.Client, session string, tick int) *fie
 		v.Note = "no unit telemetry for this session yet"
 		return v
 	}
-	for t := ext.Lo; t <= ext.Hi; t += fieldScrubStride {
-		v.Ticks = append(v.Ticks, t)
-	}
+	v.Lo, v.Hi, v.Stride = ext.Lo, ext.Hi, fieldScrubStride
+	// tick <= 0 means "wherever the game is now", which is also what a live
+	// frame asks for on every poll.
 	if v.Tick <= 0 {
-		v.Tick = ext.Lo
+		v.Tick = ext.Hi
+		v.Live = true
+		v.Poll = fieldPoll
 	}
 
 	// The sample at or just before the requested tick, so a scrub position
@@ -156,16 +171,7 @@ func loadField(ctx context.Context, c *ch.Client, session string, tick int) *fie
 		})
 	}
 
-	v.PrevURL = fieldURL(session, v.Tick-fieldScrubStride)
-	v.NextURL = fieldURL(session, v.Tick+fieldScrubStride)
 	return v
-}
-
-func fieldURL(session string, tick int) string {
-	if tick < 0 {
-		tick = 0
-	}
-	return "/field/" + session + "/frame?tick=" + strconv.Itoa(tick)
 }
 
 func (s *server) handleField(w http.ResponseWriter, r *http.Request) {

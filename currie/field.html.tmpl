@@ -71,9 +71,15 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
 .field .building{fill-opacity:.95}
 .field .unit{fill-opacity:.85}
 .field .harv{fill-opacity:.35}
-.scrub{display:flex;flex-wrap:wrap;gap:.3rem;align-items:center;font-family:var(--mono);font-size:.72rem}
-.scrub a{color:var(--ink-3);text-decoration:none;border:1px solid var(--rule);border-radius:2px;padding:.15rem .4rem}
-.scrub a.on{color:var(--ink);border-color:var(--ink-3)}
+.scrub{display:flex;gap:.8rem;align-items:center;font-family:var(--mono);font-size:.72rem;color:var(--ink-3)}
+.scrub input[type=range]{flex:1;accent-color:var(--sole);height:1.4rem}
+.scrub .tick{min-width:5.5rem;text-align:right;color:var(--ink)}
+.live{font-family:var(--mono);font-size:.72rem;border:1px solid var(--rule);border-radius:2px;
+      padding:.15rem .5rem;text-decoration:none;color:var(--ink-3);cursor:pointer}
+.live.on{color:var(--calm);border-color:var(--calm)}
+.live.on::before{content:"";display:inline-block;width:.45rem;height:.45rem;border-radius:50%;
+      background:var(--calm);margin-right:.35rem;vertical-align:middle;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
 .legend{display:flex;gap:1.2rem;font-family:var(--mono);font-size:.72rem;color:var(--ink-3)}
 .legend i{display:inline-block;width:.6rem;height:.6rem;border-radius:50%;margin-right:.3rem;vertical-align:middle}
 </style>
@@ -104,7 +110,8 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
 </div>
 
 {{define "fieldframe"}}
-<div id="frame" style="display:flex;flex-direction:column;gap:1rem">
+<div id="frame" style="display:flex;flex-direction:column;gap:1rem"
+     {{if .Live}}hx-get="/field/{{.Session}}/frame" hx-trigger="every {{.Poll}}" hx-swap="outerHTML"{{end}}>
   {{if .Note}}
   <section class="figure"><p class="note">{{.Note}}</p></section>
   {{else}}
@@ -112,7 +119,11 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
   <div class="legend">
     <span><i style="background:var(--calm)"></i>ours &mdash; {{.Ours}}</span>
     <span><i style="background:var(--sole)"></i>enemy seen &mdash; {{.Enemy}}</span>
-    <span>tick {{.Tick}}</span>
+    {{if .Live}}
+    <span class="live on">live</span>
+    {{else}}
+    <a class="live" hx-get="/field/{{.Session}}/frame" hx-target="#frame" hx-swap="outerHTML">go live</a>
+    {{end}}
   </div>
 
   <svg class="field" viewBox="0 0 {{.Size}} {{.Size}}" width="100%" style="aspect-ratio:1">
@@ -122,12 +133,12 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
   </svg>
 
   <div class="scrub">
-    <a hx-get="{{.PrevURL}}" hx-target="#frame" hx-swap="outerHTML">&larr;</a>
-    {{range .Ticks}}
-    <a hx-get="/field/{{$.Session}}/frame?tick={{.}}" hx-target="#frame" hx-swap="outerHTML"
-       {{if eq . $.Tick}}class="on"{{end}}>{{.}}</a>
-    {{end}}
-    <a hx-get="{{.NextURL}}" hx-target="#frame" hx-swap="outerHTML">&rarr;</a>
+    <span>{{.Lo}}</span>
+    <input type="range" name="tick" min="{{.Lo}}" max="{{.Hi}}" step="{{.Stride}}" value="{{.Tick}}"
+           hx-get="/field/{{.Session}}/frame"
+           hx-trigger="input changed delay:120ms"
+           hx-target="#frame" hx-swap="outerHTML">
+    <span class="tick">tick {{.Tick}}</span>
   </div>
 
   {{end}}
