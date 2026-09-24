@@ -120,3 +120,37 @@ CREATE TABLE IF NOT EXISTS currie.stream_events
 ENGINE = MergeTree
 ORDER BY (session_id, kind, tick)
 SETTINGS non_replicated_deduplication_window = 1000;
+
+-- stream_units: where everything on the field was, ours and theirs.
+--
+-- Every diagnosis this telemetry has supported was made from scalars - spread,
+-- members, a distance ratio - and more than one was read wrong. A squad that
+-- looked like it was "arriving" was two stragglers. A sawtooth was blamed on
+-- three different rules before the right one. An approach that looked like bad
+-- routing turned out to be missing intel. Positions are what those scalars are
+-- summaries of, and unlike the scalars they cannot be misread into a story.
+--
+-- Rows repeat per sample rather than being diffed. A unit that has not moved
+-- costs almost nothing here: sorted by tick, x and y delta-encode away, and
+-- stream_rule_evals already demonstrates the ratio - 10.8M rows in 21 MiB,
+-- about two bytes each. A diff format would trade that for the ability to lose
+-- a base state and desync an entire replay.
+--
+-- side, not owner, so the table reads without knowing which faction was which.
+CREATE TABLE IF NOT EXISTS stream_units
+(
+    session_id LowCardinality(String),
+    tick       UInt32,
+    unit_id    UInt32,
+    type       LowCardinality(String),
+    side       LowCardinality(String),   -- 'ours' | 'enemy'
+    x          UInt16,
+    y          UInt16,
+    hp         UInt16,
+    idle       Bool
+)
+ENGINE = MergeTree
+-- tick first after the session: every question here is "what did the field look
+-- like at time T", and a replay scans consecutive ticks.
+ORDER BY (session_id, tick, unit_id)
+SETTINGS non_replicated_deduplication_window = 1000;

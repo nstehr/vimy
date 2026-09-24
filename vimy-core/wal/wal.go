@@ -56,6 +56,13 @@ const (
 	EvalsPrefix  = "evals-"
 	EventsPrefix = "events-"
 
+	// UnitsPrefix carries one row per unit per sampled state: where everything
+	// on the field was, ours and theirs. Every diagnosis this telemetry has
+	// supported so far has been made from scalars - spread, members, a distance
+	// ratio - and read wrong more than once. Positions are what those scalars
+	// are summaries of.
+	UnitsPrefix = "units-"
+
 	// CompressedExt marks a sealed segment that has already been shipped and
 	// then compressed in place. These files are still segments and still
 	// shippable -- the archive stays re-playable if the database is ever lost
@@ -109,6 +116,26 @@ type Row struct {
 	Skipped  bool   `json:"skipped"`
 }
 
+// Unit is one actor at one sampled tick.
+//
+// Deliberately flat and deliberately repeated per tick rather than diffed: the
+// rows compress to roughly two bytes each once ClickHouse sorts them by tick,
+// because a unit that has not moved costs nothing to store twice, and a diff
+// format would trade that for the ability to lose a base state.
+//
+// Side rather than an owner name so the table is useful without knowing which
+// faction was which that game.
+type Unit struct {
+	Tick int    `json:"tick"`
+	ID   int    `json:"unit_id"`
+	Type string `json:"type"`
+	Side string `json:"side"` // "ours" or "enemy"
+	X    int    `json:"x"`
+	Y    int    `json:"y"`
+	HP   int    `json:"hp"`
+	Idle bool   `json:"idle"`
+}
+
 // Segment is a sealed file waiting to be shipped.
 type Segment struct {
 	Session string // session id, i.e. the directory name
@@ -138,7 +165,7 @@ func SegmentName(prefix string, seq int) string {
 // segment at all.
 func StreamOf(name string) string {
 	name = strings.TrimSuffix(name, CompressedExt)
-	for _, p := range []string{EvalsPrefix, EventsPrefix} {
+	for _, p := range []string{EvalsPrefix, EventsPrefix, UnitsPrefix} {
 		if strings.HasPrefix(name, p) && strings.HasSuffix(name, SegmentExt) {
 			return p
 		}

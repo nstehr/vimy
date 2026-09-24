@@ -175,6 +175,7 @@ func (l *Log) run(opt LogOptions) {
 	writers := map[string]*SegmentWriter{
 		EvalsPrefix:  NewSegmentWriter(l.dir, EvalsPrefix, opt.RowsPerSegment, opt.MaxAge),
 		EventsPrefix: NewSegmentWriter(l.dir, EventsPrefix, opt.RowsPerSegment, opt.MaxAge),
+		UnitsPrefix:  NewSegmentWriter(l.dir, UnitsPrefix, opt.RowsPerSegment, opt.MaxAge),
 	}
 	defer func() {
 		for _, w := range writers {
@@ -216,6 +217,10 @@ func (l *Log) run(opt LogOptions) {
 
 // WriteRow queues one rule evaluation. Never blocks.
 func (l *Log) WriteRow(r Row) { l.offer(EvalsPrefix, r) }
+
+// WriteUnit queues one unit sample. Never blocks, and drops under pressure
+// like every other stream: a missing frame is a gap in a replay, not a fault.
+func (l *Log) WriteUnit(u Unit) { l.offer(UnitsPrefix, u) }
 
 // WriteEvent queues one event. Never blocks.
 func (l *Log) WriteEvent(e Event) { l.offer(EventsPrefix, e) }

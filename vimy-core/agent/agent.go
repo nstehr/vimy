@@ -213,6 +213,8 @@ func (a *Agent) HandleGameState(env ipc.Envelope) (*ipc.Envelope, error) {
 		return nil, fmt.Errorf("unmarshal GameState: %w", err)
 	}
 
+	a.sampleUnits(gs)
+
 	unitTypes := make(map[string]int)
 	for _, u := range gs.Units {
 		unitTypes[u.Type]++
@@ -294,5 +296,44 @@ func (a *Agent) watchForStall(poll, after time.Duration) {
 				warned = true
 			}
 		}
+	}
+}
+
+// unitSampleTicks is how often the whole field is written down.
+//
+// State arrives every 10 ticks, so every other update. At roughly 60 actors
+// that is ~300k rows for a 100000-tick game, which lands near a megabyte once
+// ClickHouse sorts them by tick - lighter than the rule-evaluation stream
+// already running, because a unit that has not moved compresses to nothing.
+//
+// Twenty ticks is also under a second of game time, so a replay built from it
+// reads as motion rather than as teleporting.
+const unitSampleTicks = 20
+
+// sampleUnits writes where everything on the field was, ours and theirs.
+//
+// Every diagnosis this telemetry has supported was made from scalars - spread,
+// members, a distance ratio - and several were read wrong: a squad "arriving"
+// that was two stragglers, a sawtooth blamed on three different rules before
+// the right one, an approach that looked like bad routing and was missing
+// intel. Positions are what those scalars summarise, and they are cheap.
+func (a *Agent) sampleUnits(gs model.GameState) {
+	if a.WAL == nil {
+		return
+	}
+	if gs.Tick%unitSampleTicks != 0 {
+		return
+	}
+	for _, u := range gs.Units {
+		a.WAL.WriteUnit(wal.Unit{
+			Tick: gs.Tick, ID: u.ID, Type: u.Type, Side: "ours",
+			X: u.X, Y: u.Y, HP: u.HP, Idle: u.Idle,
+		})
+	}
+	for _, e := range gs.Enemies {
+		a.WAL.WriteUnit(wal.Unit{
+			Tick: gs.Tick, ID: e.ID, Type: e.Type, Side: "enemy",
+			X: e.X, Y: e.Y, HP: e.HP,
+		})
 	}
 }

@@ -300,6 +300,11 @@ var streams = map[string]streamSpec{
 		columns: "tick, kind, squad, reason, members, idle, near, spread, attrs",
 		input:   "tick UInt32, kind String, squad String, reason String, members Int32, idle Int32, near Int32, spread Int32, attrs Map(String, Float64)",
 	},
+	wal.UnitsPrefix: {
+		table:   "stream_units",
+		columns: "tick, unit_id, type, side, x, y, hp, idle",
+		input:   "tick UInt32, unit_id UInt32, type String, side String, x UInt16, y UInt16, hp UInt16, idle Bool",
+	},
 }
 
 func (s *Shipper) upsertSession(ctx context.Context, sess wal.Session) error {
