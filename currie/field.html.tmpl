@@ -65,7 +65,15 @@ tr.silent td.r{color:var(--sole)}
 .swatch{display:inline-block;width:14px;height:2px;vertical-align:middle;margin-right:.35rem}
 footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padding-top:1rem}
 
-.field{background:var(--panel);border:1px solid var(--rule);border-radius:2px}
+/* The map is square, so its width sets its height. At the wrap's full 60rem
+   that is a 960px tall board -- taller than the window on most laptops, which
+   put the scrub below the fold and made reading a trajectory a scroll rather
+   than a glance. Capped by BOTH a comfortable reading width and a share of the
+   viewport, so a short window shrinks it instead of hiding the control that
+   drives it. One token, because the legend and the scrub have to track it. */
+:root{--map:min(34rem,68vh)}
+.field{background:var(--panel);border:1px solid var(--rule);border-radius:2px;
+       display:block;width:100%;max-width:var(--map);height:auto;margin-inline:auto}
 .field .water{fill:#4a6fa5;fill-opacity:.22}
 .field .cliff{fill:var(--ink);fill-opacity:.13}
 .field .bridge{fill:#b58b4a;fill-opacity:.5}
@@ -77,16 +85,22 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
 .field .unit{fill-opacity:.85}
 .field .harv{fill-opacity:.35}
 .field .remembered{fill:none;stroke:var(--sole);stroke-width:1.4;stroke-dasharray:3 2;opacity:.75}
-.scrub{display:flex;gap:.8rem;align-items:center;font-family:var(--mono);font-size:.72rem;color:var(--ink-3)}
+.scrub{display:flex;gap:.8rem;align-items:center;font-family:var(--mono);font-size:.72rem;color:var(--ink-3);
+       width:100%;max-width:var(--map);margin-inline:auto}
 .scrub input[type=range]{flex:1;accent-color:var(--sole);height:1.4rem}
 .scrub .tick{min-width:5.5rem;text-align:right;color:var(--ink)}
+.play{font-family:var(--mono);font-size:.72rem;border:1px solid var(--rule);border-radius:2px;
+      padding:.15rem .55rem;text-decoration:none;color:var(--ink-2);cursor:pointer;white-space:nowrap}
+.play:hover{border-color:var(--ink-3);color:var(--ink)}
+.play.on{color:var(--sole);border-color:var(--sole)}
 .live{font-family:var(--mono);font-size:.72rem;border:1px solid var(--rule);border-radius:2px;
       padding:.15rem .5rem;text-decoration:none;color:var(--ink-3);cursor:pointer}
 .live.on{color:var(--calm);border-color:var(--calm)}
 .live.on::before{content:"";display:inline-block;width:.45rem;height:.45rem;border-radius:50%;
       background:var(--calm);margin-right:.35rem;vertical-align:middle;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
-.legend{display:flex;gap:1.2rem;font-family:var(--mono);font-size:.72rem;color:var(--ink-3)}
+.legend{display:flex;flex-wrap:wrap;gap:.35rem 1.2rem;font-family:var(--mono);font-size:.72rem;color:var(--ink-3);
+        width:100%;max-width:var(--map);margin-inline:auto}
 .legend i{display:inline-block;width:.6rem;height:.6rem;border-radius:50%;margin-right:.3rem;vertical-align:middle}
 </style>
 
@@ -116,8 +130,10 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
 </div>
 
 {{define "fieldframe"}}
-<div id="frame" style="display:flex;flex-direction:column;gap:1rem"
-     {{if .Live}}hx-get="/field/{{.Session}}/frame" hx-trigger="every {{.Poll}}" hx-swap="outerHTML"{{end}}>
+<div id="frame" style="display:flex;flex-direction:column;gap:1rem" hx-sync="this:replace"
+     {{if .Live}}hx-get="/field/{{.Session}}/frame" hx-trigger="every {{.Poll}}" hx-swap="outerHTML"
+     {{else if .Playing}}hx-get="/field/{{.Session}}/frame?tick={{.NextTick}}&amp;play=1" hx-trigger="load delay:{{.PlayDelay}}" hx-swap="outerHTML"
+     {{end}}>
   {{if .Note}}
   <section class="figure"><p class="note">{{.Note}}</p></section>
   {{else}}
@@ -128,10 +144,19 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     <span><i style="border:1.5px dashed var(--sole);background:none"></i>believed &mdash; {{.Believed}}</span>
     <span><i style="background:#c9a227"></i>capturable &mdash; {{.Neutral}}</span>
     <span><i style="background:var(--sole);opacity:.3"></i>threat &mdash; {{len .Threat}} zones</span>
+    {{if .Playing}}
+    <a class="play on" hx-get="/field/{{.Session}}/frame?tick={{.Tick}}" hx-target="#frame"
+       hx-swap="outerHTML" hx-sync="#frame:replace" title="pause">&#10074;&#10074; pause</a>
+    {{else}}
+    <a class="play" hx-get="/field/{{.Session}}/frame?tick={{.PlayFrom}}&amp;play=1" hx-target="#frame"
+       hx-swap="outerHTML" hx-sync="#frame:replace"
+       title="watch the game play out">&#9654; {{if eq .PlayFrom .Lo}}replay{{else}}play{{end}}</a>
+    {{end}}
     {{if .Live}}
     <span class="live on">live</span>
     {{else}}
-    <a class="live" hx-get="/field/{{.Session}}/frame" hx-target="#frame" hx-swap="outerHTML">go live</a>
+    <a class="live" hx-get="/field/{{.Session}}/frame" hx-target="#frame" hx-swap="outerHTML"
+       hx-sync="#frame:replace">go live</a>
     {{end}}
   </div>
 
@@ -152,7 +177,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     <input type="range" name="tick" min="{{.Lo}}" max="{{.Hi}}" step="{{.Stride}}" value="{{.Tick}}"
            hx-get="/field/{{.Session}}/frame"
            hx-trigger="input changed delay:120ms"
-           hx-target="#frame" hx-swap="outerHTML">
+           hx-target="#frame" hx-swap="outerHTML" hx-sync="#frame:replace">
     <span class="tick">tick {{.Tick}}</span>
   </div>
 

@@ -69,6 +69,35 @@ func TestReportLabelsTheStreamAsCounted(t *testing.T) {
 	}
 }
 
+// The field map is offered only when there are positions to draw. Every game
+// played before the units writer has a session and no positions, and a link to
+// an empty board reads as the map being broken rather than as the game
+// predating it.
+func TestFieldLinkOnlyWhenThereArePositions(t *testing.T) {
+	tmpl, err := parseTemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	render := func(v *StreamView) string {
+		var buf bytes.Buffer
+		if err := tmpl.ExecuteTemplate(&buf, "report.html.tmpl", view{DurationTicks: 1000, Stream: v}); err != nil {
+			t.Fatal(err)
+		}
+		return buf.String()
+	}
+
+	with := sampleStream()
+	if !strings.Contains(render(with), "/field/"+with.Sessions[0].SessionID) {
+		t.Error("a session with positions should offer the field")
+	}
+
+	without := sampleStream()
+	without.Sessions[0].Units = 0
+	if strings.Contains(render(without), "/field/") {
+		t.Error("a session with no positions must not link to an empty board")
+	}
+}
+
 // A session that dropped rows makes every count a floor, and the page has to
 // say so where the counts are -- not in a log line nobody reads.
 func TestDroppedRowsSurfaceAsAFloor(t *testing.T) {
@@ -162,7 +191,7 @@ func sampleStream() *StreamView {
 		Sessions: []StreamSession{{
 			SessionID: "20260921-2210-ab12", StartedAt: 1758000000, GameID: 149,
 			RulesDigest: "9f2c1ab77d0e4455", Revision: "a1b2c3d", RowsWritten: 412000,
-			Segments: 37, LastIngest: 1758003600,
+			Segments: 37, LastIngest: 1758003600, Units: 123614,
 		}},
 		Silent: []FireRate{
 			{Rule: "build-war-factory", Evals: 8123, Fired: 0, Skipped: 12, Rate: 0, RuleSets: 4},

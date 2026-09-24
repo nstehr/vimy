@@ -190,6 +190,9 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
 .cohort tr.now{background:var(--rule-soft)}
 .cohort tr.now td{font-weight:600}
 .cohort td.dg{font-family:var(--mono);font-size:.82rem}
+.tofield{margin:0 0 1.2rem;padding:.7rem 1.1rem;border:1px solid var(--rule);border-left:3px solid var(--calm);background:var(--panel);display:flex;flex-wrap:wrap;gap:.3rem .8rem;align-items:baseline}
+.tofield a{color:var(--ink);font-weight:600;text-decoration:none;border-bottom:1px solid var(--calm)}
+.tofield span{font-size:.85rem;color:var(--ink-3)}
 .moved{margin:.7rem 0 0;font-size:.9rem;color:var(--ink-2)}
 .moved b{color:var(--ink)}
 </style>
@@ -336,6 +339,11 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     {{if not .Streamed}}
     <p class="clean">{{.Note}}</p>
     {{else}}
+
+    {{range .Sessions}}{{if .HasField}}
+    <p class="tofield"><a href="/field/{{.SessionID}}">See the field as Vimy saw it &rarr;</a>
+      <span>{{.Units}} position samples. The scalars on this page are summaries of that board.</span></p>
+    {{end}}{{end}}
 
     {{if .Floor}}
     <ul class="warns"><li>{{.Dropped}} rows were dropped rather than stall the game.

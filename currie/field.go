@@ -66,7 +66,21 @@ type fieldView struct {
 	Live bool
 	Poll string
 
-	Markers []fieldMarker
+	// Playback, as a property of the frame rather than of the server or the
+	// browser. Each frame asks for the next one after a delay, so the whole
+	// state is the URL that produced this frame: nothing to get out of sync,
+	// nothing to clean up when a tab closes, and a reload resumes exactly
+	// where it was. Pausing is just a request without the flag.
+	Playing   bool
+	NextTick  int
+	PlayDelay string
+	// PlayFrom is where the play control starts. The tick in hand while there
+	// is somewhere left to go, and the beginning once the timeline has run
+	// out -- so the button at the end of a game reads as replay rather than as
+	// a control that does nothing.
+	PlayFrom int
+
+	Markers  []fieldMarker
 	Ours     int
 	Enemy    int
 	Believed int
@@ -89,22 +103,42 @@ const fieldPoll = "3s"
 // far (91x91), and a fixed viewport keeps the scrub from jumping.
 const fieldSize = 720
 
+// Playback pacing. A step per frame rather than a sample per frame: game 174
+// is 2,820 samples, and at any watchable frame rate one sample per frame is a
+// six-minute replay of a six-minute game. The step is sized so a game of any
+// length takes about the same time to watch, which is what makes two games
+// comparable by eye.
+const (
+	playDelay = "150ms"
+	// Frames in a full replay: about 45 seconds at the delay above.
+	playFrames = 300
+)
+
+// playStep is how far one frame advances. Never finer than the sampling
+// stride, because there is nothing in between to show.
+func playStep(lo, hi int) int {
+	if span := hi - lo; span/playFrames > fieldScrubStride {
+		return (span / playFrames / fieldScrubStride) * fieldScrubStride
+	}
+	return fieldScrubStride
+}
+
 // fieldScrubStride is the timeline's step. Units are sampled every 20 ticks and
 // the loader snaps to the nearest sample at or before the requested tick, so
 // this only has to be fine enough that dragging feels continuous.
 const fieldScrubStride = 20
 
 type unitRow struct {
-	Tick     int    `json:"tick"`
-	UnitID   int    `json:"unit_id"`
-	Type     string `json:"type"`
-	Side     string `json:"side"`
-	X        int    `json:"x"`
-	Y        int    `json:"y"`
-	HP       int    `json:"hp"`
-	Idle       bool `json:"idle"`
-	Building   bool `json:"is_building"`
-	Remembered bool `json:"remembered"`
+	Tick       int    `json:"tick"`
+	UnitID     int    `json:"unit_id"`
+	Type       string `json:"type"`
+	Side       string `json:"side"`
+	X          int    `json:"x"`
+	Y          int    `json:"y"`
+	HP         int    `json:"hp"`
+	Idle       bool   `json:"idle"`
+	Building   bool   `json:"is_building"`
+	Remembered bool   `json:"remembered"`
 }
 
 // markerClass picks the visual weight. Harvesters and buildings read
@@ -133,7 +167,7 @@ func markerClass(r unitRow) (class string, radius float64) {
 	}
 }
 
-func loadField(ctx context.Context, c *ch.Client, session string, tick int) *fieldView {
+func loadField(ctx context.Context, c *ch.Client, session string, tick int, playing bool) *fieldView {
 	v := &fieldView{Session: session, Tick: tick, Size: fieldSize}
 	if c == nil {
 		v.Note = "no ClickHouse configured"
@@ -156,13 +190,8 @@ func loadField(ctx context.Context, c *ch.Client, session string, tick int) *fie
 	v.loadTerrain(ctx, c, session)
 	v.loadThreat(ctx, c, session, tick)
 	v.Lo, v.Hi, v.Stride = ext.Lo, ext.Hi, fieldScrubStride
-	// tick <= 0 means "wherever the game is now", which is also what a live
-	// frame asks for on every poll.
-	if v.Tick <= 0 {
-		v.Tick = ext.Hi
-		v.Live = true
-		v.Poll = fieldPoll
-	}
+
+	v.clock(ext.Lo, ext.Hi, playing)
 
 	// The sample at or just before the requested tick, so a scrub position
 	// between samples shows the last known field rather than an empty one.
@@ -222,16 +251,51 @@ func loadField(ctx context.Context, c *ch.Client, session string, tick int) *fie
 }
 
 func (s *server) handleField(w http.ResponseWriter, r *http.Request) {
-	session := r.PathValue("session")
-	tick, _ := strconv.Atoi(r.URL.Query().Get("tick"))
-	s.render(w, "field.html.tmpl", loadField(r.Context(), s.ch, session, tick))
+	s.render(w, "field.html.tmpl", s.field(r))
 }
 
-// handleFieldFrame serves the fragment a scrub swaps in.
+// clock settles which tick this frame shows and what it does next.
+//
+// Pure, and separate from the queries, because it is the only part of the page
+// with a state machine in it: live follows the present, playback walks the
+// past, and a frame that tried to do both would jump to the newest sample
+// mid-replay.
+func (v *fieldView) clock(lo, hi int, playing bool) {
+	switch {
+	case playing:
+		if v.Tick < lo {
+			v.Tick = lo
+		}
+		v.PlayDelay = playDelay
+		v.NextTick = min(v.Tick+playStep(lo, hi), hi)
+		// The last frame stops instead of asking forever for a tick it is
+		// already showing. The control then reads "replay", and starts from
+		// the beginning, because that is the only direction left.
+		v.Playing = v.Tick < hi
+	// tick <= 0 means "wherever the game is now", which is also what a live
+	// frame asks for on every poll.
+	case v.Tick <= 0:
+		v.Tick = hi
+		v.Live = true
+		v.Poll = fieldPoll
+	}
+	v.PlayFrom = v.Tick
+	if v.PlayFrom >= hi {
+		v.PlayFrom = lo
+	}
+}
+
+// handleFieldFrame serves the fragment a scrub swaps in, and that playback
+// asks for again on a delay.
 func (s *server) handleFieldFrame(w http.ResponseWriter, r *http.Request) {
-	session := r.PathValue("session")
+	s.render(w, "fieldframe", s.field(r))
+}
+
+// field reads one frame's request. Both handlers take the same parameters, so
+// a link into the middle of a replay is an ordinary URL.
+func (s *server) field(r *http.Request) *fieldView {
 	tick, _ := strconv.Atoi(r.URL.Query().Get("tick"))
-	s.render(w, "fieldframe", loadField(r.Context(), s.ch, session, tick))
+	return loadField(r.Context(), s.ch, r.PathValue("session"), tick, r.URL.Query().Get("play") == "1")
 }
 
 // terrainClass maps the encoded grid to a style. Bridges get their own because

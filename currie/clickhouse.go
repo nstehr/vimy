@@ -65,7 +65,17 @@ type StreamSession struct {
 	// segment is reading an incomplete game, and nothing used to say so.
 	Segments   int64 `json:"segments"`
 	LastIngest int64 `json:"last_ingest"`
+
+	// Position samples for this session, which is what decides whether the
+	// field map is worth offering. Every game played before the units writer
+	// has a session and no positions, and a link to an empty board is worse
+	// than no link: it reads as the map being broken rather than as the game
+	// predating it.
+	Units int64 `json:"units"`
 }
+
+// HasField reports whether this session has a field worth drawing.
+func (s StreamSession) HasField() bool { return s.Units > 0 }
 
 // Started renders the session clock for the template.
 func (s StreamSession) Started() time.Time { return time.Unix(s.StartedAt, 0) }
@@ -109,6 +119,17 @@ ORDER BY started_at`
 // than in sessionSQL: stream_segments is a different table with a different
 // engine, and a session that streamed but has not shipped yet should still
 // appear with its zeros showing.
+// Grouped rather than one round trip per session: a game has one session
+// almost always and two when the sidecar restarted, and either way this is one
+// scan of a column the table is ordered by.
+const unitsSQL = `
+SELECT
+	session_id,
+	toInt64(count()) AS units
+FROM stream_units
+WHERE ` + filterForGame + `
+GROUP BY session_id`
+
 const ledgerSQL = `
 SELECT
 	toInt64(count())                AS segments,
@@ -135,6 +156,21 @@ func streamSessions(ctx context.Context, c *ch.Client, gameID int64) ([]StreamSe
 			continue // the ledger is for humans; its absence is not a failure
 		}
 		sessions[i].Segments, sessions[i].LastIngest = led.Segments, led.LastIngest
+	}
+
+	// Best-effort: an archive whose ClickHouse predates stream_units has no
+	// such table, and that costs the field link rather than the sessions.
+	if units, err := ch.Query[struct {
+		SessionID string `json:"session_id"`
+		Units     int64  `json:"units"`
+	}](ctx, c, unitsSQL, map[string]any{"game": gameID}); err == nil {
+		for _, u := range units {
+			for i := range sessions {
+				if sessions[i].SessionID == u.SessionID {
+					sessions[i].Units = u.Units
+				}
+			}
+		}
 	}
 	return sessions, nil
 }
