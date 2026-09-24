@@ -352,15 +352,15 @@ func (a *Agent) sampleUnits(gs model.GameState) {
 	// half of the field during a battle.
 	a.Engine.LockMemory()
 	bases := rules.RememberedEnemyBases(a.Engine.Memory)
-	defs := rules.RememberedEnemyDefenses(a.Engine.Memory)
-	remembered := make([]wal.Unit, 0, len(bases)+len(defs))
+	structs := rules.RememberedEnemyStructures(a.Engine.Memory)
+	remembered := make([]wal.Unit, 0, len(bases)+len(structs))
 	for owner, b := range bases {
 		remembered = append(remembered, wal.Unit{
 			Tick: gs.Tick, ID: 0, Type: "base:" + owner, Side: "enemy",
 			X: b.X, Y: b.Y, Building: true, Remembered: true,
 		})
 	}
-	for id, d := range defs {
+	for id, d := range structs {
 		remembered = append(remembered, wal.Unit{
 			Tick: gs.Tick, ID: id, Type: d.Type, Side: "enemy",
 			X: d.X, Y: d.Y, Building: true, Remembered: true,

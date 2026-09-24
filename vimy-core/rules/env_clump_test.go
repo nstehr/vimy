@@ -227,3 +227,55 @@ func TestDeathsAreRememberedAsThreat(t *testing.T) {
 		t.Errorf("a death from %d ticks ago still counts: %v", deathMemoryTicks+1, got)
 	}
 }
+
+// Enemy building POSITIONS must be remembered, not just their types.
+//
+// The sighting code recorded buildings as enemyBuildingsSeen, a map of type to
+// count, and discarded x and y. So Vimy could know it had seen a refinery and
+// never where one was. Targeting reads currently-visible enemies, so a building
+// that went back into fog stopped existing - which is why the base assault
+// spirals outward from a remembered centroid, and why blind-at-base fired 37
+// times in game 173 with the squad standing on the enemy base.
+func TestEnemyBuildingPositionsAreRemembered(t *testing.T) {
+	mem := map[string]any{}
+	env := RuleEnv{
+		State: model.GameState{
+			Tick: 1000,
+			Enemies: []model.Enemy{
+				{ID: 10, Type: "proc", X: 80, Y: 80, HP: 900, MaxHP: 900},
+				{ID: 11, Type: "pbox", X: 78, Y: 82, HP: 400, MaxHP: 400},
+				{ID: 12, Type: "3tnk", X: 70, Y: 70, HP: 400, MaxHP: 400},
+			},
+		},
+		Memory: mem,
+	}
+	updateDefenseIntel(env)
+
+	got := RememberedEnemyStructures(mem)
+	if _, ok := got[10]; !ok {
+		t.Error("a refinery was seen and its position forgotten")
+	}
+	if _, ok := got[11]; !ok {
+		t.Error("a pillbox is a building too and must be here")
+	}
+	if _, ok := got[12]; ok {
+		t.Error("a tank was recorded as a structure")
+	}
+	if got[10].X != 80 || got[10].Y != 80 {
+		t.Errorf("refinery remembered at (%d,%d), want (80,80)", got[10].X, got[10].Y)
+	}
+
+	// And it is forgotten once one of ours stands there and sees nothing -
+	// the same evidence standard the defences use.
+	later := RuleEnv{
+		State: model.GameState{
+			Tick:  1000 + 400,
+			Units: []model.Unit{{ID: 1, Type: "2tnk", X: 80, Y: 80}},
+		},
+		Memory: mem,
+	}
+	updateDefenseIntel(later)
+	if _, ok := RememberedEnemyStructures(mem)[10]; ok {
+		t.Error("a razed refinery is still remembered after standing on its site")
+	}
+}

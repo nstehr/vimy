@@ -1973,7 +1973,24 @@ func baseTypeName(t string) string {
 // same evidence standard as base intel.
 func updateDefenseIntel(env RuleEnv) {
 	defs := getEnemyDefenses(env.Memory)
+	structures := getEnemyStructures(env.Memory)
 	for _, e := range env.State.Enemies {
+		// Every enemy building's POSITION, not just the defences.
+		//
+		// The sighting code beside this one records buildings as
+		// enemyBuildingsSeen, a map of type to count, and discards x and y. So
+		// Vimy could know it had seen a refinery and never where. Targeting
+		// reads currently-visible enemies, which means a building that goes
+		// back into fog stops existing, and the base assault compensates by
+		// spiralling outward from a remembered centroid - huntOffset exists
+		// because of this gap. blind-at-base, 37 times in game 173, is the
+		// squad standing on the enemy base with nothing visible and nothing
+		// remembered to shoot at.
+		if IsKnownBuildingType(e.Type) {
+			structures[e.ID] = EnemyDefenseIntel{
+				ActorID: e.ID, Type: baseTypeName(e.Type), X: e.X, Y: e.Y, Tick: env.State.Tick,
+			}
+		}
 		if !isEnemyDefenseType(e.Type) {
 			continue
 		}
@@ -1981,6 +1998,10 @@ func updateDefenseIntel(env RuleEnv) {
 			ActorID: e.ID, Type: baseTypeName(e.Type), X: e.X, Y: e.Y, Tick: env.State.Tick,
 		}
 	}
+	// Structures are cleared on the same evidence standard as defences: our own
+	// unit standing where one should be and not seeing it.
+	pruneStaleStructures(env, structures)
+	env.Memory["enemyStructures"] = structures
 
 	const clearRadiusSq = 10 * 10
 	const minAge = 300
@@ -2011,6 +2032,39 @@ func updateDefenseIntel(env RuleEnv) {
 		}
 	}
 	env.Memory["enemyDefenses"] = defs
+}
+
+func getEnemyStructures(memory map[string]any) map[int]EnemyDefenseIntel {
+	if v, ok := memory["enemyStructures"].(map[int]EnemyDefenseIntel); ok {
+		return v
+	}
+	return make(map[int]EnemyDefenseIntel)
+}
+
+// RememberedEnemyStructures is every enemy building whose position is known,
+// defences included. Where enemyBuildingsSeen says what has been seen, this
+// says where.
+func RememberedEnemyStructures(memory map[string]any) map[int]EnemyDefenseIntel {
+	return getEnemyStructures(memory)
+}
+
+// pruneStaleStructures drops a building once one of ours has stood where it
+// should be and not seen it.
+func pruneStaleStructures(env RuleEnv, structures map[int]EnemyDefenseIntel) {
+	const clearRadiusSq = 10 * 10
+	const minAge = 300
+	for id, intel := range structures {
+		if env.State.Tick-intel.Tick < minAge {
+			continue
+		}
+		for _, u := range env.State.Units {
+			dx, dy := u.X-intel.X, u.Y-intel.Y
+			if dx*dx+dy*dy < clearRadiusSq {
+				delete(structures, id)
+				break
+			}
+		}
+	}
 }
 
 // RememberedEnemyBases and RememberedEnemyDefenses expose what the AI actually
