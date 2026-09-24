@@ -1223,10 +1223,21 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 
 	// Without these the strategist has no reason to raise capture_priority when
 	// scouts turn up a tech building.
+	//
+	// Filtered, because GameState.Capturables is not a list of tech buildings.
+	// It carries whatever something could take: in one game the enemy's
+	// construction yard, refineries, power, a SAM site and a flame tower, plus
+	// their APCs, flak trucks, heavy tanks, harvesters and a tank husk,
+	// alongside four oil derricks. Unfiltered it rendered as "Capturable
+	// neutral buildings visible: 2x apc 1x 3tnk 1x ftrk", which asked the
+	// strategist to spend on engineers to go and capture enemy armour.
 	if len(gs.Capturables) > 0 {
 		capCounts := make(map[string]int)
 		for _, c := range gs.Capturables {
-			capCounts[c.Type]++
+			if !rules.IsNeutralTechStructure(c.Type) {
+				continue
+			}
+			capCounts[rules.BaseTypeName(c.Type)]++
 		}
 		for t, c := range capCounts {
 			sit.Capturables_visible = append(sit.Capturables_visible, types.TypeCount{Type: t, Count: int64(c)})

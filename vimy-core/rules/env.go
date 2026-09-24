@@ -2017,6 +2017,9 @@ func isEnemyDefenseType(t string) bool {
 	return ok
 }
 
+// BaseTypeName strips a faction suffix: "oilb.ukraine" is an oil derrick.
+func BaseTypeName(t string) string { return baseTypeName(t) }
+
 func baseTypeName(t string) string {
 	base := strings.ToLower(t)
 	if idx := strings.IndexByte(base, '.'); idx >= 0 {

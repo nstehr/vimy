@@ -1266,3 +1266,42 @@ func TestWipingOutATinyForceIsNotACounter(t *testing.T) {
 		t.Error("three of twelve lost must still count: that is a real share of a real force")
 	}
 }
+
+// The strategist must be shown tech structures, not the enemy's army.
+//
+// GameState.Capturables carries whatever something could take: in one game the
+// enemy's construction yard, refineries, power, a SAM site and a flame tower,
+// plus their APCs, flak trucks, heavy tanks, harvesters and a husk, alongside
+// four oil derricks. Unfiltered it rendered as "Capturable neutral buildings
+// visible: 2x apc 1x 3tnk 1x ftrk", which asked the strategist to spend on
+// engineers to go and capture enemy armour.
+func TestOnlyTechStructuresReachTheStrategist(t *testing.T) {
+	gs := model.GameState{
+		Tick: 5000, MapWidth: 128, MapHeight: 128,
+		Capturables: []model.Enemy{
+			{ID: 1, Type: "oilb.ukraine", X: 40, Y: 40},
+			{ID: 2, Type: "3tnk", X: 42, Y: 40},
+			{ID: 3, Type: "apc", X: 44, Y: 40},
+			{ID: 4, Type: "proc", X: 46, Y: 40},
+			{ID: 5, Type: "3tnk.husk", X: 48, Y: 40},
+			{ID: 6, Type: "hosp", X: 50, Y: 40},
+		},
+	}
+	sit := buildSituation(gs, map[string]any{}, nil, nil, nil)
+
+	got := map[string]int64{}
+	for _, c := range sit.Capturables_visible {
+		got[c.Type] = c.Count
+	}
+	if got["oilb"] != 1 {
+		t.Errorf("the derrick did not survive its faction suffix: %v", got)
+	}
+	if got["hosp"] != 1 {
+		t.Errorf("the hospital is a tech structure and was dropped: %v", got)
+	}
+	for _, unwanted := range []string{"3tnk", "apc", "proc", "3tnk.husk"} {
+		if _, ok := got[unwanted]; ok {
+			t.Errorf("%s was offered to the strategist as a capture target", unwanted)
+		}
+	}
+}
