@@ -64,8 +64,16 @@ func updateSquads(env RuleEnv) {
 
 	for name, sq := range squads {
 		alive := sq.UnitIDs[:0]
+		// Deduplicating as we prune, so a roster that already holds an id twice
+		// collapses on the next evaluation rather than staying wrong until the
+		// game ends.
+		kept := make(map[int]bool, len(sq.UnitIDs))
 		for _, id := range sq.UnitIDs {
 			if aliveIDs[id] {
+				if kept[id] {
+					continue
+				}
+				kept[id] = true
 				alive = append(alive, id)
 				continue
 			}
@@ -80,22 +88,36 @@ func updateSquads(env RuleEnv) {
 		// Joiners that reached the squad become members; the dead are dropped.
 		if len(sq.Joining) > 0 {
 			cx, cy, haveCentroid := squadCentroidOf(sq, env.State.Units)
+			// Enlisting is idempotent. Belt and braces against the double
+			// dispatch squadUnitIDSet now prevents, and the only thing that
+			// heals a roster which already picked up a duplicate -- memory
+			// outlives a rule-set swap, so a game in progress would otherwise
+			// carry the miscount to the end.
+			member := make(map[int]bool, len(sq.UnitIDs))
+			for _, id := range sq.UnitIDs {
+				member[id] = true
+			}
 			stillJoining := sq.Joining[:0]
 			for _, id := range sq.Joining {
 				if !aliveIDs[id] {
 					continue
+				}
+				if member[id] {
+					continue // already enlisted; drop the duplicate dispatch
 				}
 				p, known := posNow[id]
 				if haveCentroid && known {
 					dx, dy := p[0]-cx, p[1]-cy
 					if dx*dx+dy*dy <= joinArrivedCells*joinArrivedCells {
 						sq.UnitIDs = append(sq.UnitIDs, id)
+						member[id] = true
 						continue
 					}
 				}
 				if !haveCentroid {
 					// Nothing to walk toward; treat them as arrived.
 					sq.UnitIDs = append(sq.UnitIDs, id)
+					member[id] = true
 					continue
 				}
 				stillJoining = append(stillJoining, id)
@@ -133,11 +155,30 @@ func makeUnitIDSet(units []model.Unit) map[int]bool {
 }
 
 // squadUnitIDSet is what keeps squad members out of the free pool.
+// squadUnitIDSet is who is already spoken for: the set UnassignedIdle* and
+// every other "who is free" query subtracts.
+//
+// Joining counts. A unit walking to a squad is assigned even though it is
+// deliberately not yet a member, and leaving it out meant it kept reading as
+// unassigned and kept being dispatched -- landing in Joining more than once and
+// then being enlisted once per entry, so the roster held the same id twice.
+//
+// That is not a cosmetic duplicate. len(sq.UnitIDs) is what `need` subtracts
+// when topping a squad up, what SquadSize reports and what the ready ratio
+// divides by, so a squad with duplicates believes it is bigger than it is and
+// under-reinforces for the rest of the game. It also made the two ways of
+// counting a squad disagree: squadActorIDs walks the slice and counts a
+// duplicate twice, SquadClump keys a map off the roster and counts it once,
+// which surfaced as rallies reporting more commandable units than members --
+// impossible by construction, and every rally of session 20260925-183637 had it.
 func squadUnitIDSet(memory map[string]any) map[int]bool {
 	squads := getSquads(memory)
 	s := make(map[int]bool)
 	for _, sq := range squads {
 		for _, id := range sq.UnitIDs {
+			s[id] = true
+		}
+		for _, id := range sq.Joining {
 			s[id] = true
 		}
 	}

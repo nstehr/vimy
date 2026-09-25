@@ -191,7 +191,9 @@ func (e RuleEnv) ApproachChoices() map[string]int {
 }
 
 // recordRallyShape notes one rally: how many members the squad had, how many
-// of them could actually be commanded, how far the furthest had strayed from
+// of them could actually be commanded (the roster minus whoever is retreating
+// or held — which is precisely who the rally order is sent to, and never a
+// count of idle units, whatever the wire name says), how far the furthest had strayed from
 // the centroid, and how many were inside the radius the gate actually measures.
 //
 // near is the last of those and the only one that answers whether the gate can
@@ -200,10 +202,13 @@ func (e RuleEnv) ApproachChoices() map[string]int {
 // Kept out of the SQLite rally aggregate on purpose — that chain is a
 // migration, sqlc, store and Currie for a figure the event stream already
 // carries per rally and unsampled.
-func recordRallyShape(env RuleEnv, squad string, members, idle, spread, near int) {
+func recordRallyShape(env RuleEnv, squad string, members, commandable, spread, near int) {
 	emit(env, wal.Event{
 		Kind: "rally", Squad: squad,
-		Members: members, Idle: idle, Spread: spread, Near: near,
+		// Idle is the wire and column name, kept because renaming it would
+		// orphan every row already shipped and every WAL segment still on
+		// disk. It holds the COMMANDABLE count; see the field's own comment.
+		Members: members, Idle: commandable, Spread: spread, Near: near,
 	})
 	s, _ := env.Memory["rallyShape"].(*rallyShape)
 	if s == nil {
@@ -212,7 +217,7 @@ func recordRallyShape(env RuleEnv, squad string, members, idle, spread, near int
 	}
 	s.Rallies++
 	s.MembersSum += members
-	s.IdleSum += idle
+	s.IdleSum += commandable
 	s.SpreadSum += spread
 }
 

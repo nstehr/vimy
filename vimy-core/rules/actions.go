@@ -2893,6 +2893,24 @@ func squadStructureTarget(env RuleEnv, name string) *model.Enemy {
 		return nil
 	}
 	if !IsKnownBuildingType(target.Type) {
+		// A defender outscored the structures, which is not a reason to call off
+		// the strike - it is a reason to ask which STRUCTURE is worth shooting.
+		// This branch used to return nil, and game 180 recorded it 371 times
+		// while destroying one enemy building in 34790 ticks.
+		//
+		// Same order as the sighted-nothing branch below: what is visible first,
+		// then what is remembered, and out-of-reach is a walk rather than a
+		// failure.
+		if st := env.BestGroundStructureFrom(cx, cy); st != nil {
+			if withinStrikeReach(env, cx, cy, st.X, st.Y) {
+				return st
+			}
+			recordStrikeBlocked(env, name, StrikeBlockedOutOfReach)
+			return nil
+		}
+		if st := env.NearestRememberedStructure(cx, cy); st != nil && withinStrikeReach(env, cx, cy, st.X, st.Y) {
+			return st
+		}
 		recordStrikeBlocked(env, name, StrikeBlockedNotBuilding)
 		return nil
 	}
@@ -3041,7 +3059,11 @@ func SquadAttackKnownBase(name string, aggression float64) ActionFunc {
 				aState[name] = squadAttackState{TargetX: base.X, TargetY: base.Y, Attacking: false, LastTick: env.State.Tick}
 				recordAssaultPhase(env, name, phaseRally, "")
 				recordStrikeBlocked(env, name, StrikeBlockedUnclumped)
-				// ids is the IDLE members — the ones this order can reach.
+				// ids is the COMMANDABLE members — the roster minus whoever
+				// is retreating or held — because that is exactly who
+				// sendAttackMove below is given. Not the idle ones:
+				// squadAssaultActorIDs passes onlyIdle=false, and calling this
+				// "idle" for a year made reachable read as an idleness rate.
 				// members is all of them, which is what the gate judges, and
 				// near is how many of those the gate actually counted.
 				members, near, _ := env.SquadClump(name, squadRallyRadius)

@@ -190,7 +190,34 @@ type FireRate struct {
 	Rate       float64 `json:"rate"`
 	FirstFired int64   `json:"first_fired"`
 	LastFired  int64   `json:"last_fired"`
+
+	// Why it never fired, filled in from the replay's blame for silent rules.
+	//
+	// Without it the section is a flat list and the reader does the ranking. On
+	// game 176 that list held produce-scout-vehicle between produce-minelayer
+	// and rebuild-iron-curtain: twelve of the fifteen were rebuild rules doing
+	// exactly what they should, and one was the most expensive defect in the
+	// codebase - a scout gate stuck on from tick 4110 of 54820. It took a
+	// separate tool loop and an hour to find what was already on the page.
+	//
+	// A rule that never fired because its trigger never occurred has no
+	// dominant clause. One with a stuck gate is blocked over and over by the
+	// same line, and that is the difference worth ranking on.
+	Culprit    string
+	CulpritAt  string
+	CulpritPct float64
+	// Won says the replay recorded this rule as the winner of its exclusive
+	// category - its condition HELD, and it preempted its siblings - while the
+	// stream counted zero firings for it all game. The two halves cannot both
+	// be describing the same ticks, and that is the finding: the rule was
+	// working when the replay sampled it and stopped at some point after.
+	Won bool
 }
+
+// silentCulpritFloor is how dominant one clause must be before a silent rule
+// counts as gated rather than merely unused. Four fifths: a rule stopped by the
+// same line four times in five is not waiting for its moment.
+const silentCulpritFloor = 0.8
 
 // Silent reports a rule that was evaluated and never once fired.
 //
@@ -457,12 +484,29 @@ type CohortStats struct {
 	MeanSpread  float64 `json:"mean_spread"`
 	PctClumped  float64 `json:"pct_clumped"`
 	MeanMembers float64 `json:"mean_members"`
-	// Reachable is idle over members: the share of the squad an order could
-	// actually reach. Near 1 with a wide spread means the radius is the fault;
-	// well below means the rally cannot reach the squad, which is a different
-	// bug with a different fix.
+	// Reachable is commandable over members: the share of the squad the rally
+	// order actually went to. Near 1 with a wide spread means the radius is the
+	// fault; well below means the rally cannot reach the squad, which is a
+	// different bug with a different fix.
+	//
+	// It cannot exceed 1 -- commandable is a subset of members -- so a value
+	// above 1 is not a good reading, it is a broken one. A joiner dispatched
+	// twice was enlisted twice, and the duplicate counted in the numerator and
+	// not the denominator. Impossible marks that rather than letting 1.13 read
+	// as the healthiest possible result.
 	Reachable float64 `json:"reachable"`
+	// Rallies whose commandable count exceeded their membership, which cannot
+	// happen and means the roster held duplicates.
+	Impossible int64 `json:"impossible"`
 }
+
+// Broken reports a rally sample that cannot be right.
+//
+// The commandable count is a subset of the membership, so the ratio cannot
+// exceed 1. When it does, the roster held the same unit twice and the duplicate
+// counted in the numerator only -- which read as 1.13, the healthiest possible
+// result, on the one panel that would have shown the bug.
+func (c CohortStats) Broken() bool { return c.Impossible > 0 }
 
 type CohortRow struct {
 	Digest     string  `json:"digest"`
@@ -519,7 +563,8 @@ SELECT
 	round(ifNotFinite(avg(spread), 0), 2)                     AS mean_spread,
 	round(ifNotFinite(100 * countIf(spread <= 8) / count(), 0), 1) AS pct_clumped,
 	round(ifNotFinite(avg(members), 0), 2)                    AS mean_members,
-	round(ifNotFinite(avg(idle) / avg(members), 0), 2)        AS reachable
+	round(ifNotFinite(avg(idle) / avg(members), 0), 2)        AS reachable,
+	toInt64(countIf(idle > members))                          AS impossible
 FROM stream_events
 WHERE kind = 'rally' AND %s`, filter)
 }
@@ -647,6 +692,16 @@ func loadStream(ctx context.Context, c *ch.Client, gameID int64, topRates int) *
 		// order stops carrying meaning.
 		sort.SliceStable(v.Silent, func(i, j int) bool {
 			a, b := v.Silent[i], v.Silent[j]
+			// A stuck gate first, whatever the evaluation counts. Rules
+			// evaluated every cycle all tie on evals, so ordering by that alone
+			// left the one rule with a broken condition indistinguishable from
+			// a dozen rebuild rules waiting for something to be destroyed.
+			if (a.CulpritPct >= silentCulpritFloor) != (b.CulpritPct >= silentCulpritFloor) {
+				return a.CulpritPct >= silentCulpritFloor
+			}
+			if a.CulpritPct >= silentCulpritFloor && a.CulpritPct != b.CulpritPct {
+				return a.CulpritPct > b.CulpritPct
+			}
 			if a.Evals != b.Evals {
 				return a.Evals > b.Evals
 			}
@@ -673,3 +728,60 @@ func loadStream(ctx context.Context, c *ch.Client, gameID int64, topRates int) *
 	}
 	return v
 }
+
+// explainSilent fills in why each silent rule never fired.
+//
+// The stream counts firings exactly and so can say a zero is a zero; the replay
+// samples states but records which clause stopped each rule. Neither half is
+// the finding on its own: "produce-scout-vehicle was evaluated 5368 times and
+// never fired" is a curiosity until you see it was stopped every time by the
+// same line, and then it is a stuck gate.
+func explainSilent(v *StreamView, dead []deadRule, never []preemptedRule) {
+	if v == nil || len(v.Silent) == 0 {
+		return
+	}
+	// Rules the replay saw winning their category. A winner that never fired is
+	// a contradiction between the two halves and outranks a plain stuck gate:
+	// produce-scout-vehicle preempted five siblings in game 176 and fired zero
+	// times, which no single view of the game says on its own.
+	won := make(map[string]bool)
+	for _, p := range never {
+		for _, w := range p.LostTo {
+			won[w] = true
+		}
+	}
+	for i := range v.Silent {
+		v.Silent[i].Won = won[v.Silent[i].Rule]
+	}
+	by := make(map[string]deadRule, len(dead))
+	for _, d := range dead {
+		by[d.Name] = d
+	}
+	for i := range v.Silent {
+		d, ok := by[v.Silent[i].Rule]
+		if !ok || d.Culprit == nil || d.Blocked == 0 {
+			continue
+		}
+		v.Silent[i].Culprit = d.Culprit.Source
+		v.Silent[i].CulpritAt = fmt.Sprintf("%s:%d", d.Culprit.File, d.Culprit.Line)
+		v.Silent[i].CulpritPct = float64(d.Culprit.Blocked) / float64(d.Blocked)
+	}
+	// Re-sort: the ranking depends on what was just filled in.
+	sort.SliceStable(v.Silent, func(i, j int) bool {
+		a, b := v.Silent[i], v.Silent[j]
+		if a.Won != b.Won {
+			return a.Won
+		}
+		if (a.CulpritPct >= silentCulpritFloor) != (b.CulpritPct >= silentCulpritFloor) {
+			return a.CulpritPct >= silentCulpritFloor
+		}
+		if a.CulpritPct >= silentCulpritFloor && a.CulpritPct != b.CulpritPct {
+			return a.CulpritPct > b.CulpritPct
+		}
+		return a.Evals > b.Evals
+	})
+}
+
+// Gated reports a silent rule stopped overwhelmingly by one clause: a stuck
+// gate rather than a rule waiting for its trigger.
+func (f FireRate) Gated() bool { return f.CulpritPct >= silentCulpritFloor }

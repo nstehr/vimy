@@ -763,3 +763,91 @@ func containsID(xs []int, v int) bool {
 	}
 	return false
 }
+
+// A unit dispatched to a squad must not be dispatched again, and must not be
+// enlisted twice if it is.
+//
+// squadUnitIDSet, which is what UnassignedIdleGround subtracts to find who is
+// free, walks only UnitIDs. A joiner sits in Joining -- by design, so cohesion
+// judges the squad that exists rather than the one in transit -- and so still
+// reads as unassigned, gets dispatched a second time, and is enlisted once per
+// entry when it arrives.
+//
+// The roster then holds the same id twice, and the two ways of counting a squad
+// disagree: squadActorIDs walks the slice and counts it twice, SquadClump keys a
+// map off the roster and counts it once. That is visible in the telemetry as
+// idle > members, which is impossible by construction -- every rally in session
+// 20260925-183637 reported it, 12 members against 13 idle. It also inflates
+// len(sq.UnitIDs), which is what `need` subtracts when topping a squad up, so
+// the squad under-reinforces for the rest of the game.
+func TestJoiningUnitIsNotEnlistedTwice(t *testing.T) {
+	memory := map[string]any{
+		"squads": map[string]*Squad{
+			"attack": {
+				Name: "attack", Domain: "ground", Role: "attack", TargetSize: 4,
+				UnitIDs: []int{1, 2},
+				// Dispatched twice, because the first dispatch left it looking
+				// unassigned.
+				Joining: []int{3, 3},
+			},
+		},
+	}
+	env := RuleEnv{
+		State: model.GameState{Units: []model.Unit{
+			{ID: 1, Type: "1tnk", X: 10, Y: 10},
+			{ID: 2, Type: "1tnk", X: 11, Y: 10},
+			// Arrived: within joinArrivedCells of the squad centroid.
+			{ID: 3, Type: "1tnk", X: 12, Y: 10},
+		}},
+		Memory: memory,
+	}
+
+	updateSquads(env)
+
+	sq := getSquads(memory)["attack"]
+	seen := map[int]int{}
+	for _, id := range sq.UnitIDs {
+		seen[id]++
+	}
+	for id, n := range seen {
+		if n > 1 {
+			t.Errorf("unit %d is on the roster %d times", id, n)
+		}
+	}
+
+	// The two ways of counting the squad have to agree. idle counts roster
+	// entries, members counts roster units present on the field.
+	idle := len(squadAssaultActorIDs(env, "attack"))
+	members, _, _ := env.SquadClump("attack", squadRallyRadius)
+	if idle > members {
+		t.Errorf("idle %d exceeds members %d: a squad cannot command more units than it has",
+			idle, members)
+	}
+}
+
+// A unit already in Joining must not read as unassigned, or it is dispatched
+// again on the next evaluation -- which is how it gets into Joining twice.
+func TestJoiningUnitIsNotUnassigned(t *testing.T) {
+	memory := map[string]any{
+		"squads": map[string]*Squad{
+			"attack": {
+				Name: "attack", Domain: "ground", Role: "attack", TargetSize: 4,
+				UnitIDs: []int{1},
+				Joining: []int{3},
+			},
+		},
+	}
+	env := RuleEnv{
+		State: model.GameState{Units: []model.Unit{
+			{ID: 1, Type: "1tnk", X: 10, Y: 10, Idle: true},
+			{ID: 3, Type: "1tnk", X: 90, Y: 90, Idle: true},
+		}},
+		Memory: memory,
+	}
+
+	for _, u := range env.UnassignedIdleGround() {
+		if u.ID == 3 {
+			t.Error("unit 3 is already walking to the attack squad and must not read as unassigned")
+		}
+	}
+}

@@ -276,3 +276,31 @@ func TestSparklineStall(t *testing.T) {
 		t.Error("one point is not a trajectory")
 	}
 }
+
+// A reachable share above 1 is not a good reading, it is a broken one: the
+// commandable count is a subset of the membership. When a joiner was dispatched
+// twice it was enlisted twice, and the duplicate counted in the numerator only
+// -- so the panel that should have shown the bug showed 1.13 and read as the
+// healthiest possible result.
+func TestImpossibleRallyIsFlaggedNotPraised(t *testing.T) {
+	if (CohortStats{Impossible: 31}).Broken() != true {
+		t.Error("31 impossible rallies is broken")
+	}
+	if (CohortStats{Impossible: 0}).Broken() != false {
+		t.Error("none is fine")
+	}
+
+	tmpl, err := parseTemplates()
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := sampleLive()
+	v.Rally = &CohortStats{Rallies: 31, MeanSpread: 39.9, MeanMembers: 12.6, Reachable: 1.13, Impossible: 31}
+	var buf bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&buf, "livepanel", v); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "above 1 is impossible") {
+		t.Error("the panel must say the number is broken rather than showing it plain")
+	}
+}

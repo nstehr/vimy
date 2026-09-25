@@ -31,15 +31,23 @@ ORDER BY rules;
 
 SELECT '--- 2. the rally diagnosis: radius too tight, or order cannot reach? ---';
 -- Three numbers per rally settle it, and only per rally.
---   members ~= idle   the rally reaches everyone; the radius is the fault
---   idle much lower   the rally cannot reach the squad; the predicate is
+-- `idle` is a historical column name for the COMMANDABLE count: the roster
+-- minus whoever is retreating or held. Not a count of idle units.
+--
+--   members ~= commandable   the rally reaches everyone; the radius is the fault
+--   commandable much lower   the rally cannot reach the squad; the predicate is
 -- See rules/assault_phase.go.
 
 SELECT
     s.rules_digest            AS rules,
     round(avg(e.members), 2)  AS mean_members,
     round(avg(e.idle), 2)     AS mean_commandable,
-    round(avg(e.idle) / avg(e.members), 2) AS reachable_fraction
+    round(avg(e.idle) / avg(e.members), 2) AS reachable_fraction,
+    -- Impossible by construction: commandable is a subset of members. A
+    -- non-zero count here means the roster held duplicates, which is what a
+    -- joiner dispatched twice used to produce. Kept as a column so the next
+    -- such break announces itself instead of reading as a healthy 1.0.
+    countIf(e.idle > e.members)            AS impossible_rows
 FROM currie.stream_events AS e
 INNER JOIN currie.stream_sessions AS s FINAL USING (session_id)
 WHERE e.kind = 'rally'

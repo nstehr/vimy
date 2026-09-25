@@ -321,7 +321,12 @@ type Event struct {
 	// sets them: the whole squad, and the distance from the centroid to the
 	// furthest member.
 	//
-	// Idle and Near do NOT. Idle is the subset an ORDER CAN REACH (rally);
+	// Idle and Near do NOT. Idle is the subset an ORDER CAN REACH (rally) --
+	// the roster minus whoever is retreating or held, which is who the rally
+	// order is actually sent to. It is NOT a count of idle units and never was:
+	// squadAssaultActorIDs passes onlyIdle=false. The name is historical and
+	// kept only because renaming the field would orphan every row already
+	// shipped and every segment still on disk.
 	// Near is the subset WITHIN squadRallyRadius OF THE CENTRE, written by
 	// transit and, since game 154, by rally too — where it is the clump gate's
 	// own numerator and the only field that says whether the gate can pass.

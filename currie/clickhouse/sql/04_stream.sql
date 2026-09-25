@@ -98,7 +98,12 @@ CREATE TABLE IF NOT EXISTS currie.stream_events
     reason     LowCardinality(String),   -- strike-blocked: which blocker
 
     -- members and spread mean the same thing for every kind that sets them.
-    -- idle and near DO NOT: idle is the subset an ORDER CAN REACH (rally),
+    -- idle and near DO NOT: idle is the subset an ORDER CAN REACH (rally) --
+    -- the roster minus whoever is retreating or held, which is exactly who the
+    -- rally order is sent to. It is NOT a count of idle units and never was:
+    -- squadAssaultActorIDs passes onlyIdle=false. The name is historical, kept
+    -- because renaming it would orphan every row already shipped. Read it as
+    -- `commandable`, which is what every query below calls it,
     -- near is the subset WITHIN squadRallyRadius OF THE CENTRE (transit).
     -- Two different measurements, so two columns -- sharing one is what forced
     -- strike_blocked_no_target to be split, and that could not be applied

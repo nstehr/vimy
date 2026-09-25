@@ -149,9 +149,9 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
         <div class="stat-l">rallies that clumped</div>
       </div>
       <div class="stat">
-        <div class="stat-n">{{printf "%.2f" .Reachable}}</div>
+        <div class="stat-n{{if .Broken}} bad{{end}}">{{printf "%.2f" .Reachable}}</div>
         <div class="stat-l">share the order reached</div>
-        <div class="stat-sub">{{printf "%.1f" .MeanMembers}} members on average</div>
+        <div class="stat-sub">{{if .Broken}}<b>above 1 is impossible</b> &mdash; {{.Impossible}} rallies commanded more units than the squad had, so the roster is holding duplicates and this number means nothing{{else}}{{printf "%.1f" .MeanMembers}} members on average{{end}}</div>
       </div>
     </div>
   </section>
