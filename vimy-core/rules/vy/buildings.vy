@@ -24,6 +24,7 @@ def defense-cap() = lerp(2, 20, ground-defense-priority)
 
 def war-factory-base() = lerp(580, 730, vehicle-weight)
 
+
 def service-depot-cash() = 1200
 
 def war-factory-cash() =
@@ -85,12 +86,14 @@ rule build-war-factory {
                                   + lerp(0, 40, transport-assault),
                                 war-factory-base()))))
   category economy exclusive
-  because "vehicles are universally useful, so the war factory precedes naval and air yards"
+  because "vehicles are universally useful, so the war factory precedes naval and air yards. The cap replaces `not has-role(war-factory)`, which stopped at exactly one: build-war-factory fired once per game in 56 of 69 archived games and never again. A second factory adds NO parallel production - ClassicProductionQueue is per player per type, so there is one Vehicle queue however many are built, and a rule written on the assumption of parallelism would be wrong. What it adds is speed: ra/rules/player.yaml sets SpeedUp: True with BuildTimeSpeedReduction 100, 75, 60, 50, so build time falls to 75 percent at two factories, 60 at three and 50 at four - 1.33x, 1.67x and 2x the throughput of one queue, at the same credits per unit and with no change to any priority. Game 182 built one, produced 16 vehicles in 66320 ticks, earned 121689 credits and spent 19900 of it on armour: 16 percent of income, against twelve refineries and fifteen power plants. The queue was neither starved of orders nor short of cash - queue-depth(Vehicle) already stood at 1 in 61 of 63 sampled evaluations, and median cash on a produce fire was 1608 - it drained too slowly to replace losses, so production and death settled at about 35 units on the field while the enemy fielded mammoths that survived. Vimy built 231 riflemen and 16 tanks in that game and finished with none of either. Tied to refineries rather than to a constant because a factory the economy cannot feed is worse than none, and refineries are what feeds one. Thresholds measured against the streamed games rather than picked: counting refineries and factories per tick from the unit stream, 4 and 6 unlock the second factory in 7 of 9 games but late - tick 11500 of game 182's 66320, and 29480 of 79180 in the session before it. 3 and 5 unlock it in 8 of 9, at 10500 in game 182 with 84 percent of the game still to run and at 25660 with 68 percent left in the long one, and the third at 12620 in game 182. Only the game that peaked at 2 refineries declines, which is the gate working. Peak factories is 1 in every one of those games, so `not has-role(war-factory)` was the binding constraint and nothing else was. Capped at three rather than four: the fourth buys 10 percentage points against the third's 15 and the second's 25, and each one competes with armour for the Building queue. Written as a runtime or-chain rather than a def: vimyc refuses `max(1, min(3, trunc(role-count(refinery) / 2)))` because a def argument is fixed when the doctrine lands and so cannot read role-count, which is correct and is why the ladder is spelled out"
   do produce-war-factory
   require vehicle-weight > 0.1
   require not queue-busy(Building)
   require can-build-role(war-factory)
-  require not has-role(war-factory)
+  require role-count(war-factory) < 1
+       or (role-count(war-factory) < 2 and role-count(refinery) >= 3)
+       or (role-count(war-factory) < 3 and role-count(refinery) >= 5)
   require power-excess >= 0
   require cash >= war-factory-cash()
   require not queue-producing-role(war-factory)
