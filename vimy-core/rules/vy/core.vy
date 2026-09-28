@@ -82,10 +82,11 @@ rule cancel-stuck-aircraft {
 rule capture-building {
   priority 850
   category capture
+  because "the transport clause asks whether a ride EXISTS, not whether one could be built. It was `not can-build-transport()`, which is a capability and is true all game, so the walk-on-foot path was closed permanently and an engineer could only ever capture something it was already standing next to. The ride never came: produce-apc sits at 471 in the produce-vehicle exclusive category, below produce-vehicle at 480 and produce-extra-harvester at 510, and won that queue 0.7 percent of the time across 35 games - while produce-engineer buys out of the INFANTRY queue at 500 credits with none of that contention. Game 184 built five engineers and zero APCs. Engineer 410 stood at (63,52) from tick 15000 to 21420 - 6400 ticks, 530 samples at 85 distinct positions - thirteen cells short of a derrick at (57,64) that was last seen at tick 8500, so it was walking to a memory and then stopped. Two of the five died mid-map and the other survivor stalled the same way at (29,58). transport-count is what the APC rules already test, so an engineer walks when there is genuinely no ride and defers to the APC path when there is"
   do capture-building
   require capturable-count > 0
   require count(idle-engineers) > 0
-  require not can-build-transport() or engineer-near-capturable()
+  require transport-count == 0 or engineer-near-capturable()
 }
 
 rule deliver-apc-to-target {
