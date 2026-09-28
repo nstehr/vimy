@@ -40,6 +40,63 @@ func committableGround(env RuleEnv, ownName string) int {
 	return n
 }
 
+// committableAir is every combat aircraft not rostered to another squad.
+//
+// The air counterpart of committableGround, and needed because the two squads
+// have opposite problems. A ground army is bigger than the doctrine's constant,
+// so squadTarget treats that constant as a floor and lets the target grow. An
+// air fleet is smaller: game 185 asked for a group of 1 to 4, mean 2.7, against
+// 2 to 4 combat aircraft alive at any moment.
+func committableAir(env RuleEnv, ownName string) int {
+	claimed := make(map[int]bool)
+	for name, sq := range getSquads(env.Memory) {
+		if name == ownName {
+			continue
+		}
+		for _, id := range sq.UnitIDs {
+			claimed[id] = true
+		}
+	}
+	n := 0
+	for _, u := range env.State.Units {
+		if !IsCombatUnit(u.Type) || !isAircraft(u) || claimed[u.ID] {
+			continue
+		}
+		n++
+	}
+	return n
+}
+
+// squadAirTarget is how big the air squad should be: the fleet that exists,
+// never more than the doctrine asked for, and never one aircraft unless the
+// doctrine asked for one.
+//
+// squadTarget's max(committable, floor) is wrong here and pins the target above
+// the fleet. squad-air-attack is gated on present/TargetSize >= activation(),
+// so with a constant target of 3, two living aircraft score 0.67 against a
+// commit_ratio of 0.70 and the gate never opens. Game 185: squad-air-attack
+// fired 125 times, stopped at tick 34790 of 97090, and neither it nor
+// squad-air-attack-known-base fired again for the remaining 62000 ticks, while
+// squad-air-reengage kept going to 79790 because it asks squad-idle-count > 0
+// instead. Aircraft die constantly, so a constant target means one loss ends
+// the air arm for the game.
+//
+// The floor of two is what is left of commit_ratio for air: a lone helicopter
+// sent at a base is the piecemeal attack the ratio exists to prevent, and it
+// stays refused. Above two the doctrine's number becomes a ceiling rather than
+// a floor, because asking a three-aircraft fleet to muster four is asking for
+// nothing.
+func squadAirTarget(env RuleEnv, name string, want int) int {
+	target := committableAir(env, name)
+	if target > want {
+		target = want
+	}
+	if floor := min(want, 2); target < floor {
+		target = floor
+	}
+	return target
+}
+
 // squadTarget is how big this squad should be: what the doctrine asks for as a
 // FLOOR, and the committable force as the actual number.
 //
@@ -118,8 +175,13 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 		// and left the assault a remnant: 35 units on the field and a squad of
 		// 6 at tick 13500.
 		target := size
-		if domain == "ground" && strings.EqualFold(role, "attack") {
-			target = squadTarget(env, name, size)
+		if strings.EqualFold(role, "attack") {
+			switch domain {
+			case "ground":
+				target = squadTarget(env, name, size)
+			case "air":
+				target = squadAirTarget(env, name, size)
+			}
 		}
 		if sq, ok := squads[name]; ok && len(sq.UnitIDs) > 0 {
 			// The target tracks the army, so a squad formed when there were

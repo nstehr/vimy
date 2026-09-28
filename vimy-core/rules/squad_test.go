@@ -851,3 +851,64 @@ func TestJoiningUnitIsNotUnassigned(t *testing.T) {
 		}
 	}
 }
+
+// The air squad's target must track the fleet that exists.
+//
+// squadTarget's max(committable, floor) is right for ground, where the army is
+// bigger than the doctrine's constant, and wrong for air, where the fleet is
+// smaller. Game 185 asked for a group of 3 with two aircraft alive, scored 0.67
+// against a commit_ratio of 0.70, and the air arm stopped striking at tick
+// 34790 of 97090 and never resumed.
+func TestSquadAirTargetTracksTheFleet(t *testing.T) {
+	air := func(n int) RuleEnv {
+		units := make([]model.Unit, 0, n)
+		for i := range n {
+			units = append(units, model.Unit{ID: 900 + i, Type: "heli"})
+		}
+		return RuleEnv{State: model.GameState{Units: units}, Memory: map[string]any{}}
+	}
+
+	// A fleet smaller than the doctrine's number sets the target to the fleet,
+	// so present/target reaches 1 and the gate can open at all.
+	if got := squadAirTarget(air(2), "air-attack", 4); got != 2 {
+		t.Errorf("fleet 2, want 4: target = %d, want 2", got)
+	}
+	// A fleet larger than it is capped there: the doctrine's number becomes a
+	// ceiling, not a floor.
+	if got := squadAirTarget(air(6), "air-attack", 4); got != 4 {
+		t.Errorf("fleet 6, want 4: target = %d, want 4", got)
+	}
+	// One aircraft is not a strike. This is what is left of commit_ratio for
+	// air, and it stays refused.
+	if got := squadAirTarget(air(1), "air-attack", 4); got != 2 {
+		t.Errorf("fleet 1, want 4: target = %d, want 2 so the ratio stays below the gate", got)
+	}
+	// Unless the doctrine explicitly asked for a single-aircraft strike.
+	if got := squadAirTarget(air(1), "air-attack", 1); got != 1 {
+		t.Errorf("fleet 1, want 1: target = %d, want 1", got)
+	}
+	// An empty fleet still reports the floor rather than zero, so the ratio is
+	// a fraction of something real instead of dividing by zero.
+	if got := squadAirTarget(air(0), "air-attack", 3); got != 2 {
+		t.Errorf("fleet 0: target = %d, want 2", got)
+	}
+}
+
+// Aircraft rostered to another squad are not committable to this one.
+func TestCommittableAirExcludesOtherSquads(t *testing.T) {
+	env := RuleEnv{
+		State: model.GameState{Units: []model.Unit{
+			{ID: 1, Type: "heli"}, {ID: 2, Type: "heli"},
+			{ID: 3, Type: "mh60"},
+			{ID: 4, Type: "1tnk"}, // ground, never committable to an air squad
+		}},
+		Memory: map[string]any{"squads": map[string]*Squad{
+			"air-defence": {Name: "air-defence", UnitIDs: []int{2}},
+			"air-attack":  {Name: "air-attack", UnitIDs: []int{1}},
+		}},
+	}
+	// 1 is ours, 3 is unassigned, 2 belongs to air-defence, 4 is a tank.
+	if got := committableAir(env, "air-attack"); got != 2 {
+		t.Errorf("committableAir = %d, want 2 (own member plus the unassigned one)", got)
+	}
+}
