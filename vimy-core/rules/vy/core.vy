@@ -12,7 +12,7 @@ def saving-for-refinery() =
   income-rate > 0
   and not base-under-attack
   and role-count(refinery) >= 2
-  and role-count(refinery) < lerp(1, 10, economy-priority)
+  and role-count(refinery) < lerp(1, 10, economy-priority) - 2
   and can-build-role(refinery)
 
 def saving-for-factory() =
