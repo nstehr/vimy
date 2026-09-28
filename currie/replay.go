@@ -1,18 +1,17 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/nstehr/vimy/vimy-core/rules"
 	"github.com/nstehr/vimy/vimy-core/store"
+	"github.com/nstehr/vimy/vimy-core/vimyc"
 )
 
 // A subprocess, as vimy-core compiles a doctrine: rule set and states in, report
@@ -56,8 +55,9 @@ type clauseReport struct {
 // can differ only in a threshold inside a comparison.
 
 type exportFile struct {
-	States []json.RawMessage `json:"states"`
-	Cases  []exportCase      `json:"cases"`
+	RuleSets map[string]rules.RuleSetRecord `json:"rule_sets,omitempty"`
+	States   []json.RawMessage              `json:"states"`
+	Cases    []exportCase                   `json:"cases"`
 }
 
 type exportCase struct {
@@ -77,10 +77,13 @@ type window struct {
 
 // Replay is a whole game, replayed.
 type Replay struct {
-	Game     store.ReplayableGame
-	Windows  int
-	Matched  int // states paired to a doctrine
-	Orphaned int // states whose rule set is not among the archived doctrines
+	key              analysisKey
+	Sources          vimyc.Bundle
+	RecordedRuleSets map[string]rules.RuleSetRecord
+	Game             store.ReplayableGame
+	Windows          int
+	Matched          int // states paired to a doctrine
+	Orphaned         int // states whose rule set is not among the archived doctrines
 	// True when the rule sources have changed since the game was played, so
 	// states were paired to doctrines by tick rather than by fingerprint.
 	Approximate bool
@@ -151,28 +154,43 @@ func replayGame(ctx context.Context, st *store.Store, g store.ReplayableGame, ru
 	if err != nil {
 		return nil, fmt.Errorf("export for game %d: %w", g.ID, err)
 	}
-	var exp exportFile
-	if err := json.Unmarshal(raw, &exp); err != nil {
-		return nil, fmt.Errorf("parse export: %w", err)
-	}
-
 	windows, err := st.DoctrinesForGame(ctx, g.ID)
 	if err != nil {
 		return nil, err
 	}
+	firings, err := st.FiringsForGame(ctx, g.ID)
+	if err != nil {
+		return nil, err
+	}
+	paths, err := vimyc.Sources(rulesDir)
+	if err != nil {
+		return nil, err
+	}
+	bundle, err := vimyc.ReadBundle(paths)
+	if err != nil {
+		return nil, err
+	}
+	frozen, cleanup, err := bundle.Materialize()
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	return replayInputs(ctx, g, raw, windows, firings, frozen, bin)
+}
+
+func replayInputs(ctx context.Context, g store.ReplayableGame, raw []byte, windows []store.DoctrineWindow, firings map[string]store.Firing, paths []string, bin string) (*Replay, error) {
+	var exp exportFile
+	if err := json.Unmarshal(raw, &exp); err != nil {
+		return nil, fmt.Errorf("parse export: %w", err)
+	}
 	if len(windows) == 0 {
 		return nil, fmt.Errorf("game %d has no archived doctrines", g.ID)
 	}
-
-	compiler, err := rules.NewVimycCompiler(bin)
-	if err != nil {
-		return nil, fmt.Errorf("vimyc: %w", err)
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("no replay sources")
 	}
-	// The same sources the blame runs against. Otherwise fingerprints come from
-	// whatever was embedded at build time, and the replay pairs against one rule
-	// set while blaming another.
-	compiler.RulesDir = rulesDir
-
+	rulesDir := filepath.Dir(paths[0])
+	compiler := &rules.VimycCompiler{Bin: bin, RulesDir: rulesDir}
 	// Fingerprint every rule set the game could have been running, including the
 	// seed set the engine starts on before the first swap.
 	byID := map[string]*window{}
@@ -186,7 +204,7 @@ func replayGame(ctx context.Context, st *store.Store, g store.ReplayableGame, ru
 		if err := json.Unmarshal([]byte(w.DoctrineJSON), &d); err != nil {
 			continue // a doctrine that will not parse cannot be compiled either
 		}
-		rs, err := compiler.Compile(d)
+		rs, err := compiler.CompileContext(ctx, d)
 		if err != nil {
 			return nil, fmt.Errorf("compile %q: %w", d.Name, err)
 		}
@@ -198,9 +216,9 @@ func replayGame(ctx context.Context, st *store.Store, g store.ReplayableGame, ru
 	// A state appears in many cases carrying the same fingerprint, so the first
 	// wins.
 	seen := make(map[int]bool, len(exp.States))
-	rep := &Replay{Game: g}
+	rep := &Replay{Game: g, RecordedRuleSets: exp.RuleSets}
 	for _, c := range exp.Cases {
-		if seen[c.State] || c.State >= len(exp.States) {
+		if seen[c.State] || c.State < 0 || c.State >= len(exp.States) {
 			continue
 		}
 		seen[c.State] = true
@@ -275,7 +293,7 @@ func replayGame(ctx context.Context, st *store.Store, g store.ReplayableGame, ru
 			continue // the seed set is not the doctrine's rule set
 		}
 		rep.Windows++
-		out, warnings, err := blameWindow(w, rulesDir, bin)
+		out, warnings, err := blameStatesContext(ctx, rules.DoctrineParams(w.Doctrine), w.States, rulesDir, bin, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -286,13 +304,35 @@ func replayGame(ctx context.Context, st *store.Store, g store.ReplayableGame, ru
 		return nil, fmt.Errorf("game %d: no states paired to any archived doctrine", g.ID)
 	}
 	// The two disagree wherever sampling missed a rule, which is worth showing.
-	if firings, err := st.FiringsForGame(ctx, g.ID); err == nil {
-		rep.Firings = firings
-	}
+	rep.Firings = firings
 	rep.Report = merged.result(rep.Matched)
 	rep.Windows_ = merged.windows
 	rep.DoctrineNames = names
 	rep.Doctrines = chosen
+	if len(exp.RuleSets) > 0 {
+		digest, err := vimyc.SourceDigest(paths)
+		if err != nil {
+			return nil, err
+		}
+		compilerDigest, err := vimyc.BinaryDigest(bin)
+		if err != nil {
+			return nil, err
+		}
+		for id, record := range exp.RuleSets {
+			if len(record.Artifact) > 0 {
+				loaded, err := rules.LoadArtifact(record.Artifact)
+				if err != nil || rules.RuleSetID(loaded) != id {
+					return nil, fmt.Errorf("recorded rule set %s has an invalid artifact", id)
+				}
+			}
+			if record.SourceDigest != "" && record.SourceDigest != digest {
+				seenWarnings.add([]string{"Analysis uses different sources from the recorded activation."})
+			}
+			if record.CompilerDigest != "" && record.CompilerDigest != compilerDigest {
+				seenWarnings.add([]string{"Analysis uses a different compiler from the recorded activation."})
+			}
+		}
+	}
 	rep.Warnings = seenWarnings.list()
 	return rep, nil
 }
@@ -305,6 +345,10 @@ func blameWindow(w *window, rulesDir, bin string) (report, []string, error) {
 // blameStates takes parameters rather than deriving them, so a sweep can
 // override one input and leave the rest alone.
 func blameStates(params map[string]float64, raw []json.RawMessage, rulesDir, bin string) (report, []string, error) {
+	return blameStatesContext(context.Background(), params, raw, rulesDir, bin, nil)
+}
+
+func blameStatesContext(ctx context.Context, params map[string]float64, raw []json.RawMessage, rulesDir, bin string, bundle vimyc.Bundle) (report, []string, error) {
 	dir, err := os.MkdirTemp("", "currie-")
 	if err != nil {
 		return report{}, nil, fmt.Errorf("temp dir: %w", err)
@@ -330,12 +374,19 @@ func blameStates(params map[string]float64, raw []json.RawMessage, rulesDir, bin
 		return report{}, nil, fmt.Errorf("write states: %w", err)
 	}
 
-	args, err := ruleArgs(rulesDir)
+	var args []string
+	if bundle != nil {
+		var cleanup func()
+		args, cleanup, err = bundle.Materialize()
+		defer cleanup()
+	} else {
+		args, err = ruleArgs(rulesDir)
+	}
 	if err != nil {
 		return report{}, nil, err
 	}
 	args = append(args, "--params", paramsPath, "--blame", statesPath)
-	stdout, warnings, err := runVimyc(bin, args)
+	stdout, warnings, err := runVimycContext(ctx, bin, args)
 	if err != nil {
 		return report{}, nil, err
 	}
@@ -348,20 +399,7 @@ func blameStates(params map[string]float64, raw []json.RawMessage, rulesDir, bin
 
 // ruleArgs is every .vy source bar the seed set, which is its own rule set.
 func ruleArgs(dir string) ([]string, error) {
-	sources, err := filepath.Glob(filepath.Join(dir, "*.vy"))
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", dir, err)
-	}
-	out := make([]string, 0, len(sources))
-	for _, s := range sources {
-		if filepath.Base(s) != "seed.vy" {
-			out = append(out, s)
-		}
-	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf("%s: no .vy sources", dir)
-	}
-	return out, nil
+	return vimyc.Sources(dir)
 }
 
 // merger sums per-window reports into one.
@@ -469,19 +507,21 @@ func (m *merger) result(states int) report {
 // shared priorities, shadowed rules — are findings about the rule set, so they
 // pass through rather than being swallowed or raised as errors.
 func runVimyc(bin string, args []string) ([]byte, []string, error) {
-	cmd := exec.Command(bin, args...)
-	var out, errs bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &errs
-	if err := cmd.Run(); err != nil {
-		return nil, nil, fmt.Errorf("vimyc: %w: %s", err, strings.TrimSpace(errs.String()))
+	return runVimycContext(context.Background(), bin, args)
+}
+
+func runVimycContext(ctx context.Context, bin string, args []string) ([]byte, []string, error) {
+	out, diagnostics, err := (vimyc.Client{Bin: bin}).Run(ctx, args, nil)
+	if err != nil {
+		return nil, nil, err
 	}
 	var warnings []string
-	for _, line := range strings.Split(strings.TrimSpace(errs.String()), "\n") {
+	for _, line := range diagnostics {
 		if strings.Contains(line, "warning:") {
-			warnings = append(warnings, trimSourcePath(strings.TrimSpace(line), args))
+			warnings = append(warnings, line)
 		}
 	}
-	return out.Bytes(), warnings, nil
+	return out, warnings, nil
 }
 
 // trimSourcePath shortens the file a warning names to its base name.
@@ -490,15 +530,7 @@ func runVimyc(bin string, args []string) ([]byte, []string, error) {
 // absolute temp directory under test and a relative one in normal use. Neither
 // helps a reader: the file name alone is what identifies the source.
 func trimSourcePath(line string, args []string) string {
-	for _, a := range args {
-		if !strings.HasSuffix(a, ".vy") {
-			continue
-		}
-		if dir := filepath.Dir(a); dir != "." && strings.Contains(line, dir+string(filepath.Separator)) {
-			line = strings.ReplaceAll(line, dir+string(filepath.Separator), "")
-		}
-	}
-	return line
+	return vimyc.TrimSourcePath(line, args)
 }
 
 // expand is rules.ExpandHome, which also handles a bare "~" that this copy

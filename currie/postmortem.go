@@ -27,7 +27,7 @@ import (
 // that skipped it was not a convenience, it was a wrong answer that looked
 // like the right one.
 func (s *server) postmortem(ctx context.Context, w io.Writer, id int64, top int) error {
-	rep, err := s.replay(ctx, id)
+	rep, err := s.analysis.replay(ctx, id)
 	if err != nil {
 		return err
 	}

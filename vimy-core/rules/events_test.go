@@ -3,7 +3,6 @@ package rules
 import (
 	"testing"
 
-	"github.com/nstehr/vimy/vimy-core/ipc"
 	"github.com/nstehr/vimy/vimy-core/model"
 	"github.com/nstehr/vimy/vimy-core/wal"
 )
@@ -101,11 +100,11 @@ func TestNoSinkIsSafe(t *testing.T) {
 func TestEvaluationStreamRecordsEveryRuleEveryTick(t *testing.T) {
 	always := &Rule{
 		Name: "always", Priority: 100, Category: "a", ConditionSrc: "true",
-		Action: func(env RuleEnv, conn *ipc.Connection) error { return nil },
+		Action: func(env RuleEnv, conn CommandSender) error { return nil },
 	}
 	never := &Rule{
 		Name: "never", Priority: 90, Category: "b", ConditionSrc: "false",
-		Action: func(env RuleEnv, conn *ipc.Connection) error { return nil },
+		Action: func(env RuleEnv, conn CommandSender) error { return nil },
 	}
 	engine, err := NewEngine([]*Rule{always, never})
 	if err != nil {
@@ -149,11 +148,11 @@ func TestEvaluationStreamMarksSkippedSeparatelyFromDeclined(t *testing.T) {
 	winner := &Rule{
 		Name: "winner", Priority: 100, Category: "same", Exclusive: true,
 		ConditionSrc: "true",
-		Action:       func(env RuleEnv, conn *ipc.Connection) error { return nil },
+		Action:       func(env RuleEnv, conn CommandSender) error { return nil },
 	}
 	loser := &Rule{
 		Name: "loser", Priority: 90, Category: "same", ConditionSrc: "true",
-		Action: func(env RuleEnv, conn *ipc.Connection) error { return nil },
+		Action: func(env RuleEnv, conn CommandSender) error { return nil },
 	}
 	engine, err := NewEngine([]*Rule{winner, loser})
 	if err != nil {
@@ -185,7 +184,7 @@ func TestEvaluationStreamMarksSkippedSeparatelyFromDeclined(t *testing.T) {
 func TestRuleSetIDFollowsASwap(t *testing.T) {
 	first := &Rule{
 		Name: "a", Priority: 100, Category: "x", ConditionSrc: "true",
-		Action: func(env RuleEnv, conn *ipc.Connection) error { return nil },
+		Action: func(env RuleEnv, conn CommandSender) error { return nil },
 	}
 	engine, err := NewEngine([]*Rule{first})
 	if err != nil {
@@ -200,7 +199,7 @@ func TestRuleSetIDFollowsASwap(t *testing.T) {
 
 	second := &Rule{
 		Name: "a", Priority: 100, Category: "x", ConditionSrc: "false",
-		Action: func(env RuleEnv, conn *ipc.Connection) error { return nil },
+		Action: func(env RuleEnv, conn CommandSender) error { return nil },
 	}
 	if err := engine.Swap([]*Rule{second}); err != nil {
 		t.Fatalf("Swap: %v", err)

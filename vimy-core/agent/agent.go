@@ -331,9 +331,7 @@ func (a *Agent) sampleThreat(gs model.GameState) {
 	if a.WAL == nil || a.terrain == nil || gs.Tick%threatSampleTicks != 0 {
 		return
 	}
-	a.Engine.LockMemory()
-	f := rules.ThreatFieldFor(a.Engine.Memory, a.terrain, gs)
-	a.Engine.UnlockMemory()
+	f := a.Engine.ThreatSnapshot(gs)
 	if f == nil {
 		return
 	}
@@ -430,10 +428,8 @@ func (a *Agent) sampleUnits(gs model.GameState) {
 	// rows against 12071 of ours in game 175 - while targeting and the approach
 	// router run off remembered intel. A map without this shows an empty enemy
 	// half of the field during a battle.
-	a.Engine.LockMemory()
-	bases := rules.RememberedEnemyBases(a.Engine.Memory)
-	structs := rules.RememberedEnemyStructures(a.Engine.Memory)
-	caps := rules.RememberedCapturables(a.Engine.Memory)
+	intel := a.Engine.IntelSnapshot()
+	bases, structs, caps := intel.Bases, intel.Structures, intel.Capturables
 	remembered := make([]wal.Unit, 0, len(bases)+len(structs)+len(caps))
 	for owner, b := range bases {
 		remembered = append(remembered, wal.Unit{
@@ -458,7 +454,6 @@ func (a *Agent) sampleUnits(gs model.GameState) {
 			X: c.X, Y: c.Y, Building: true, Remembered: true,
 		})
 	}
-	a.Engine.UnlockMemory()
 	for _, u := range remembered {
 		a.WAL.WriteUnit(u)
 	}

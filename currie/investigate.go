@@ -333,66 +333,45 @@ func (iv *investigator) fieldAt(ctx context.Context, session string, tick int) s
 	if iv.ch == nil || session == "" {
 		return noTelemetry
 	}
-	type row struct {
-		Side       string `json:"side"`
-		Building   bool   `json:"is_building"`
-		Remembered bool   `json:"remembered"`
-		N          int    `json:"n"`
+	reader := telemetryReader{client: iv.ch}
+	units, err := reader.UnitsAt(ctx, session, tick)
+	if err != nil {
+		return "field query failed: " + err.Error()
 	}
-	rows, err := ch.Query[row](ctx, iv.ch,
-		`SELECT side, is_building, remembered, count() AS n FROM stream_units
-		 WHERE session_id = {session:String}
-		   AND tick = (SELECT max(tick) FROM stream_units
-		               WHERE session_id = {session:String} AND tick <= {tick:UInt32})
-		 GROUP BY side, is_building, remembered ORDER BY n DESC`,
-		map[string]any{"session": session, "tick": tick})
-	if err != nil || len(rows) == 0 {
+	if len(units) == 0 {
 		return fmt.Sprintf("no field sample at or before tick %d.", tick)
 	}
-	// Whether the feed ran at all, before reading anything into a zero.
-	//
-	// The first live investigation concluded that game 174 failed for want of
-	// scouting, on the strength of this tool reporting an empty threat map.
-	// The threat emitter did not exist when that game was played. Zero rows
-	// meant no feed, and the tool asserted it meant no intel - absence of data
-	// presented as evidence, which is the exact error the tool menu warns the
-	// model about.
-	type trow struct {
-		Zones int     `json:"zones"`
-		Peak  float64 `json:"peak"`
-	}
-	type anyrow struct {
-		N int `json:"n"`
-	}
-	ever, _ := ch.One[anyrow](ctx, iv.ch,
-		`SELECT count() AS n FROM stream_threat WHERE session_id = {session:String}`,
-		map[string]any{"session": session})
-	th, _ := ch.One[trow](ctx, iv.ch,
-		`SELECT count() AS zones, round(max(value),2) AS peak FROM stream_threat
-		 WHERE session_id = {session:String}
-		   AND tick = (SELECT max(tick) FROM stream_threat
-		               WHERE session_id = {session:String} AND tick <= {tick:UInt32})`,
-		map[string]any{"session": session, "tick": tick})
-
-	var b strings.Builder
-	fmt.Fprintf(&b, "the field at or before tick %d:\n", tick)
-	for _, r := range rows {
+	counts := map[string]int{}
+	for _, unit := range units {
 		kind := "units"
-		if r.Building {
+		if unit.Building {
 			kind = "buildings"
 		}
-		if r.Remembered {
+		if unit.Remembered {
 			kind += " (remembered, not currently visible)"
 		}
-		fmt.Fprintf(&b, "%s %s: %d\n", r.Side, kind, r.N)
+		counts[unit.Side+" "+kind]++
 	}
+	var keys []string
+	for key := range counts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var b strings.Builder
+	fmt.Fprintf(&b, "the field at or before tick %d:\n", tick)
+	for _, key := range keys {
+		fmt.Fprintf(&b, "%s: %d\n", key, counts[key])
+	}
+	th, err := reader.ThreatAt(ctx, session, tick)
 	switch {
-	case ever.N == 0:
+	case err != nil:
+		fmt.Fprintf(&b, "threat query failed: %v; no conclusion about threat coverage is available.\n", err)
+	case !th.Recorded:
 		b.WriteString(fieldAtAbsentFeedNote)
-	case th.Zones == 0:
-		fmt.Fprintf(&b, "threat map: 0 zones here, though %d rows exist elsewhere in this game, so the feed was running. Nothing had been scouted at this point: the approach router saw every corridor as clear, which is ignorance rather than safety.\n", ever.N)
+	case len(th.Cells) == 0:
+		b.WriteString("No positive threat cells recorded at or before this tick; this is not evidence that the approach was safe.\n")
 	default:
-		fmt.Fprintf(&b, "threat map: %d zones carrying danger, peak %.2f.\n", th.Zones, th.Peak)
+		fmt.Fprintf(&b, "threat map: %d zones carrying danger, peak %.2f.\n", len(th.Cells), th.Peak)
 	}
 	return b.String()
 }

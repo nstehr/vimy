@@ -75,10 +75,14 @@ func (s *Strategist) GetLibrarianSnapshot() *LibrarianSnapshot {
 //
 // mapWidth/mapHeight are reserved for map-class filtering, once enough games
 // accumulate to justify it.
-func (s *Strategist) ensureMemory(ctx context.Context, mapWidth, mapHeight int) *types.MemoryContext {
+func (s *Strategist) ensureMemory(ctx context.Context, mapWidth, mapHeight int, generation uint64) *types.MemoryContext {
 	_ = mapWidth
 	_ = mapHeight
 	s.mu.Lock()
+	if generation != s.generation {
+		s.mu.Unlock()
+		return nil
+	}
 	if s.memoryAttempted {
 		cached := s.memoryCache
 		s.mu.Unlock()
@@ -114,12 +118,16 @@ func (s *Strategist) ensureMemory(ctx context.Context, mapWidth, mapHeight int) 
 		return nil
 	}
 
-	bamlMem := s.runLibrarian(ctx, directive, ourFaction, opponentFaction, mem)
+	bamlMem := s.runLibrarian(ctx, directive, ourFaction, opponentFaction, mem, generation)
 	if bamlMem == nil {
 		return nil
 	}
 
 	s.mu.Lock()
+	if generation != s.generation {
+		s.mu.Unlock()
+		return nil
+	}
 	s.memoryCache = bamlMem
 	s.mu.Unlock()
 
@@ -132,6 +140,7 @@ func (s *Strategist) runLibrarian(
 	ctx context.Context,
 	directive, ourFaction, opponentFaction string,
 	mem store.MemoryContext,
+	generation uint64,
 ) *types.MemoryContext {
 	candidates := buildCandidates(mem)
 	rel, err := baml_client.SelectRelevantMemory(ctx, directive, ourFaction, opponentFaction, candidates)
@@ -220,6 +229,10 @@ func (s *Strategist) runLibrarian(
 	}
 
 	s.mu.Lock()
+	if generation != s.generation {
+		s.mu.Unlock()
+		return nil
+	}
 	s.librarian = snapshot
 	s.mu.Unlock()
 

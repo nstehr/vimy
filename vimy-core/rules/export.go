@@ -54,6 +54,7 @@ type StateExporter struct {
 	states   []vimycState
 	cases    []ExportedCase
 	maxCases int
+	ruleSets map[string]RuleSetRecord
 }
 
 // NewStateExporter records one evaluation in every `every`, up to `maxCases`.
@@ -110,6 +111,13 @@ func (e *StateExporter) begin(env RuleEnv, rules []*Rule) int {
 	e.seen++
 	if e.seen%e.every != 0 || len(e.cases) >= e.maxCases {
 		return -1
+	}
+	if e.ruleSets == nil {
+		e.ruleSets = map[string]RuleSetRecord{}
+	}
+	id := RuleSetID(rules)
+	if _, ok := e.ruleSets[id]; !ok {
+		e.ruleSets[id] = RuleSetRecord{Artifact: artifactFor(rules)}
 	}
 	return e.snapshot(env, rules)
 }
@@ -208,9 +216,10 @@ func (e *StateExporter) Flush() (string, error) {
 	}
 
 	payload := struct {
-		States []vimycState   `json:"states"`
-		Cases  []ExportedCase `json:"cases"`
-	}{e.states, e.cases}
+		States   []vimycState             `json:"states"`
+		Cases    []ExportedCase           `json:"cases"`
+		RuleSets map[string]RuleSetRecord `json:"rule_sets,omitempty"`
+	}{e.states, e.cases, e.ruleSets}
 
 	b, err := json.Marshal(payload)
 	if err != nil {
@@ -231,6 +240,7 @@ func (e *StateExporter) Flush() (string, error) {
 
 	// Cleared so a second game in the same process doesn't re-write the first.
 	e.states, e.cases, e.seen = nil, nil, 0
+	e.ruleSets = nil
 	return path, nil
 }
 
@@ -286,4 +296,18 @@ func ReadExport(path string) ([]byte, error) {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return out, nil
+}
+
+// RecordRuleSet records activation inputs once per fingerprint. The caller owns
+// the immutable record; exporters discard all records after a successful flush.
+func (e *StateExporter) RecordRuleSet(id string, record RuleSetRecord) {
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.ruleSets == nil {
+		e.ruleSets = map[string]RuleSetRecord{}
+	}
+	e.ruleSets[id] = record
 }

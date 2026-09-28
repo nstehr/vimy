@@ -1775,7 +1775,7 @@ func TestRepairBudgetDoesNotScaleWithTheFire(t *testing.T) {
 	repaired := func(cash int, bs []model.Building) bool {
 		env := RuleEnv{
 			State:  model.GameState{Tick: 9000, Buildings: bs, Player: model.Player{Cash: cash}},
-			Memory: map[string]any{"repairBudgetRatio": 0.2},
+			Memory: map[string]any{}, Policy: DoctrinePolicy{RepairBudgetRatio: 0.2},
 		}
 		if err := ActionRepairDamagedBuildings(env, conn); err != nil {
 			t.Fatalf("repair: %v", err)

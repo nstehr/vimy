@@ -1197,14 +1197,14 @@ func TestIsRushedAndIsHarvesterHarassed(t *testing.T) {
 	if env.IsRushed() || env.IsHarvesterHarassed() {
 		t.Error("expected both flags false when memory empty")
 	}
-	env.Memory["beingRushed"] = true
+	env.Signals.BeingRushed = true
 	if !env.IsRushed() {
 		t.Error("expected IsRushed() = true after setting memory")
 	}
 	if env.IsHarvesterHarassed() {
 		t.Error("expected IsHarvesterHarassed() still false")
 	}
-	env.Memory["harvesterHarassed"] = true
+	env.Signals.HarvesterHarassed = true
 	if !env.IsHarvesterHarassed() {
 		t.Error("expected IsHarvesterHarassed() = true")
 	}
@@ -1366,7 +1366,7 @@ func TestAxisBurned(t *testing.T) {
 	if env.AxisBurned("air") {
 		t.Error("expected no burn when memory empty")
 	}
-	env.Memory["burnedAxes"] = map[string]bool{"air": true}
+	env.Signals.BurnedAxes = []string{"air"}
 	if !env.AxisBurned("air") {
 		t.Error("expected air burned")
 	}

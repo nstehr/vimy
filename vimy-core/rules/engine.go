@@ -10,7 +10,6 @@ import (
 
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/vm"
-	"github.com/nstehr/vimy/vimy-core/ipc"
 	"github.com/nstehr/vimy/vimy-core/model"
 )
 
@@ -36,6 +35,8 @@ type Engine struct {
 	Terrain *model.TerrainGrid
 	prefs   UnitPreferences
 	bias    TargetBias
+	signals StrategicSignals
+	policy  DoctrinePolicy
 
 	exporter *StateExporter
 	events   TelemetrySink
@@ -44,6 +45,7 @@ type Engine struct {
 	// every rule's source: fine once per swap, absurd 25 times a second.
 	// Written under mu with `rules`, so the two can never disagree.
 	ruleSetID string
+	record    RuleSetRecord
 
 	// Per-rule firing counters for the current doctrine window, populated only
 	// while traceFirings is on and reset by FlushFiringStats.
@@ -76,6 +78,7 @@ func NewEngine(rules []*Rule) (*Engine, error) {
 	return &Engine{
 		rules:      compiled,
 		ruleSetID:  RuleSetID(compiled),
+		record:     RuleSetRecord{Artifact: artifactFor(compiled)},
 		Memory:     make(map[string]any),
 		fireCounts: make(map[string]int),
 		actCounts:  make(map[string]int),
@@ -224,18 +227,16 @@ func (e *Engine) RuleNames() []string {
 }
 
 // Evaluate runs all rules against the current game state.
-func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connection) error {
-	e.mu.RLock()
-	rules := e.rules
-	ruleSetID := e.ruleSetID
-	exporter := e.exporter
-	events := e.events
-	e.mu.RUnlock()
-
+func (e *Engine) Evaluate(gs model.GameState, faction string, conn CommandSender) error {
 	e.memMu.Lock()
 	defer e.memMu.Unlock()
+	e.mu.RLock()
+	rules, ruleSetID := e.rules, e.ruleSetID
+	exporter, events := e.exporter, e.events
+	env := RuleEnv{State: gs, Faction: faction, Memory: e.Memory, Terrain: e.Terrain,
+		Preferences: e.prefs, TargetBias: e.bias, Events: events, Signals: e.signals, Policy: e.policy}
+	e.mu.RUnlock()
 
-	env := RuleEnv{State: gs, Faction: faction, Memory: e.Memory, Terrain: e.Terrain, Preferences: e.prefs, TargetBias: e.bias, Events: events}
 	sampleIncome(env)
 	updateIntel(env)
 	updateBuiltRoles(env)
@@ -250,6 +251,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 
 	// Re-projected after each firing rather than once per evaluation: an
 	// action mutates Memory, and later rules in the same tick see it.
+	exporter.RecordRuleSet(ruleSetID, e.record)
 	stateIdx := exporter.begin(env, rules)
 
 	anyFired := false
@@ -276,28 +278,11 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn *ipc.Connecti
 		anyFired = true
 		slog.Debug("rule fired", "rule", r.Name, "priority", r.Priority, "category", r.Category)
 
-		// A matching condition is not an action that did something: an action
-		// can return early on preconditions the rule doesn't mirror, and
-		// counting those made the busiest rules in the archive the idlest ones.
-		//
-		// Orders on the wire are the signal; markEffect covers the two actions
-		// whose work never leaves memory.
-		var sentBefore uint64
-		if conn != nil {
-			sentBefore = conn.Sent()
+		actionResult, actionErr := RunAction(r.Action, env, conn)
+		if actionErr != nil {
+			slog.Error("rule action error", "rule", r.Name, "error", actionErr)
 		}
-		delete(env.Memory, effectKey)
-
-		if err := r.Action(env, conn); err != nil {
-			slog.Error("rule action error", "rule", r.Name, "error", err)
-		}
-
-		acted, _ := env.Memory[effectKey].(bool)
-		if conn != nil && conn.Sent() > sentBefore {
-			acted = true
-		}
-		delete(env.Memory, effectKey)
-		e.recordFiring(r.Name, gs.Tick, acted)
+		e.recordFiring(r.Name, gs.Tick, actionResult.Acted())
 		stateIdx = exporter.refresh(stateIdx, env, rules)
 
 		if r.Exclusive {
@@ -319,24 +304,11 @@ func (e *Engine) Swap(newRules []*Rule) error {
 	if err != nil {
 		return err
 	}
-	names := make([]string, len(compiled))
-	for i, r := range compiled {
-		names[i] = r.Name
-	}
+	e.memMu.Lock()
+	defer e.memMu.Unlock()
 	e.mu.Lock()
-	e.rules = compiled
-	e.ruleSetID = RuleSetID(compiled)
-	e.mu.Unlock()
-
-	// Keep squads the incoming rule set still forms. Dropping all of them on
-	// every swap meant no squad survived long enough to reach commit strength,
-	// which read in the logs as combat attrition.
-	//
-	// Orphans still have to go: nothing would reinforce or command them, and
-	// their members would stay assigned forever, invisible to the idle pool.
-	kept, dropped := e.retainSquads(squadNames(compiled))
-	slog.Info("rule set swapped", "count", len(compiled), "kept_squads", kept,
-		"dropped_squads", dropped, "rules", names)
+	defer e.mu.Unlock()
+	e.installRules(compiled)
 	return nil
 }
 
@@ -361,6 +333,10 @@ func squadNames(rules []*Rule) map[string]bool {
 func (e *Engine) retainSquads(keep map[string]bool) (kept, dropped int) {
 	e.memMu.Lock()
 	defer e.memMu.Unlock()
+	return e.retainSquadsLocked(keep)
+}
+
+func (e *Engine) retainSquadsLocked(keep map[string]bool) (kept, dropped int) {
 	squads := getSquads(e.Memory)
 	for name := range squads {
 		if keep[name] {
@@ -379,19 +355,13 @@ func (e *Engine) retainSquads(keep map[string]bool) (kept, dropped int) {
 // terrain.
 func (e *Engine) Reset() {
 	e.memMu.Lock()
-	e.Memory = make(map[string]any)
-	e.memMu.Unlock()
-
+	defer e.memMu.Unlock()
 	e.mu.Lock()
-	e.prefs = UnitPreferences{}
-	e.bias = TargetBias{}
+	e.Memory = make(map[string]any)
+	e.prefs, e.bias = UnitPreferences{}, TargetBias{}
+	e.signals, e.policy = StrategicSignals{}, DoctrinePolicy{}
 	e.mu.Unlock()
-
-	e.statsMu.Lock()
-	e.fireCounts = make(map[string]int)
-	e.firstTick = make(map[string]int)
-	e.lastTick = make(map[string]int)
-	e.statsMu.Unlock()
+	e.FlushFiringStats()
 
 	slog.Info("engine reset")
 }
@@ -600,22 +570,26 @@ func logCashFlow(env RuleEnv) {
 }
 
 func compileRules(rules []*Rule) ([]*Rule, error) {
+	compiled := make([]*Rule, 0, len(rules))
 	for _, r := range rules {
+		copy := *r
+		r = &copy
 		prog, err := expr.Compile(r.ConditionSrc, expr.Env(RuleEnv{}), expr.AsBool())
 		if err != nil {
 			return nil, fmt.Errorf("compile rule %q: %w", r.Name, err)
 		}
 		r.program = prog
+		compiled = append(compiled, r)
 	}
 	// Stable, so ties resolve identically every run. Two rules whose priorities
 	// lerp on different doctrine knobs will collide for some doctrine, and
 	// resolving that properly would mean ranking the knobs against each other.
 	// Source order decides instead, and vimyc emits in a fixed order, so the
 	// resolution is at least inspectable.
-	sort.SliceStable(rules, func(i, j int) bool {
-		return rules[i].Priority > rules[j].Priority
+	sort.SliceStable(compiled, func(i, j int) bool {
+		return compiled[i].Priority > compiled[j].Priority
 	})
-	return rules, nil
+	return compiled, nil
 }
 
 // incomeSampleTicks — wide enough that one purchase isn't a collapse in income,

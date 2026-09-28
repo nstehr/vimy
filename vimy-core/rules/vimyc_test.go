@@ -64,31 +64,18 @@ func TestSquadNamesReadsARealRuleSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compiler: %v", err)
 	}
-	doctrines, err := RealDoctrines()
+	// Exercise every currently supported squad domain without relying on the
+	// archived games containing a doctrine that happens to enable all of them.
+	d := DefaultDoctrine()
+	d.AirWeight, d.NavalWeight = 0.5, 0.5
+	rs, err := c.Compile(d)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// A doctrine that wants ground, air and naval, so every form-squad rule
-	// survives specialisation.
-	var found map[string]bool
-	for _, d := range doctrines {
-		rs, err := c.Compile(d)
-		if err != nil {
-			t.Fatalf("%s: %v", d.Name, err)
-		}
-		names := squadNames(rs)
-		if found == nil || len(names) > len(found) {
-			found = names
-		}
-		if found["ground-attack"] && found["ground-defense"] && found["harvester-guard"] {
-			break
-		}
-	}
-
-	for _, want := range []string{"ground-attack", "ground-defense", "harvester-guard"} {
+	found := squadNames(rs)
+	for _, want := range []string{"ground-attack", "ground-defense", "air-attack", "naval-attack"} {
 		if !found[want] {
-			t.Errorf("squadNames did not find %q in any compiled rule set; got %v", want, found)
+			t.Errorf("squadNames did not find %q; got %v", want, found)
 		}
 	}
 }

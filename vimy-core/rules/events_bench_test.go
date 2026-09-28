@@ -3,7 +3,6 @@ package rules
 import (
 	"testing"
 
-	"github.com/nstehr/vimy/vimy-core/ipc"
 	"github.com/nstehr/vimy/vimy-core/model"
 	"github.com/nstehr/vimy/vimy-core/wal"
 )
@@ -23,7 +22,7 @@ func benchRules(n int) []*Rule {
 			Priority:     1000 - i,
 			Category:     "cat-" + string(rune('a'+i%7)),
 			ConditionSrc: "State.Tick > 0",
-			Action:       func(env RuleEnv, conn *ipc.Connection) error { return nil },
+			Action:       func(env RuleEnv, conn CommandSender) error { return nil },
 		})
 	}
 	return out

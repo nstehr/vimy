@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/nstehr/vimy/currie/ch"
@@ -22,18 +21,12 @@ import (
 //go:embed index.html.tmpl report.html.tmpl insight.html.tmpl sweep.html.tmpl live.html.tmpl field.html.tmpl investigation.html.tmpl
 var pages embed.FS
 
-// The web app.
-//
-// Replaying a game costs a vimyc subprocess per doctrine window, so results are
-// cached for the life of the process. Safe because an archived game's states
-// never change; a rules edit is handled by the on-disk cache's fingerprint.
+// server adapts HTTP requests to the archive and analysis service.
 type server struct {
-	dir      string
-	rulesDir string
+	dir string
 	// The engine's own rules, for pricing what a game spent. Read rather than
 	// transcribed, so the numbers track the mod.
 	engineRules string
-	bin         string
 	// The streamed half, unsampled. Nil when no server is reachable: every
 	// section it feeds is then a section the page skips, the same way a missing
 	// model costs the prose and nothing else.
@@ -41,41 +34,8 @@ type server struct {
 	store   *store.Store
 	tmpl    *template.Template
 	insight insighter
-	cached  *cache
 
-	mu       sync.Mutex
-	cache    map[int64]*Replay
-	insights map[int64]*insightJob
-	sweeps   map[int64]*sweepJob
-	// Investigations are on demand rather than automatic: one is eight model
-	// calls against a page a human is waiting on, where the insight is one.
-	investigations map[int64]*investigationJob
-}
-
-// sweepJob is one game's parameter sweep. A few hundred vimyc runs, so like the
-// model's reading it starts with the page and is fetched when it finishes.
-type sweepJob struct {
-	done   chan struct{}
-	sweeps []Sweep
-	err    error
-}
-
-// insightJob is one game's reading, in flight or finished.
-//
-// Half a second for the replay against half a minute for the model, so they
-// cannot share a request: the job starts with the page and the page polls it.
-// Finished readings are kept — they cost a paid call and never go stale.
-type insightJob struct {
-	done    chan struct{}
-	insight *Insight
-	err     error
-}
-
-type investigationJob struct {
-	done    chan struct{}
-	insight *Insight
-	trace   []TraceStep
-	err     error
+	analysis *analysisService
 }
 
 // insighter turns a replay into prose. Nil when no model is configured; the
@@ -112,15 +72,13 @@ func newServer(dir, rulesDir, engineRules, bin string, st *store.Store, ins insi
 	}
 	t, terr := parseTemplates()
 	if terr != nil {
+		stored.Close()
 		return nil, terr
 	}
 	return &server{
-		dir: dir, rulesDir: rulesDir, engineRules: engineRules, bin: bin, store: st,
-		tmpl: t, insight: ins, cached: stored, ch: chc,
-		cache:          map[int64]*Replay{},
-		insights:       map[int64]*insightJob{},
-		sweeps:         map[int64]*sweepJob{},
-		investigations: map[int64]*investigationJob{},
+		dir: dir, engineRules: engineRules, store: st,
+		tmpl: t, insight: ins, ch: chc,
+		analysis: &analysisService{rulesDir: rulesDir, engineRules: engineRules, bin: bin, store: st, ch: chc, insight: ins, cached: stored, runner: newJobRunner(2, 64)},
 	}, nil
 }
 
@@ -256,9 +214,7 @@ func (s *server) handleLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A replay of this game is now possible and any cached one is stale.
-	s.mu.Lock()
-	delete(s.cache, id)
-	s.mu.Unlock()
+	// Analysis keys include the linked export contents; no stale entry is reused.
 	http.Redirect(w, r, fmt.Sprintf("/game/%d", id), http.StatusSeeOther)
 }
 
@@ -269,81 +225,27 @@ func (s *server) handleGame(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rep, err := s.replay(r.Context(), id)
+	rep, err := s.analysis.replay(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	v := buildWith(fmt.Sprintf("game %d · %s vs %s · %s", rep.Game.ID, rep.Game.OurFaction,
-		rep.Game.OpponentFaction, outcome(rep.Game.Won)), rep.Report, rep.Windows_, rep.Firings, rep.Game.DurationTicks, rep.Game.OurFaction, rep.Doctrines)
-	v.Windows = rep.Windows
-	v.Orphaned = rep.Orphaned
-	v.Approximate = rep.Approximate
+	v := s.analysis.gameView(r.Context(), rep)
 	v.Home = "/"
-	v.Warnings = rep.Warnings
-	s.addOutcome(r.Context(), &v, rep)
-	// Synchronous, unlike the reading and the sweep: these are three aggregate
-	// queries against a columnar store and they answer in milliseconds, so the
-	// cost of a poll endpoint would exceed the cost of the wait. The client's
-	// own timeout is what keeps a server that is up but grinding from holding
-	// the page.
-	v.Stream = loadStream(r.Context(), s.ch, id, 16)
-	// The stream knows WHICH rules never fired; the replay knows WHY. Joined
-	// here because this is the first place both exist.
-	explainSilent(v.Stream, v.Dead, v.NeverRan)
 
 	// The report is what the reader came for and it is ready now; the prose
 	// arrives when it arrives.
 	if s.insight != nil {
-		s.startInsight(id, rep)
+		s.analysis.startInsight(id, rep)
 		v.InsightURL = fmt.Sprintf("/game/%d/insight", id)
 		v.InvestigateID = id
 	}
 	if knobs := sweepKnobs(v.Sensitivity, firstParams(rep)); len(knobs) > 0 {
-		s.startSweep(id, rep, knobs)
+		s.analysis.startSweep(id, rep, knobs)
 		v.SweepURL = fmt.Sprintf("/game/%d/sweep", id)
 	}
 	s.render(w, "report.html.tmpl", v)
-}
-
-// addOutcome attaches what the engine recorded and what the money bought.
-//
-// Best-effort: a game played before the statistics migration has none of this,
-// and a missing ledger is not a reason to withhold the blame. Every absence is
-// a skipped section rather than an error, and never a zero — "destroyed no
-// buildings" and "was not counting buildings" are different findings.
-func (s *server) addOutcome(ctx context.Context, v *view, rep *Replay) {
-	o, err := s.store.GameOutcome(ctx, rep.Game.ID)
-	if err != nil {
-		slog.Warn("no outcome", "game", rep.Game.ID, "error", err)
-		return
-	}
-	v.Outcome = &o
-	if o.HasTrade {
-		v.TradeRatio = fmt.Sprintf("%.2f", o.TradeRatio())
-		v.TradeWon = o.TradeRatio() < 1
-	}
-	if o.HasArmy && o.OurArmyPeak > 0 {
-		v.ArmyRatio = fmt.Sprintf("%.1f", float64(o.EnemyArmySeenPeak)/float64(o.OurArmyPeak))
-	}
-
-	items, err := loadRuleItems()
-	if err != nil {
-		slog.Warn("no rule items", "error", err)
-		return
-	}
-	prices, err := enginePrices(s.engineRules)
-	if err != nil {
-		// Currie runs from anywhere; without the engine checkout there are no
-		// prices, and an unpriced spend is worse than none.
-		slog.Warn("no engine prices", "dir", s.engineRules, "error", err)
-		return
-	}
-	sp := computeSpend(rep.Firings, prices, items, o.Earned)
-	if sp.Total > 0 {
-		v.Spend = &sp
-	}
 }
 
 func firstParams(rep *Replay) map[string]float64 {
@@ -353,40 +255,13 @@ func firstParams(rep *Replay) map[string]float64 {
 	return rep.Windows_[0].Params
 }
 
-// startSweep replays the game with each implicated input overridden, once.
-func (s *server) startSweep(id int64, rep *Replay, knobs []string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.sweeps[id]; ok {
-		return
-	}
-	job := &sweepJob{done: make(chan struct{})}
-	s.sweeps[id] = job
-	go func() {
-		defer close(job.done)
-		started := time.Now()
-		run := func(params map[string]float64, i int) (report, error) {
-			r, _, err := blameStates(params, rep.Windows_[i].Raw, s.rulesDir, s.bin)
-			return r, err
-		}
-		job.sweeps, job.err = sweep(knobs, rep.Windows_, run)
-		if job.err != nil {
-			slog.Warn("sweep failed", "game", id, "error", job.err)
-			return
-		}
-		slog.Info("sweep ready", "game", id, "knobs", knobs, "took", time.Since(started))
-	}()
-}
-
 func (s *server) handleSweep(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "not a game id", http.StatusBadRequest)
 		return
 	}
-	s.mu.Lock()
-	job := s.sweeps[id]
-	s.mu.Unlock()
+	job := s.analysis.sweeps.get(id)
 
 	v := sweepView{URL: fmt.Sprintf("/game/%d/sweep", id)}
 	if job == nil {
@@ -394,7 +269,7 @@ func (s *server) handleSweep(w http.ResponseWriter, r *http.Request) {
 	} else {
 		select {
 		case <-job.done:
-			v.Sweeps, v.Error = job.sweeps, errText(job.err)
+			v.Sweeps, v.Error = job.value, errText(job.err)
 		default:
 			v.Pending = true
 		}
@@ -407,90 +282,6 @@ type sweepView struct {
 	Pending bool
 	Sweeps  []Sweep
 	Error   string
-}
-
-// startInsight kicks off the model in the background, once per game.
-func (s *server) startInsight(id int64, rep *Replay) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.insights[id]; ok {
-		return
-	}
-	job := &insightJob{done: make(chan struct{})}
-	s.insights[id] = job
-
-	// Already read, under these same rules: nothing to call for.
-	if prior := s.cached.read(id); prior != nil {
-		job.insight = prior
-		close(job.done)
-		slog.Info("insight from cache", "game", id)
-		return
-	}
-
-	go func() {
-		defer close(job.done)
-		// Its own context: the originating request is long gone by the time the
-		// model answers, and cancelling then wastes a paid call.
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-		defer cancel()
-		started := time.Now()
-		job.insight, job.err = s.insight.Read(ctx, rep)
-		if job.err != nil {
-			slog.Warn("insight failed", "game", id, "error", job.err, "took", time.Since(started))
-			return
-		}
-		s.cached.write(id, job.insight)
-		slog.Info("insight ready", "game", id, "took", time.Since(started))
-	}()
-}
-
-// startInvestigation runs the tool loop in the background, once per game.
-//
-// Not cached the way the insight is. An insight under fixed facts is the same
-// answer every time, so caching it is free; an investigation chooses its own
-// path and a second run against more telemetry is a different, and possibly
-// better, answer.
-func (s *server) startInvestigation(id int64, rep *Replay) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.investigations[id]; ok {
-		return
-	}
-	job := &investigationJob{done: make(chan struct{})}
-	s.investigations[id] = job
-
-	// A settled game was answered once and kept; serve that rather than paying
-	// for eight more calls to reach the same conclusion.
-	if ins, trace := s.cached.readInvestigation(id); ins != nil {
-		job.insight, job.trace = ins, trace
-		close(job.done)
-		slog.Info("investigation from cache", "game", id, "steps", len(trace))
-		return
-	}
-
-	go func() {
-		defer close(job.done)
-		// Its own context, and a longer one than the insight: eight round trips
-		// rather than one.
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
-		defer cancel()
-		started := time.Now()
-		iv := &investigator{ch: s.ch}
-		var settled bool
-		job.insight, job.trace, settled, job.err = iv.Investigate(ctx, rep)
-		if job.err != nil {
-			slog.Warn("investigation failed", "game", id, "error", job.err,
-				"steps", len(job.trace), "took", time.Since(started))
-			return
-		}
-		// Kept only when the game is over and its stream has stopped arriving.
-		// Caching a reading of half a game would serve it forever.
-		if settled {
-			s.cached.writeInvestigation(id, job.insight, job.trace)
-		}
-		slog.Info("investigation ready", "game", id, "steps", len(job.trace),
-			"settled", settled, "took", time.Since(started))
-	}()
 }
 
 type investigationView struct {
@@ -514,12 +305,12 @@ func (s *server) handleInvestigate(w http.ResponseWriter, r *http.Request) {
 		s.render(w, "investigation", investigationView{GameID: id, Error: "no model configured"})
 		return
 	}
-	rep, err := s.replay(r.Context(), id)
+	rep, err := s.analysis.replay(r.Context(), id)
 	if err != nil {
 		s.render(w, "investigation", investigationView{GameID: id, Error: errText(err)})
 		return
 	}
-	s.startInvestigation(id, rep)
+	s.analysis.startInvestigation(id, rep)
 	s.renderInvestigation(w, id)
 }
 
@@ -534,9 +325,7 @@ func (s *server) handleInvestigation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) renderInvestigation(w http.ResponseWriter, id int64) {
-	s.mu.Lock()
-	job := s.investigations[id]
-	s.mu.Unlock()
+	job := s.analysis.investigations.get(id)
 
 	v := investigationView{URL: fmt.Sprintf("/game/%d/investigation", id), GameID: id}
 	if job == nil {
@@ -546,7 +335,7 @@ func (s *server) renderInvestigation(w http.ResponseWriter, id int64) {
 	v.Started = true
 	select {
 	case <-job.done:
-		v.Insight, v.Trace, v.Error = job.insight, job.trace, errText(job.err)
+		v.Insight, v.Trace, v.Error = job.value.Insight, job.value.Trace, errText(job.err)
 	default:
 		v.Pending = true
 	}
@@ -561,9 +350,7 @@ func (s *server) handleInsight(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not a game id", http.StatusBadRequest)
 		return
 	}
-	s.mu.Lock()
-	job := s.insights[id]
-	s.mu.Unlock()
+	job := s.analysis.insights.get(id)
 
 	v := insightView{URL: fmt.Sprintf("/game/%d/insight", id)}
 	switch {
@@ -572,7 +359,7 @@ func (s *server) handleInsight(w http.ResponseWriter, r *http.Request) {
 	default:
 		select {
 		case <-job.done:
-			v.Insight, v.Error = job.insight, errText(job.err)
+			v.Insight, v.Error = job.value, errText(job.err)
 		default:
 			v.Pending = true
 		}
@@ -595,45 +382,8 @@ func errText(err error) string {
 	return err.Error()
 }
 
-func (s *server) replay(ctx context.Context, id int64) (*Replay, error) {
-	s.mu.Lock()
-	if r, ok := s.cache[id]; ok {
-		s.mu.Unlock()
-		return r, nil
-	}
-	s.mu.Unlock()
-
-	games, err := s.store.ReplayableGames(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var game *store.ReplayableGame
-	for i := range games {
-		if games[i].ID == id {
-			game = &games[i]
-			break
-		}
-	}
-	if game == nil {
-		return nil, fmt.Errorf("game %d has no export recorded; link one with `currie link --game %d --export <file>`", id, id)
-	}
-
-	started := time.Now()
-	rep, err := replayGame(ctx, s.store, *game, s.rulesDir, s.bin)
-	if err != nil {
-		return nil, err
-	}
-	slog.Info("replayed", "game", id, "windows", rep.Windows,
-		"states", rep.Matched, "orphaned", rep.Orphaned, "took", time.Since(started))
-
-	s.mu.Lock()
-	s.cache[id] = rep
-	s.mu.Unlock()
-	return rep, nil
-}
-
-// Close releases the reading cache. The archive belongs to the caller.
-func (s *server) Close() error { return s.cached.Close() }
+// Close cancels and joins analysis jobs before closing their cache. The archive belongs to the caller.
+func (s *server) Close() error { return s.analysis.Close() }
 
 func (s *server) render(w http.ResponseWriter, name string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

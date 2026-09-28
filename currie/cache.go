@@ -79,7 +79,7 @@ func (c *cache) Close() error {
 // analysisVersion invalidates readings when what the model is shown changes, as
 // opposed to what the game did. The source fingerprint catches a rule edit but
 // not a change to the analysis itself. Bump it on any change to Insight's input.
-const analysisVersion = 2
+const analysisVersion = 3
 
 // fingerprint hashes the rule sources, sorted so listing order can't change the
 // answer.
@@ -206,4 +206,9 @@ func (c *cache) writeInvestigation(game int64, ins *Insight, trace []TraceStep) 
 	}); err != nil {
 		slog.Warn("cannot store investigation", "game", game, "error", err)
 	}
+}
+
+// forRevision shares storage while keeping each job's input identity immutable.
+func (c *cache) forRevision(revision string) *cache {
+	return &cache{db: c.db, queries: c.queries, rules: revision}
 }

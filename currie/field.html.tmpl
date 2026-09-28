@@ -143,7 +143,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     <span><i style="background:var(--sole)"></i>enemy seen &mdash; {{.Enemy}}</span>
     <span><i style="border:1.5px dashed var(--sole);background:none"></i>believed &mdash; {{.Believed}}</span>
     <span><i style="background:#c9a227"></i>capturable &mdash; {{.Neutral}}</span>
-    <span><i style="background:var(--sole);opacity:.3"></i>threat &mdash; {{len .Threat}} zones</span>
+    <span><i style="background:var(--sole);opacity:.3"></i>threat &mdash; {{if .ThreatNote}}{{.ThreatNote}}{{else}}{{len .Threat}} zones{{end}}</span>
     {{if .Playing}}
     <a class="play on" hx-get="/field/{{.Session}}/frame?tick={{.Tick}}" hx-target="#frame"
        hx-swap="outerHTML" hx-sync="#frame:replace" title="pause">&#10074;&#10074; pause</a>

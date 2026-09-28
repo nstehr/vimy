@@ -3,7 +3,6 @@ package rules
 import (
 	"testing"
 
-	"github.com/nstehr/vimy/vimy-core/ipc"
 	"github.com/nstehr/vimy/vimy-core/model"
 )
 
@@ -338,7 +337,7 @@ func TestEvaluateSeparatesMatchingFromActing(t *testing.T) {
 		Priority:     100,
 		Category:     "test",
 		ConditionSrc: "true",
-		Action: func(env RuleEnv, conn *ipc.Connection) error {
+		Action: func(env RuleEnv, conn CommandSender) error {
 			markEffect(env)
 			return nil
 		},
@@ -350,7 +349,7 @@ func TestEvaluateSeparatesMatchingFromActing(t *testing.T) {
 		Priority:     90,
 		Category:     "test2",
 		ConditionSrc: "true",
-		Action:       func(env RuleEnv, conn *ipc.Connection) error { return nil },
+		Action:       func(env RuleEnv, conn CommandSender) error { return nil },
 	}
 
 	engine, err := NewEngine([]*Rule{worked, idle})

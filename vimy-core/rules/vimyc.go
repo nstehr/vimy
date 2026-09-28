@@ -1,7 +1,6 @@
 package rules
 
 import (
-	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -10,9 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
-	"strings"
 	"time"
+
+	"github.com/nstehr/vimy/vimy-core/vimyc"
 )
 
 // Compiling a doctrine into rules.
@@ -68,6 +67,18 @@ func NewVimycCompiler(bin string) (*VimycCompiler, error) {
 
 // Compile runs the compiler and loads what it emits.
 func (c *VimycCompiler) Compile(d Doctrine) ([]*Rule, error) {
+	return c.CompileContext(context.Background(), d)
+}
+
+func (c *VimycCompiler) CompileContext(ctx context.Context, d Doctrine) ([]*Rule, error) {
+	compiled, err := c.CompileDetailed(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	return compiled.Rules, nil
+}
+
+func (c *VimycCompiler) CompileDetailed(ctx context.Context, d Doctrine) (*Compilation, error) {
 	params, err := json.Marshal(DoctrineParams(d))
 	if err != nil {
 		return nil, fmt.Errorf("marshal params: %w", err)
@@ -81,29 +92,38 @@ func (c *VimycCompiler) Compile(d Doctrine) ([]*Rule, error) {
 	}
 	defer cleanup()
 
-	ctx, cancel := context.WithTimeout(context.Background(), c.Timeout)
-	defer cancel()
-
+	bundle, err := vimyc.ReadBundle(srcArgs)
+	if err != nil {
+		return nil, err
+	}
+	frozen, release, err := bundle.Materialize()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	digest, err := vimyc.SourceDigest(frozen)
+	if err != nil {
+		return nil, err
+	}
+	compilerDigest, err := vimyc.BinaryDigest(c.Bin)
+	if err != nil {
+		return nil, err
+	}
+	srcArgs = frozen
 	args := append(append([]string{}, srcArgs...), "--params", "-", "--json")
-	cmd := exec.CommandContext(ctx, c.Bin, args...)
-	cmd.Stdin = bytes.NewReader(params)
-	var out, errs bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errs
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("vimyc: %w: %s", err, strings.TrimSpace(errs.String()))
+	out, diagnostics, err := (vimyc.Client{Bin: c.Bin, Timeout: c.Timeout}).Run(ctx, args, params)
+	if err != nil {
+		return nil, err
+	}
+	for _, line := range diagnostics {
+		slog.Warn("vimyc", "doctrine", d.Name, "message", line)
 	}
 
-	// Warnings — priority collisions, shadowed rules — are findings about the
-	// rule set rather than failures, and are lost if nobody prints them. The
-	// temp directory is stripped so they name the file as checked out.
-	for _, line := range strings.Split(strings.TrimSpace(errs.String()), "\n") {
-		if line != "" {
-			slog.Warn("vimyc", "doctrine", d.Name, "message", trimSourceDir(line, srcArgs))
-		}
+	loaded, err := LoadArtifact(out)
+	if err != nil {
+		return nil, err
 	}
-
-	return LoadArtifact(out.Bytes())
+	return &Compilation{Rules: loaded, Record: RuleSetRecord{Artifact: out, Doctrine: &d, Sources: bundle, SourceDigest: digest, CompilerDigest: compilerDigest}}, nil
 }
 
 // sources names the rule set, with a function to release it.
@@ -114,27 +134,15 @@ func (c *VimycCompiler) Compile(d Doctrine) ([]*Rule, error) {
 // path drops it too, and the two must agree.
 func (c *VimycCompiler) sources() ([]string, func(), error) {
 	if c.RulesDir != "" {
-		found, err := filepath.Glob(filepath.Join(c.RulesDir, "*.vy"))
-		if err != nil {
-			return nil, func() {}, fmt.Errorf("%s: %w", c.RulesDir, err)
-		}
-		out := make([]string, 0, len(found))
-		for _, f := range found {
-			if filepath.Base(f) != "seed.vy" {
-				out = append(out, f)
-			}
-		}
-		if len(out) == 0 {
-			return nil, func() {}, fmt.Errorf("%s: no .vy sources", c.RulesDir)
-		}
-		sort.Strings(out)
-		return out, func() {}, nil
+		paths, err := vimyc.Sources(c.RulesDir)
+		return paths, func() {}, err
 	}
 	dir, err := writeRuleSet()
 	if err != nil {
 		return nil, func() {}, err
 	}
-	return []string{dir}, func() { os.RemoveAll(dir) }, nil
+	paths, err := vimyc.Sources(dir)
+	return paths, func() { os.RemoveAll(dir) }, err
 }
 
 // writeRuleSet unpacks the embedded sources into a temp directory for the
@@ -178,10 +186,5 @@ func writeRuleSet() (string, error) {
 // trimSourceDir rewrites a diagnostic to name the file as checked out, not the
 // temp path that has since been removed.
 func trimSourceDir(line string, srcArgs []string) string {
-	for _, a := range srcArgs {
-		if dir := filepath.Dir(a); dir != "." {
-			line = strings.ReplaceAll(line, dir+"/", "")
-		}
-	}
-	return line
+	return vimyc.TrimSourcePath(line, srcArgs)
 }

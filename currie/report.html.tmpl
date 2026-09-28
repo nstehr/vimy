@@ -485,7 +485,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
 
   {{if $.FiredAnyway}}
   <section>
-    
+
     <p class="lede">
       A replay reads the <b>sampled</b> states in the recording, not every tick — so a rule that
       fired a handful of times across a whole game can be absent from every sample and look as
@@ -764,7 +764,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
   <details class="fold">
   <summary>How to read this</summary>
   <section class="note">
-    
+
     {{if .Approximate}}
     <p>
       <b>The rule sources have changed since this game was played.</b> Recompiling its doctrines
@@ -775,8 +775,8 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     <p>
       That is wrong in a knowable way: thresholds are the ones in force at the time, but a rule
       whose condition was edited since is being judged by its current text. Treat this as a guide
-      to where to look. The archive records a doctrine but not the artifact it compiled to, which
-      is what an exact replay of an old game would need.
+      to where to look. This analysis uses the selected rule sources. New recordings also retain the original
+      compiled rules and their source/compiler identity; older recordings do not.
     </p>
     {{else}}
     <p>

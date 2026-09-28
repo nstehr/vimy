@@ -46,11 +46,11 @@ type fieldView struct {
 	Session string
 	Tick    int
 
-	// The danger map the approach router actually reads. An empty one is the
-	// finding, not a gap: it means nothing has been scouted and every corridor
-	// scores clear.
-	Threat    []fieldZone
-	ThreatMax float64
+	// The danger map the approach router reads. ThreatNote distinguishes
+	// absent observations from a query failure or a sampled field.
+	Threat     []fieldZone
+	ThreatMax  float64
+	ThreatNote string
 
 	// The ground. The sidecar has had this grid since it gained terrain
 	// awareness and nothing ever drew it, so every map of a game so far has
@@ -177,32 +177,25 @@ func loadField(ctx context.Context, c *ch.Client, session string, tick int, play
 
 	// The session's extent, so the scrubber covers the game rather than
 	// whatever happens to have been shipped first.
-	type extent struct {
-		Lo int `json:"lo"`
-		Hi int `json:"hi"`
+	reader := telemetryReader{client: c}
+	ext, err := reader.UnitExtent(ctx, session)
+	if err != nil {
+		v.Note = "unit telemetry query failed: " + err.Error()
+		return v
 	}
-	ext, err := ch.One[extent](ctx, c,
-		`SELECT min(tick) AS lo, max(tick) AS hi FROM stream_units WHERE session_id = {session:String}`,
-		map[string]any{"session": session})
-	if err != nil || ext.Hi == 0 {
+	if ext.Count == 0 {
 		v.Note = "no unit telemetry for this session yet"
 		return v
 	}
 	v.loadTerrain(ctx, c, session)
-	v.loadThreat(ctx, c, session, tick)
 	v.Lo, v.Hi, v.Stride = ext.Lo, ext.Hi, fieldScrubStride
 
 	v.clock(ext.Lo, ext.Hi, playing)
+	v.loadThreat(ctx, c, session, v.Tick)
 
 	// The sample at or just before the requested tick, so a scrub position
 	// between samples shows the last known field rather than an empty one.
-	rows, err := ch.Query[unitRow](ctx, c,
-		`SELECT tick, unit_id, type, side, x, y, hp, idle, is_building, remembered
-		 FROM stream_units
-		 WHERE session_id = {session:String}
-		   AND tick = (SELECT max(tick) FROM stream_units
-		               WHERE session_id = {session:String} AND tick <= {tick:UInt32})`,
-		map[string]any{"session": session, "tick": v.Tick})
+	rows, err := reader.UnitsAt(ctx, session, v.Tick)
 	if err != nil {
 		slog.Warn("field units", "session", session, "error", err)
 		v.Note = "query failed: " + err.Error()
@@ -404,19 +397,23 @@ func (v *fieldView) loadThreat(ctx context.Context, c *ch.Client, session string
 	if v.TerrainSpan <= 0 {
 		return
 	}
-	cells, err := ch.Query[threatCell](ctx, c,
-		`SELECT col, row, value FROM stream_threat
-		 WHERE session_id = {session:String}
-		   AND tick = (SELECT max(tick) FROM stream_threat
-		               WHERE session_id = {session:String} AND tick <= {tick:UInt32})`,
-		map[string]any{"session": session, "tick": tick})
-	if err != nil || len(cells) == 0 {
+	snapshot, err := (telemetryReader{client: c}).ThreatAt(ctx, session, tick)
+	if err != nil {
+		v.ThreatNote = "Threat query failed: " + err.Error()
 		return
 	}
-	for _, c := range cells {
-		if c.Value > v.ThreatMax {
-			v.ThreatMax = c.Value
-		}
+	if !snapshot.Recorded {
+		v.ThreatNote = "Threat telemetry not recorded; an empty overlay is not evidence of safety."
+		return
+	}
+	if len(snapshot.Cells) == 0 {
+		v.ThreatNote = "No positive threat cells recorded at or before this tick."
+		return
+	}
+	cells := snapshot.Cells
+	v.ThreatMax = snapshot.Peak
+	if v.ThreatMax <= 0 {
+		return
 	}
 	// Zone size comes from the terrain grid, which shares this geometry.
 	zw := fieldSize / float64(threatCols)

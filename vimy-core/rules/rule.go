@@ -2,11 +2,10 @@ package rules
 
 import (
 	"github.com/expr-lang/expr/vm"
-	"github.com/nstehr/vimy/vimy-core/ipc"
 )
 
 // ActionFunc sends commands to the OpenRA mod when a rule's condition is true.
-type ActionFunc func(env RuleEnv, conn *ipc.Connection) error
+type ActionFunc func(env RuleEnv, conn CommandSender) error
 
 // Rule is a condition → action pair, the atomic unit of AI behavior. Category
 // and Exclusive are what stop two rules issuing conflicting orders on one
