@@ -178,6 +178,7 @@ rule build-base-defense {
   require any-ground-defense-buildable()
   require ground-defense-count() < defense-cap()
   require affordable(lerp(1500, 300, ground-defense-priority))
+  require free(lerp(1500, 300, ground-defense-priority))
 }
 
 rule build-base-defense-rush {

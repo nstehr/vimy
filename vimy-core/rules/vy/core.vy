@@ -8,6 +8,26 @@ param aggression: float
 param commit-ratio: float
 param force-size: float
 
+def saving-for-refinery() =
+  income-rate > 0
+  and not base-under-attack
+  and role-count(refinery) >= 2
+  and role-count(refinery) < lerp(1, 10, economy-priority)
+  and can-build-role(refinery)
+
+def saving-for-factory() =
+  income-rate > 0
+  and not base-under-attack
+  and not saving-for-refinery()
+  and role-count(refinery) >= 3
+  and role-count(war-factory) < 2
+  and can-build-role(war-factory)
+
+def free(cost: int) =
+  cash >= cost
+  and (not saving-for-refinery() or cash >= cost + 1400)
+  and (not saving-for-factory() or cash >= cost + 2000)
+
 def reserves(cost: int) =
   cash >= cost
   and (vehicle-weight <= 0.1 or has-role(radar) or cash >= cost + min(cost, 1000))

@@ -127,6 +127,7 @@ rule produce-infantry {
   require can-build(Infantry, e1)
   require count(e1) < rifle-cap()
   require infantry-reserves(100)
+  require free(100)
 }
 
 rule produce-infantry-rush {
