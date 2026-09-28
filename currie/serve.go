@@ -289,6 +289,9 @@ func (s *server) handleGame(w http.ResponseWriter, r *http.Request) {
 	// own timeout is what keeps a server that is up but grinding from holding
 	// the page.
 	v.Stream = loadStream(r.Context(), s.ch, id, 16)
+	// The stream knows WHICH rules never fired; the replay knows WHY. Joined
+	// here because this is the first place both exist.
+	explainSilent(v.Stream, v.Dead, v.NeverRan)
 
 	// The report is what the reader came for and it is ready now; the prose
 	// arrives when it arrives.

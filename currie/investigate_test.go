@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/nstehr/vimy/vimy-core/store"
+)
 
 // The loop must be bounded and must surface its trace even when it runs out of
 // steps: eight tool results are worth reading when nothing was concluded from
@@ -94,5 +99,96 @@ func TestMalformedStepsAreToleratedButBounded(t *testing.T) {
 	if maxMalformedSteps <= 0 || maxMalformedSteps >= maxInvestigationSteps {
 		t.Errorf("maxMalformed = %d against a budget of %d: it must absorb a slip without spending the whole run",
 			maxMalformedSteps, maxInvestigationSteps)
+	}
+}
+
+// One investigation of game 180 lost three consecutive steps to the session id:
+// `{session}` without a type is a syntax error at the closing brace, and
+// `session = '{session}'` is a quoted placeholder that never substitutes against
+// a column no table has. Each of those questions was a good one.
+func TestQueryRepairsTheSessionFilter(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"SELECT tick FROM stream_events WHERE session_id = {session}",
+			"SELECT tick FROM stream_events WHERE session_id = {session:String}"},
+		{"SELECT tick FROM stream_events WHERE session_id = '{session}'",
+			"SELECT tick FROM stream_events WHERE session_id = {session:String}"},
+		{"SELECT tick FROM stream_events WHERE session_id = {session_id}",
+			"SELECT tick FROM stream_events WHERE session_id = {session:String}"},
+		{"SELECT tick FROM stream_events WHERE session_id = { session : String }",
+			"SELECT tick FROM stream_events WHERE session_id = {session:String}"},
+		// The wrong column, with and without a placeholder beside it.
+		{"SELECT tick FROM stream_events WHERE session = '{session}'",
+			"SELECT tick FROM stream_events WHERE session_id = {session:String}"},
+		{"SELECT tick FROM stream_units WHERE session IN ('a','b')",
+			"SELECT tick FROM stream_units WHERE session_id IN ('a','b')"},
+		// A literal id is what the menu now asks for, and must pass through.
+		{"SELECT tick FROM stream_events WHERE session_id = '20260925-144438-b8814fed'",
+			"SELECT tick FROM stream_events WHERE session_id = '20260925-144438-b8814fed'"},
+		// Nothing resembling a session filter is left alone, including columns
+		// that merely start with the same letters.
+		{"SELECT session_idx FROM t WHERE sessions = 1", "SELECT session_idx FROM t WHERE sessions = 1"},
+	}
+	for _, c := range cases {
+		got := wrongSessionColumn.ReplaceAllString(sessionPlaceholder.ReplaceAllString(c.in, "{session:String}"), "session_id$1")
+		if got != c.want {
+			t.Errorf("\n in   %s\n got  %s\n want %s", c.in, got, c.want)
+		}
+	}
+}
+
+// The model is told the id rather than asked to spell a placeholder for it.
+func TestMenuNamesTheSession(t *testing.T) {
+	m := menuFor("20260925-144438-b8814fed")
+	if !strings.Contains(m, "session_id = '20260925-144438-b8814fed'") {
+		t.Error("the menu does not show the literal filter to write")
+	}
+	if strings.Contains(m, "Pass the session id as") {
+		t.Error("the placeholder instruction is still in the menu")
+	}
+	if !strings.Contains(menuFor(""), "never streamed") {
+		t.Error("a game with no telemetry should be told so, not handed an empty filter")
+	}
+}
+
+// The facts bundle was entirely failure-side: blocked clauses, dead rules,
+// gates, missing things. So an investigation of game 180 read squad-attack's 348
+// blocks as "the army never launched" while squad-attack-known-base - same
+// exclusive category, same ready-ratio clause, higher priority at that
+// aggression - had acted 725 times. The model could not see that, and now must.
+func TestFactsCarryWhatActuallyFired(t *testing.T) {
+	r := &Replay{
+		Game: store.ReplayableGame{ID: 180, DurationTicks: 34790, OurFaction: "england"},
+		Firings: map[string]store.Firing{
+			"squad-attack-known-base": {Matched: 1195, Acted: 725, FirstTick: 4630, LastTick: 30550},
+			"produce-infantry":        {Matched: 400, Acted: 112, FirstTick: 1610, LastTick: 30000},
+			// Matched but never acted: not a firing rule, and must not be listed
+			// as one.
+			"capture-building": {Matched: 6, Acted: 0, FirstTick: 100, LastTick: 200},
+		},
+	}
+	f := facts(r)
+	if len(f.Top_firing) != 2 {
+		t.Fatalf("want the two rules that acted, got %d", len(f.Top_firing))
+	}
+	if f.Top_firing[0].Name != "squad-attack-known-base" || f.Top_firing[0].Acted != 725 {
+		t.Errorf("the busiest rule is not first: %+v", f.Top_firing[0])
+	}
+	if f.Top_firing[0].Last_tick != 30550 {
+		t.Errorf("last_tick dropped: %+v", f.Top_firing[0])
+	}
+	for _, fr := range f.Top_firing {
+		if fr.Name == "capture-building" {
+			t.Error("a rule that matched and never acted was reported as having fired")
+		}
+	}
+}
+
+// The menu must warn about the trap the facts now let the model avoid.
+func TestMenuWarnsAboutExclusiveCategories(t *testing.T) {
+	m := menuFor("s1")
+	for _, want := range []string{"EXCLUSIVE", "top_firing", "preempted"} {
+		if !strings.Contains(m, want) {
+			t.Errorf("the menu never mentions %q", want)
+		}
 	}
 }

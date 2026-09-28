@@ -1276,18 +1276,16 @@ func TestWipingOutATinyForceIsNotACounter(t *testing.T) {
 // visible: 2x apc 1x 3tnk 1x ftrk", which asked the strategist to spend on
 // engineers to go and capture enemy armour.
 func TestOnlyTechStructuresReachTheStrategist(t *testing.T) {
-	gs := model.GameState{
-		Tick: 5000, MapWidth: 128, MapHeight: 128,
-		Capturables: []model.Enemy{
-			{ID: 1, Type: "oilb.ukraine", X: 40, Y: 40},
-			{ID: 2, Type: "3tnk", X: 42, Y: 40},
-			{ID: 3, Type: "apc", X: 44, Y: 40},
-			{ID: 4, Type: "proc", X: 46, Y: 40},
-			{ID: 5, Type: "3tnk.husk", X: 48, Y: 40},
-			{ID: 6, Type: "hosp", X: 50, Y: 40},
+	gs := model.GameState{Tick: 5000, MapWidth: 128, MapHeight: 128}
+	// Nothing is on screen: the rule loop filtered the sightings when they
+	// happened, and what the strategist reads is the memory, not the instant.
+	memory := map[string]any{
+		"capturables": map[int]rules.EnemyDefenseIntel{
+			1: {ActorID: 1, Type: "oilb", X: 40, Y: 40, Tick: 900},
+			6: {ActorID: 6, Type: "hosp", X: 50, Y: 40, Tick: 1200},
 		},
 	}
-	sit := buildSituation(gs, map[string]any{}, nil, nil, nil)
+	sit := buildSituation(gs, memory, nil, nil, nil)
 
 	got := map[string]int64{}
 	for _, c := range sit.Capturables_visible {
@@ -1299,9 +1297,40 @@ func TestOnlyTechStructuresReachTheStrategist(t *testing.T) {
 	if got["hosp"] != 1 {
 		t.Errorf("the hospital is a tech structure and was dropped: %v", got)
 	}
+	// Remembered, so it survives the moment the scout drives on.
+	if len(sit.Capturables_visible) != 2 {
+		t.Errorf("want the two remembered structures, got %v", got)
+	}
 	for _, unwanted := range []string{"3tnk", "apc", "proc", "3tnk.husk"} {
 		if _, ok := got[unwanted]; ok {
 			t.Errorf("%s was offered to the strategist as a capture target", unwanted)
 		}
+	}
+}
+
+// A rush is a rush whichever thing is being destroyed. Game 179 lost its
+// construction yard at tick 8760 and its war factory at 9180, both inside the
+// rush window, and the flag stayed false because only harvester events counted -
+// so build-base-defense-rush and its 200-credit floor never fired, and one
+// pillbox met sixteen attackers.
+func TestRushDetectedFromBuildingLoss(t *testing.T) {
+	gs := &model.GameState{Tick: 8800}
+	stress := []Event{{Kind: EventCriticalBuildingLost, Tick: 8760, Detail: "Lost critical building: fact"}}
+	rushed, harassed := computePressureFlags(8800, gs, stress)
+	if !rushed {
+		t.Error("the construction yard was destroyed inside the rush window and nothing called it a rush")
+	}
+	if harassed {
+		t.Error("harvester harassment is a mid-game read and must not fire on this")
+	}
+	// Past the window it is no longer an opening rush, and the rush rules must
+	// not stay armed for the rest of the game.
+	late := &model.GameState{Tick: 20000}
+	if rushed, _ = computePressureFlags(20000, late, []Event{{Kind: EventCriticalBuildingLost, Tick: 19900}}); rushed {
+		t.Error("a building lost at tick 19900 was read as an opening rush")
+	}
+	// And an old event inside the window is stale, like the harvester ones.
+	if rushed, _ = computePressureFlags(8800, gs, []Event{{Kind: EventCriticalBuildingLost, Tick: 200}}); rushed {
+		t.Error("a building lost 8600 ticks ago is not current pressure")
 	}
 }

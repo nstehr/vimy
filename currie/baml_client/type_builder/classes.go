@@ -515,6 +515,54 @@ func (t *FindingClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }
 
+type FiringRuleClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *FiringRuleClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *FiringRuleClassView) PropertyName() (ClassPropertyView, error) {
+	return t.inner.Property("name")
+}
+
+func (t *FiringRuleClassView) PropertyActed() (ClassPropertyView, error) {
+	return t.inner.Property("acted")
+}
+
+func (t *FiringRuleClassView) PropertyMatched() (ClassPropertyView, error) {
+	return t.inner.Property("matched")
+}
+
+func (t *FiringRuleClassView) PropertyFirst_tick() (ClassPropertyView, error) {
+	return t.inner.Property("first_tick")
+}
+
+func (t *FiringRuleClassView) PropertyLast_tick() (ClassPropertyView, error) {
+	return t.inner.Property("last_tick")
+}
+
+func (t *TypeBuilder) FiringRule() (*FiringRuleClassView, error) {
+	bld, err := t.inner.Class("FiringRule")
+	if err != nil {
+		return nil, err
+	}
+	return &FiringRuleClassView{inner: bld}, nil
+}
+
+func (t *FiringRuleClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
 type GameFactsClassView struct {
 	inner baml.ClassBuilder
 }
@@ -601,6 +649,14 @@ func (t *GameFactsClassView) PropertyDoctrines() (ClassPropertyView, error) {
 
 func (t *GameFactsClassView) PropertyMissing() (ClassPropertyView, error) {
 	return t.inner.Property("missing")
+}
+
+func (t *GameFactsClassView) PropertyTop_firing() (ClassPropertyView, error) {
+	return t.inner.Property("top_firing")
+}
+
+func (t *GameFactsClassView) PropertyPreempted() (ClassPropertyView, error) {
+	return t.inner.Property("preempted")
 }
 
 func (t *TypeBuilder) GameFacts() (*GameFactsClassView, error) {
@@ -716,6 +772,50 @@ func (t *TypeBuilder) MissingThing() (*MissingThingClassView, error) {
 }
 
 func (t *MissingThingClassView) Type() (baml.Type, error) {
+	return t.inner.Type()
+}
+
+type PreemptedRuleClassView struct {
+	inner baml.ClassBuilder
+}
+
+func (t *PreemptedRuleClassView) ListProperties() ([]ClassPropertyView, error) {
+	result, err := t.inner.ListProperties()
+	if err != nil {
+		return nil, err
+	}
+	builders := make([]ClassPropertyView, len(result))
+	for i, p := range result {
+		builders[i] = p
+	}
+	return builders, nil
+}
+
+func (t *PreemptedRuleClassView) PropertyName() (ClassPropertyView, error) {
+	return t.inner.Property("name")
+}
+
+func (t *PreemptedRuleClassView) PropertyCategory() (ClassPropertyView, error) {
+	return t.inner.Property("category")
+}
+
+func (t *PreemptedRuleClassView) PropertyLost_to() (ClassPropertyView, error) {
+	return t.inner.Property("lost_to")
+}
+
+func (t *PreemptedRuleClassView) PropertyPreempted() (ClassPropertyView, error) {
+	return t.inner.Property("preempted")
+}
+
+func (t *TypeBuilder) PreemptedRule() (*PreemptedRuleClassView, error) {
+	bld, err := t.inner.Class("PreemptedRule")
+	if err != nil {
+		return nil, err
+	}
+	return &PreemptedRuleClassView{inner: bld}, nil
+}
+
+func (t *PreemptedRuleClassView) Type() (baml.Type, error) {
 	return t.inner.Type()
 }
 

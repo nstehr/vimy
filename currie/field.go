@@ -232,12 +232,14 @@ func loadField(ctx context.Context, c *ch.Client, session string, tick int, play
 	for _, r := range rows {
 		class, radius := markerClass(r)
 		switch {
+		// Neutral first: a derrick is remembered once it has been driven past,
+		// and it is still an objective, not a belief about the enemy.
+		case r.Side == "neutral":
+			v.Neutral++
 		case r.Remembered:
 			v.Believed++
 		case r.Side == "ours":
 			v.Ours++
-		case r.Side == "neutral":
-			v.Neutral++
 		default:
 			v.Enemy++
 		}

@@ -177,7 +177,11 @@ type view struct {
 	InertSites int
 	Preempted  int
 	Sites      []site
-	Dead       []deadRule
+	// The four line-keyed views above, joined into one table. Sites, Gates,
+	// Sensitivity and Chains stay on the view because the JSON and the
+	// postmortem read them, and because the join is a rendering decision.
+	Blockers []Blocker
+	Dead     []deadRule
 	// Which blame sites track a doctrine input and which block regardless.
 	Sensitivity []Sensitivity
 	Doctrinal   int
@@ -203,7 +207,7 @@ type view struct {
 	// InsightURL because the insight loads itself and this one waits to be
 	// asked: it is eight model calls rather than one.
 	InvestigateID int64
-	SweepURL   string
+	SweepURL      string
 
 	// What the engine recorded about how the game went. The blame explains why
 	// rules did not fire; this is the only part of the page that says whether
@@ -248,6 +252,8 @@ func buildWith(title string, rep report, windows []windowStats, firings map[stri
 			v.Doctrinal++
 		}
 	}
+	// Last: it joins the four views above and needs all of them built.
+	v.Blockers = blockers(&v)
 	return v
 }
 

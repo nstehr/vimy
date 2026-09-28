@@ -156,3 +156,37 @@ func TestDoctrineParamsCarriesForceSize(t *testing.T) {
 		t.Errorf("force-size on a zero doctrine = (%v, present=%v), want (0, true)", got, ok)
 	}
 }
+
+// The report ranked `require can-build-role(kennel)` among the lines worth
+// chasing in every Allied game, because only units were faction-locked and the
+// buildings that gate them were not. Sourced from the engine's own
+// prerequisites, not from memory: mods/ra/rules/structures.yaml gates KENN,
+// TSLA, FTUR and IRON on ~structures.soviet, and GAP, PBOX, HBOX and GUN on
+// ~structures.allies.
+func TestFactionLockedBuildings(t *testing.T) {
+	allied := []string{"kennel", "tesla_coil", "flame_tower", "iron_curtain", "attack_dog", "grenadier"}
+	for _, role := range allied {
+		if BuildableByFaction(role, "germany") {
+			t.Errorf("%s is Soviet; an Allied game should never chase it", role)
+		}
+		if !BuildableByFaction(role, "ukraine") {
+			t.Errorf("%s was locked away from the Soviets who build it", role)
+		}
+	}
+	soviet := []string{"pillbox", "camo_pillbox", "turret", "gap_generator", "spy"}
+	for _, role := range soviet {
+		if BuildableByFaction(role, "ukraine") {
+			t.Errorf("%s is Allied; a Soviet game should never chase it", role)
+		}
+		if !BuildableByFaction(role, "england") {
+			t.Errorf("%s was locked away from the Allies who build it", role)
+		}
+	}
+	// Roles that abstract over both sides must stay open to both, or every
+	// barracks rule reads as impossible for somebody.
+	for _, role := range []string{"barracks", "tech_center", "airfield", "naval_yard", "aa_defense", "refinery"} {
+		if !BuildableByFaction(role, "germany") || !BuildableByFaction(role, "ukraine") {
+			t.Errorf("%s has a variant on both sides and must not be locked", role)
+		}
+	}
+}

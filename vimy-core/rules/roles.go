@@ -330,6 +330,32 @@ var factionLockedRoles = map[string]string{
 	"missile_sub":   "soviet",
 	"cruiser":       "allied",
 	"destroyer":     "allied",
+
+	// Buildings and defences, from the engine's own prerequisites: every one of
+	// these carries ~structures.soviet or ~structures.allies in
+	// mods/ra/rules/structures.yaml. Roles that abstract over both sides -
+	// barracks, tech_center, airfield, naval_yard, aa_defense - are absent on
+	// purpose, because each has a variant either side can build.
+	//
+	// Without them the report called `require can-build-role(kennel)` a blocker
+	// worth chasing in every Allied game. Vimy has played Allied in all of games
+	// 173-177, so a line that can never hold was ranked among the ones that
+	// could.
+	"kennel":        "soviet",
+	"tesla_coil":    "soviet",
+	"flame_tower":   "soviet",
+	"iron_curtain":  "soviet",
+	"pillbox":       "allied",
+	"camo_pillbox":  "allied",
+	"turret":        "allied",
+	"gap_generator": "allied",
+
+	// Units gated by one of those buildings rather than by their own
+	// prerequisite line: the dog needs ~kenn, the grenadier ~barr (the Soviet
+	// barracks), the spy ~tent (the Allied one).
+	"attack_dog": "soviet",
+	"grenadier":  "soviet",
+	"spy":        "allied",
 }
 
 // sovietFactions build from the Soviet tree; anything else is treated as

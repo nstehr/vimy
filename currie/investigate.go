@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -71,7 +72,7 @@ func (iv *investigator) Investigate(ctx context.Context, r *Replay) (*Insight, [
 	malformed := 0
 
 	for step := range maxInvestigationSteps {
-		res, err := baml_client.InvestigateGameStep(ctx, f, toolMenu, history)
+		res, err := baml_client.InvestigateGameStep(ctx, f, menuFor(session), history)
 		if err != nil {
 			malformed++
 			if malformed > maxMalformedSteps {
@@ -152,6 +153,16 @@ func (iv *investigator) sessionFor(ctx context.Context, gameID int64) string {
 // than a schema dump: the schema is in the output format already, and what the
 // model needs is when each is worth spending a step on.
 const toolMenu = `
+Before concluding that something did not happen: a rule blocked N times may not
+be a capability that failed. In an EXCLUSIVE category only the highest-priority
+rule whose condition holds runs, and the blame analysis replays every rule
+independently - so the loser of a category accumulates blocks on the very clause
+its winning sibling passed. Read top_firing and preempted in the facts first. An
+investigation of game 180 reported that "doctrinal thresholds blocked the attack
+rule so the army never launched" from squad-attack's 348 blocks, while
+squad-attack-known-base - same exclusive category, same ready-ratio clause,
+higher priority at that aggression - had acted 725 times.
+
 squad_timeline — how the attack squad behaved over the game: size, how much of
   it was together, how strung out, and how close it got to its target. This is
   where "the squad arrived" is separated from "two stragglers arrived", and
@@ -170,7 +181,8 @@ field_at — every actor at one tick, with the threat map: ours, enemies seen,
 
 query — one SELECT against the telemetry, for anything the tools above do not
   answer. The connection is read-only and results are capped, so a bad query
-  costs a turn and nothing else. Pass the session id as {session:String}.
+  costs a turn and nothing else. The session id is given below: write it as a
+  quoted literal against the session_id column, never as a placeholder.
 
   stream_units(session_id, tick, unit_id, type, side, x, y, hp, idle,
     is_building, remembered) - every actor at a sampled tick, 20 ticks apart.
@@ -197,6 +209,33 @@ compare_games — the same headline numbers across recent games, to tell what is
   particular to this one from what is true of the run. Income per tick has
   predicted the outcome in every game measured.
 `
+
+// menuFor is the tool menu with this game's session id spelled out.
+//
+// The menu used to say "pass the session id as {session:String}", which asked
+// the model to know ClickHouse's parameter syntax exactly. Three consecutive
+// queries in one investigation of game 180 died on it: `{session}` without the
+// type, which is a syntax error at the closing brace, and `session = '{session}'`,
+// which is both a quoted placeholder that never substitutes and a column no
+// table has. The id is a known string, so there is no reason to ask the model to
+// spell a placeholder at all - and rawQuery still repairs one when it does.
+func menuFor(session string) string {
+	if session == "" {
+		return toolMenu + "\nThis game was never streamed, so the telemetry tools have nothing to read.\n"
+	}
+	return toolMenu + fmt.Sprintf(
+		"\nThe session id for this game is '%s'. Every telemetry table is keyed on\n"+
+			"session_id, so filter on it as a quoted literal: session_id = '%s'.\n",
+		session, session)
+}
+
+// sessionPlaceholder matches the ways a model spells "the session id" instead of
+// writing it: {session}, {session_id}, {session:String}, and any of those inside
+// quotes. Rewritten to ClickHouse's typed form, which the bound parameter fills.
+var sessionPlaceholder = regexp.MustCompile(`'?\{\s*session(?:_id)?\s*(?::\s*\w+\s*)?\}'?`)
+
+// wrongSessionColumn catches `session =` and `session IN`, which no table has.
+var wrongSessionColumn = regexp.MustCompile(`\bsession(\s*(?:=|!=|<>|[iI][nN]\b))`)
 
 // run executes whichever tool the model picked. Returns the tool name, the
 // model's stated reason, and the result to feed back.
@@ -439,9 +478,17 @@ func (iv *investigator) rawQuery(ctx context.Context, session, sql string) strin
 	if strings.TrimSpace(sql) == "" {
 		return "empty query."
 	}
+	// A placeholder the model wrote by hand is repaired rather than run: an
+	// untyped {session} is a syntax error, and a quoted '{session}' never
+	// substitutes and so matches nothing. Both cost a step that had a good
+	// question in it.
+	sql = sessionPlaceholder.ReplaceAllString(sql, "{session:String}")
+	sql = wrongSessionColumn.ReplaceAllString(sql, "session_id$1")
 	rows, err := ch.Query[map[string]any](ctx, iv.ch, sql, map[string]any{"session": session})
 	if err != nil {
-		return "query failed: " + err.Error() + "\nCheck the column names against the schema above, and remember the connection is read-only."
+		return "query failed: " + err.Error() +
+			"\nCheck the column names against the schema above, and remember the connection is read-only." +
+			"\nThe session column is session_id, and this game's id is '" + session + "': write it as a quoted literal."
 	}
 	if len(rows) == 0 {
 		return "no rows. That is an answer: the thing asked about did not happen, or the filter excluded it."

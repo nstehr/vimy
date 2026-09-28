@@ -9,6 +9,7 @@ import (
 
 	"github.com/nstehr/vimy/currie/baml_client"
 	"github.com/nstehr/vimy/currie/baml_client/types"
+	"github.com/nstehr/vimy/vimy-core/store"
 )
 
 // Insight is what the model made of a replay.
@@ -149,6 +150,46 @@ func facts(r *Replay) types.GameFacts {
 			Rule: c.Rule, Clause: c.Clause, Thing: c.Thing, Maker: c.Maker,
 			Maker_matched: int64(c.MakerMatched), Maker_culprit: c.MakerCulprit,
 			Verdict: c.Verdict(),
+		})
+	}
+	// What actually happened, which nothing else in this bundle carries: every
+	// other section describes rules that did NOT fire. An investigation of game
+	// 180 concluded from squad-attack's 348 blocks that the army never launched,
+	// while squad-attack-known-base - same exclusive category, same ready-ratio
+	// clause, higher priority at that aggression - had acted 725 times. The model
+	// had no way to see that.
+	type firing struct {
+		name string
+		f    store.Firing
+	}
+	acted := make([]firing, 0, len(r.Firings))
+	for name, fr := range r.Firings {
+		if fr.Acted > 0 {
+			acted = append(acted, firing{name, fr})
+		}
+	}
+	sort.Slice(acted, func(i, j int) bool {
+		if acted[i].f.Acted != acted[j].f.Acted {
+			return acted[i].f.Acted > acted[j].f.Acted
+		}
+		return acted[i].name < acted[j].name
+	})
+	if len(acted) > 16 {
+		acted = acted[:16]
+	}
+	for _, a := range acted {
+		f.Top_firing = append(f.Top_firing, types.FiringRule{
+			Name: a.name, Acted: int64(a.f.Acted), Matched: int64(a.f.Matched),
+			First_tick: int64(a.f.FirstTick), Last_tick: int64(a.f.LastTick),
+		})
+	}
+	// And the rules whose condition HELD and which still never ran. Without
+	// these, a blocked count for the loser of a category reads as a broken
+	// capability rather than as the category working.
+	for _, pr := range v.NeverRan {
+		f.Preempted = append(f.Preempted, types.PreemptedRule{
+			Name: pr.Name, Category: pr.Category,
+			Lost_to: pr.LostTo, Preempted: int64(pr.Preempted),
 		})
 	}
 	for _, d := range dead {

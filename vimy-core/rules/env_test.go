@@ -1616,3 +1616,41 @@ func TestBestGroundTargetScoresFromWhereTheFightingIs(t *testing.T) {
 		t.Errorf("attacking from their base picked %v, want their construction yard", got)
 	}
 }
+
+// A derrick seen once stays known. The count used to fall back to zero as the
+// scout drove on, taking capture_priority and any walking engineer with it.
+func TestCapturableIntel_OutlivesVision(t *testing.T) {
+	memory := map[string]any{}
+	seen := model.GameState{
+		Tick: 1000,
+		Capturables: []model.Enemy{
+			{ID: 1, Type: "oilb.ukraine", X: 40, Y: 40},
+			{ID: 2, Type: "3tnk", X: 42, Y: 40},
+			{ID: 3, Type: "3tnk.husk", X: 44, Y: 40},
+		},
+	}
+	updateCapturableIntel(RuleEnv{State: seen, Memory: memory})
+
+	caps := RememberedCapturables(memory)
+	if len(caps) != 1 || caps[1].Type != "oilb" {
+		t.Fatalf("want the derrick alone, keyed on its base type: %v", caps)
+	}
+
+	// Scout drives on; nothing is visible and nothing of ours is near it.
+	gone := model.GameState{Tick: 4000}
+	env := RuleEnv{State: gone, Memory: memory}
+	updateCapturableIntel(env)
+	if got := env.CapturableCount(); got != 1 {
+		t.Errorf("the derrick was forgotten the moment it left vision: count %d", got)
+	}
+	if best := env.BestCapturable(); best == nil || best.ID != 1 {
+		t.Errorf("BestCapturable lost the remembered derrick: %v", best)
+	}
+
+	// One of ours stands on it and it is not on offer: someone took it.
+	standing := model.GameState{Tick: 5000, Units: []model.Unit{{ID: 9, Type: "e1", X: 41, Y: 40}}}
+	updateCapturableIntel(RuleEnv{State: standing, Memory: memory})
+	if got := len(RememberedCapturables(memory)); got != 0 {
+		t.Errorf("stood on the derrick's spot and saw nothing, still remembered: %d", got)
+	}
+}

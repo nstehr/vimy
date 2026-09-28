@@ -383,23 +383,36 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     <div class="figure" style="margin-bottom:1.2rem">
       <div class="figure-head">
         <span class="figure-title">Evaluated, never once fired</span>
-        <span class="legend">{{len .Silent}} rules{{if .SilentOmitted}} &middot; {{.SilentOmitted}} more not shown{{end}} &middot; most chances refused first</span>
+        <span class="legend">{{len .Silent}} rules{{if .SilentOmitted}} &middot; {{.SilentOmitted}} more not shown{{end}} &middot; stuck gates first</span>
       </div>
       <div style="overflow-x:auto">
       <table class="ran">
-        <thead><tr><th>rule</th><th class="n">evaluated</th><th class="n">skipped</th><th class="n">rule sets</th></tr></thead>
+        <thead><tr><th>rule</th><th class="n">evaluated</th><th>stopped by</th><th class="n">skipped</th></tr></thead>
         <tbody>
         {{range .Silent}}
         <tr class="silent">
           <td class="rn2">{{.Rule}}</td>
           <td class="n">{{.Evals}}</td>
+          <td class="rn2" style="font-size:.8rem">
+            {{if .Won}}<b style="color:var(--bad,#b0413e)">won its category, never fired</b>{{else if .Gated}}<b>{{.Culprit}}</b> <span style="color:var(--ink-3)">{{.CulpritAt}}</span>{{else}}<span style="color:var(--ink-3)">&mdash;</span>{{end}}
+          </td>
           <td class="n">{{.Skipped}}</td>
-          <td class="n">{{.RuleSets}}</td>
         </tr>
         {{end}}
         </tbody>
       </table>
       </div>
+      <p class="note" style="padding:.7rem 1.1rem;margin:0 0 .2rem;font-size:.85rem;color:var(--ink-3)">
+        <b>Stopped by</b> joins the two halves of the page. <i>Won its category, never fired</i> is a
+        contradiction and ranks first: the replay sampled this rule holding, and preempting its
+        siblings, while the stream counted zero firings all game &mdash; so it was working and then
+        stopped, and neither view says that alone. <code>produce-scout-vehicle</code> in game 176
+        is one, and was previously listed here between <code>produce-minelayer</code> and
+        <code>rebuild-iron-curtain</code> with nothing to separate it. Next are rules a single
+        clause blocked at least four times in five: a stuck gate. A dash means the replay never
+        caught this rule being blocked, which for a <code>rebuild-*</code> rule usually means
+        nothing was destroyed.
+      </p>
       <p class="note" style="padding:.7rem 1.1rem;margin:0;font-size:.85rem;color:var(--ink-3)">
         A zero here is a zero &mdash; the blame analysis above cannot make that claim, because its
         sample keeps one evaluation in fifteen and a rule that fires once a game lands in it by
@@ -411,6 +424,8 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     </div>
     {{end}}
 
+    <details class="fold" style="margin-bottom:1.2rem">
+    <summary>Can these numbers be trusted?</summary>
     <div class="figure" style="margin-bottom:1.2rem">
       <div class="figure-head">
         <span class="figure-title">Does the stream agree with the counters?</span>
@@ -467,6 +482,33 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
       {{end}}
       {{end}}
     </div>
+
+  {{if $.FiredAnyway}}
+  <section>
+    
+    <p class="lede">
+      A replay reads the <b>sampled</b> states in the recording, not every tick — so a rule that
+      fired a handful of times across a whole game can be absent from every sample and look as
+      though it never could. The archive says otherwise for these, and the list below should be
+      read with them removed.
+    </p>
+    <div class="figure">
+      <div class="figure-head">
+        <span class="figure-title">Never satisfiable in the sample, but fired in the game</span>
+        <span class="legend"><span style="font-family:var(--mono)">matched / acted, from the game itself</span></span>
+      </div>
+      {{range $.FiredAnyway}}
+      <div class="site">
+        <span class="site-src">{{.Name}}</span>
+        <span class="site-n">{{.Matched}} / {{.Acted}}<span style="font-size:.7rem;font-weight:400"> matched/acted</span></span>
+        <span class="site-meta">{{.Category}} · {{if gt .Acted 0}}<b style="color:var(--calm)">but it fired {{.Matched}}× and acted {{.Acted}}× in the real game — the sample missed it, so this rule WORKS and the counts below are about the sample, not the game</b>{{else}}the replay saw {{.Seen}} states and none where it could fire{{end}}{{if gt .Preempted 0}} · <b style="color:var(--sole)">but its condition HELD in {{.Preempted}} of them and a higher-priority rule in <code>{{.Category}}</code> took the slot — look at the priorities, not the requires</b>{{end}}</span>
+      </div>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+
+    </details>
 
     {{with .Cohort}}
     <div class="figure">
@@ -602,164 +644,51 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
     <p class="lede">
       Every <code>require</code> that was the <b>only</b> thing standing between a rule and firing.
       One written inside a def is inlined into many rules, so a single line can account for a
-      great deal of what the AI did not do.
+      great deal of what the AI did not do. Each line carries everything known about it: what it
+      was waiting for, whether its number is a dial worth moving, and whether the doctrine rather
+      than the rule decides it.
     </p>
     <div class="figure">
-      
-<div class="figure-head">
+      <div class="figure-head">
         <span class="figure-title">How often this line was the only blocker</span>
-        <span class="legend"><span>share of the states it was evaluated in, per rule it blocks — so games and lines of different size compare{{if .InertSites}} · {{.InertSites}} correct lines ranked below{{end}}</span></span>
+        <span class="legend"><span>share of the states it was evaluated in, per rule it blocks &mdash; so games and lines of different size compare{{if .InertSites}} &middot; {{.InertSites}} correct lines ranked below{{end}}</span></span>
         <span class="legend"><span><i class="chip sole"></i>solely responsible</span></span>
       </div>
-      {{range .Sites}}
+      {{range .Blockers}}
       <div class="site">
         <span class="site-src">{{.Source}}</span>
-        <span class="site-n">{{printf "%.0f" .SoleRate}}<span style="font-size:.7rem;font-weight:400">% of its chances</span></span>
+        <span class="site-n">{{if .Ranked}}{{printf "%.0f" .SoleRate}}<span style="font-size:.7rem;font-weight:400">% of its chances</span>{{else}}<span style="font-size:.7rem;font-weight:400">not ranked</span>{{end}}</span>
         <div class="bar"><i style="width:{{pct .SolePct}}%"></i></div>
-        <span class="site-meta">{{.File}}:{{.Line}} · blocks {{len .Rules}} rule{{if ne (len .Rules) 1}}s{{end}} · {{.Sole}} sole, {{.Blocked}} blocked over {{$.States}} states{{if .Live}} · <b style="color:var(--calm)">already works</b>{{end}}{{if .Impossible}} · <b style="color:var(--calm)">{{$.Faction}} can never have {{.Impossible}}</b>{{end}}{{if .QuietAxis}} · <b style="color:var(--calm)">the doctrine kept {{.QuietAxis}} at {{printf "%.2f" .QuietAt}} — this rule was told to stay quiet</b>{{end}}</span>
+        <span class="site-meta">{{.File}}:{{.Line}}{{if .Ranked}} &middot; blocks {{len .Rules}} rule{{if ne (len .Rules) 1}}s{{end}} &middot; {{.Sole}} sole, {{.Blocked}} blocked over {{$.States}} states{{end}}{{if .Live}} &middot; <b style="color:var(--calm)">already works</b>{{end}}{{if .Impossible}} &middot; <b style="color:var(--calm)">{{$.Faction}} can never have {{.Impossible}}</b>{{end}}{{if .QuietAxis}} &middot; <b style="color:var(--calm)">the doctrine kept {{.QuietAxis}} at {{printf "%.2f" .QuietAt}} &mdash; this rule was told to stay quiet</b>{{end}}</span>
+        {{range .Chains}}
+        <span class="ch-up">&#8627; no <b>{{.Thing}}</b> existed &mdash; {{.Verdict}}{{if .Maker}}: <b>{{.Maker}}</b>{{if gt .MakerMatched 0}} matched {{.MakerMatched}}&times;{{else}} never fired{{end}}{{if .MakerCulprit}}, stopped by <code>{{.MakerCulprit}}</code> at {{.MakerFile}}:{{.MakerLine}}{{end}}{{end}}</span>
+        {{end}}
+        {{with .Gate}}
+        <span class="ch-up">&#8627; {{if .Untunable}}set at {{.At}}, past the {{printf "%.0f" .Reached}} the compared side ever reached &mdash; change the rule, not the number{{else}}a dial: {{.At}} &rarr; {{.MovedTo}} frees {{.Relief}} of {{.Blocked}} blocked states, still inside what was reached{{end}}</span>
+        {{end}}
+        {{with .Sens}}{{if .Says}}
+        <span class="ch-up">&#8627; {{.Verdict}}{{if .Doctrinal}} &mdash; {{pct1 .RateLow}}% blocked when <b>{{.Knob}}</b> averaged {{printf "%.2f" .KnobLow}}, {{pct1 .RateHigh}}% when it averaged {{printf "%.2f" .KnobHigh}}{{else}} ({{pct1 .Low}}%&ndash;{{pct1 .High}}% across {{.Windows}} windows){{end}}</span>
+        {{end}}{{end}}
       </div>
       {{else}}
       <div class="site"><span class="site-src">Nothing was ever solely responsible.</span></div>
       {{end}}
     </div>
+    <p class="note" style="padding:.7rem 1.1rem;margin:0;font-size:.85rem;color:var(--ink-3)">
+      The &#8627; lines were four separate sections until now, each ranking the same clauses its own
+      way. <b>No X existed</b> follows the missing thing one hop upstream to whichever rule was
+      supposed to produce it &mdash; relaxing such a clause changes nothing, because the problem is
+      further back. <b>A dial</b> is measured only at values the compared side really reached,
+      because a cash gate improves all the way to zero on paper and <i>"set it to zero"</i> is not
+      a recommendation. The last line uses the {{.Windows}} doctrine windows this game ran as an
+      experiment the archive already contains: a clause that blocks about as much whichever
+      doctrine is in force is asking for something the game rarely provides &mdash; change the rule
+      &mdash; while one that swings with a weight is a doctrine that priced itself out.
+    </p>
   </section>
 
   {{with .SweepURL}}
   <div hx-get="{{.}}" hx-trigger="load" hx-swap="outerHTML"></div>
-  {{end}}
-
-  {{if .Chains}}
-  <section>
-    <h2>Missing things, and what should have made them</h2>
-    <p class="lede">
-      A clause like <code>count(idle-minelayers) &gt; 0</code> is not a threshold — it is a report
-      that no minelayer exists. Relaxing it changes nothing, because the problem is a rule further
-      back. Each row follows the missing thing to whichever rule was supposed to produce it.
-    </p>
-    <div class="figure">
-      <div class="figure-head">
-        <span class="figure-title">One hop upstream</span>
-        <span class="legend"><span style="font-family:var(--mono)">the question is not why the gate is closed</span></span>
-      </div>
-      {{range .Chains}}
-      <div class="chain">
-        <span class="ch-rule">{{.Rule}}</span>
-        <span class="ch-verdict">{{.Verdict}}</span>
-        <span class="ch-clause">blocked by <code>{{.Clause}}</code> — no <b>{{.Thing}}</b> existed</span>
-        {{if .Maker}}
-        <span class="ch-up">↳ <b>{{.Maker}}</b>{{if gt .MakerMatched 0}} matched {{.MakerMatched}}×{{else}} never fired{{end}}{{if .MakerCulprit}}, stopped by <code>{{.MakerCulprit}}</code> at {{.MakerFile}}:{{.MakerLine}}{{end}}</span>
-        {{else}}
-        <span class="ch-up">↳ no rule in this set produces one</span>
-        {{end}}
-      </div>
-      {{end}}
-    </div>
-  </section>
-  {{end}}
-
-  {{if .Gates}}
-  <section>
-    <h2>Gates worth moving</h2>
-    <p class="lede">
-      A numeric <code>require</code> compared against a constant is a dial. This lists the ones
-      where turning it would actually buy something — measured only at values the compared side
-      really reached, because a cash gate improves all the way to zero on paper and
-      <i>"set it to zero"</i> is not a recommendation. Gates set above anything that ever happened
-      are left out: they are asking for something that did not occur, and the rule is what to
-      change, not the number.
-    </p>
-    <div class="figure">
-      <div class="figure-head">
-        <span class="figure-title">Blocked now, and blocked at the best reachable value</span>
-        <span class="legend">
-          <span><i class="chip sole"></i>still blocked</span>
-          <span><i class="chip other"></i>freed by moving it</span>
-        </span>
-      </div>
-      {{range .Gates}}
-      <div class="gate">
-        <span class="gate-src">{{.Source}}</span>
-        <span class="gate-n">{{.Relief}} freed</span>
-        <span class="gate-meta">{{.File}}:{{.Line}} · {{len .Rules}} rule{{if ne (len .Rules) 1}}s{{end}} · at {{.At}} → {{.MovedTo}} · highest reached {{printf "%.0f" .Reached}}</span>
-        <div class="cl-bar">
-          <i class="sole" style="width:{{pct (sub .BlockedPct .ReliefPct)}}%"></i>
-          <i class="other" style="width:{{pct .ReliefPct}}%"></i>
-        </div>
-      </div>
-      {{end}}
-    </div>
-  </section>
-  {{end}}
-
-  {{if .Sensitivity}}
-  <details class="fold">
-  <summary>The rules, or the doctrine?</summary>
-  <section>
-    
-    <p class="lede">
-      The same sources compile to different thresholds under every doctrine, and this game ran
-      {{.Windows}} of them — so the archive already contains the experiment. A clause that blocks
-      about as much whichever doctrine is in force is asking for something the game rarely
-      provides: <b>change the rule</b>. One that blocks heavily under some doctrines and barely
-      under others is a <b>doctrine that priced itself out</b>: change the prompt, or the weights
-      it is allowed to reach.
-    </p>
-    <div class="figure">
-      <div class="figure-head">
-        <span class="figure-title">Block rate across doctrine windows</span>
-        <span class="legend"><span style="font-family:var(--mono)">{{.Doctrinal}} of {{len .Sensitivity}} track a doctrine input</span></span>
-      </div>
-      {{range .Sensitivity}}
-      <div class="sens{{if .Doctrinal}} doctrinal{{end}}">
-        <span class="sens-src">{{.Source}}</span>
-        <span class="sens-verdict">{{.Verdict}}</span>
-        <span class="sens-meta">{{.File}}:{{.Line}} · {{.Rules}} rule{{if ne .Rules 1}}s{{end}} · {{.Windows}} windows</span>
-        <div class="sens-range" title="block rate from {{pct1 .Low}}% to {{pct1 .High}}% across windows">
-          <i class="track"></i>
-          <i class="span" style="left:{{pct .LowPct}}%;width:{{pct .SpanPct}}%"></i>
-          <i class="mark" style="left:{{pct .OverallPct}}%"></i>
-        </div>
-        {{if .Doctrinal}}
-        <span class="sens-drive">
-          {{pct1 .RateLow}}% blocked when <b>{{.Knob}}</b> averaged {{printf "%.2f" .KnobLow}} ·
-          {{pct1 .RateHigh}}% when it averaged {{printf "%.2f" .KnobHigh}}
-        </span>
-        {{else}}
-        <span class="sens-drive">{{pct1 .Low}}%–{{pct1 .High}}% across windows; no doctrine input splits it</span>
-        {{end}}
-      </div>
-      {{end}}
-    </div>
-  </section>
-</details>
-  {{end}}
-
-  {{if .FiredAnyway}}
-  <details class="fold">
-  <summary>The sample missed these</summary>
-  <section>
-    
-    <p class="lede">
-      A replay reads the <b>sampled</b> states in the recording, not every tick — so a rule that
-      fired a handful of times across a whole game can be absent from every sample and look as
-      though it never could. The archive says otherwise for these, and the list below should be
-      read with them removed.
-    </p>
-    <div class="figure">
-      <div class="figure-head">
-        <span class="figure-title">Never satisfiable in the sample, but fired in the game</span>
-        <span class="legend"><span style="font-family:var(--mono)">matched / acted, from the game itself</span></span>
-      </div>
-      {{range .FiredAnyway}}
-      <div class="site">
-        <span class="site-src">{{.Name}}</span>
-        <span class="site-n">{{.Matched}} / {{.Acted}}<span style="font-size:.7rem;font-weight:400"> matched/acted</span></span>
-        <span class="site-meta">{{.Category}} · {{if gt .Acted 0}}<b style="color:var(--calm)">but it fired {{.Matched}}× and acted {{.Acted}}× in the real game — the sample missed it, so this rule WORKS and the counts below are about the sample, not the game</b>{{else}}the replay saw {{.Seen}} states and none where it could fire{{end}}{{if gt .Preempted 0}} · <b style="color:var(--sole)">but its condition HELD in {{.Preempted}} of them and a higher-priority rule in <code>{{.Category}}</code> took the slot — look at the priorities, not the requires</b>{{end}}</span>
-      </div>
-      {{end}}
-    </div>
-  </section>
-</details>
   {{end}}
 
   {{if .NeverRan}}
@@ -787,10 +716,12 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
   </section>
   {{end}}
 
+  <details class="fold">
+  <summary>Rule by rule, every clause</summary>
   <section>
-    <h2>Rules that never fired</h2>
     <p class="lede">
-      Ranked by how often one requirement was solely to blame — the ones closest to working.
+      The same blame, keyed on the rule rather than the line &mdash; the drill-down for once you
+      know which line to chase. Ranked by how often one requirement was solely to blame — the ones closest to working.
       Open a rule for its full breakdown: solid is where that clause was the only failure,
       faded is where it failed alongside others.
     </p>
@@ -827,6 +758,8 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
       {{end}}
     </div>
   </section>
+</details>
+
 
   <details class="fold">
   <summary>How to read this</summary>

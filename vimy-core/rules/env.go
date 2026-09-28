@@ -1075,7 +1075,10 @@ func designateScout(env RuleEnv) {
 	}
 }
 
-func (e RuleEnv) CapturableCount() int { return len(e.State.Capturables) }
+// CapturableCount is the neutral tech structures Vimy knows about, seen or
+// remembered - not len(Capturables), which counted enemy tanks and husks and
+// fell to zero the moment a scout drove past a derrick.
+func (e RuleEnv) CapturableCount() int { return len(getCapturables(e.Memory)) }
 
 // capturableValue ranks capturable types; unknown types get a baseline score.
 var capturableValue = map[string]float64{
@@ -1109,7 +1112,8 @@ func (e RuleEnv) NearestCapturable() *model.Enemy {
 // BestCapturable divides value by sqrt(distance), so a nearby cheap target can
 // beat a distant valuable one whose trip isn't worth making.
 func (e RuleEnv) BestCapturable() *model.Enemy {
-	if len(e.State.Capturables) == 0 {
+	known := e.KnownCapturables()
+	if len(known) == 0 {
 		return nil
 	}
 	bx, by := 0, 0
@@ -1119,8 +1123,8 @@ func (e RuleEnv) BestCapturable() *model.Enemy {
 	}
 	var best *model.Enemy
 	bestScore := -1.0
-	for i := range e.State.Capturables {
-		c := &e.State.Capturables[i]
+	for i := range known {
+		c := &known[i]
 		if e.Terrain != nil {
 			t := e.Terrain.AtMapPos(c.X, c.Y)
 			if t != model.Land && t != model.Bridge {
@@ -1168,8 +1172,12 @@ func (e RuleEnv) EngineerNearCapturable() bool {
 	if len(engineers) == 0 {
 		return false
 	}
-	for i := range e.State.Capturables {
-		c := &e.State.Capturables[i]
+	known := e.KnownCapturables()
+	for i := range known {
+		c := &known[i]
+		if !IsNeutralTechStructure(c.Type) && !IsKnownBuildingType(c.Type) {
+			continue
+		}
 		for _, eng := range engineers {
 			dx := float64(eng.X - c.X)
 			dy := float64(eng.Y - c.Y)
@@ -1179,6 +1187,84 @@ func (e RuleEnv) EngineerNearCapturable() bool {
 		}
 	}
 	return false
+}
+
+// KnownCapturables is what is visible now plus what has been seen before.
+//
+// A capture objective is a building: it does not move, and once a scout has
+// driven past a derrick its position is known for the rest of the game.
+// GameState.Capturables is vision-only, so the count spiked as a unit passed a
+// derrick and fell back to zero as it drove on, taking capture_priority and any
+// engineer already walking toward it with it.
+//
+// Remembered entries carry no HP or owner - a remembered building is a position
+// and a type, which is all the capture path reads.
+func (e RuleEnv) KnownCapturables() []model.Enemy {
+	out := make([]model.Enemy, 0, len(e.State.Capturables))
+	seen := make(map[int]bool, len(e.State.Capturables))
+	for _, c := range e.State.Capturables {
+		out = append(out, c)
+		seen[c.ID] = true
+	}
+	for _, m := range getCapturables(e.Memory) {
+		if seen[m.ActorID] {
+			continue
+		}
+		out = append(out, model.Enemy{ID: m.ActorID, Type: m.Type, X: m.X, Y: m.Y})
+	}
+	return out
+}
+
+func getCapturables(memory map[string]any) map[int]EnemyDefenseIntel {
+	if v, ok := memory["capturables"].(map[int]EnemyDefenseIntel); ok {
+		return v
+	}
+	return make(map[int]EnemyDefenseIntel)
+}
+
+// RememberedCapturables is the neutral tech structures Vimy believes are still
+// standing and still up for grabs. What the prompt and the map should draw:
+// sight is fleeting, the derrick is not.
+func RememberedCapturables(memory map[string]any) map[int]EnemyDefenseIntel {
+	return getCapturables(memory)
+}
+
+// updateCapturableIntel remembers where the neutral tech structures are.
+//
+// Only those. The rest of GameState.Capturables is enemy armour, harvesters and
+// husks, which do move; remembering a tank's last known position as a capture
+// objective would be worse than forgetting it.
+func updateCapturableIntel(env RuleEnv) {
+	caps := getCapturables(env.Memory)
+	visible := make(map[int]bool, len(env.State.Capturables))
+	for i := range env.State.Capturables {
+		c := &env.State.Capturables[i]
+		visible[c.ID] = true
+		if !IsNeutralTechStructure(c.Type) {
+			continue
+		}
+		caps[c.ID] = EnemyDefenseIntel{
+			ActorID: c.ID, Type: baseTypeName(c.Type), X: c.X, Y: c.Y, Tick: env.State.Tick,
+		}
+	}
+	// Cleared on the same evidence standard as defences and structures: one of
+	// ours standing where it should be while it is not on the visible list -
+	// captured by someone else, or destroyed.
+	const clearRadiusSq = 10 * 10
+	const minAge = 300
+	for id, intel := range caps {
+		if visible[id] || env.State.Tick-intel.Tick < minAge {
+			continue
+		}
+		for _, u := range env.State.Units {
+			dx, dy := u.X-intel.X, u.Y-intel.Y
+			if dx*dx+dy*dy < clearRadiusSq {
+				delete(caps, id)
+				break
+			}
+		}
+	}
+	env.Memory["capturables"] = caps
 }
 
 // airTargetValue ranks air-strike targets. Defenses score high because aircraft
@@ -1330,6 +1416,22 @@ func (e RuleEnv) NearestRememberedStructure(fromX, fromY int) *model.Enemy {
 }
 
 func (e RuleEnv) BestGroundTargetFrom(bx, by int) *model.Enemy {
+	return e.bestGroundTargetFrom(bx, by, false)
+}
+
+// BestGroundStructureFrom is the same ranking restricted to buildings.
+//
+// The strike wants a structure, and asking the unrestricted ranking for one and
+// giving up when a defender outscored it was worth 371 abandoned strikes in game
+// 180 - 10.7 per thousand ticks against 0.18 in game 178 - in a game that
+// destroyed one enemy building in 34790 ticks. Same scores, so the building this
+// returns is the one the unrestricted call would have named had the units not
+// been standing in front of it.
+func (e RuleEnv) BestGroundStructureFrom(bx, by int) *model.Enemy {
+	return e.bestGroundTargetFrom(bx, by, true)
+}
+
+func (e RuleEnv) bestGroundTargetFrom(bx, by int, buildingsOnly bool) *model.Enemy {
 	if len(e.State.Enemies) == 0 {
 		return nil
 	}
@@ -1338,6 +1440,9 @@ func (e RuleEnv) BestGroundTargetFrom(bx, by int) *model.Enemy {
 	for i := range e.State.Enemies {
 		en := &e.State.Enemies[i]
 		if en.MaxHP == 0 {
+			continue
+		}
+		if buildingsOnly && !IsKnownBuildingType(en.Type) {
 			continue
 		}
 		base := strings.ToLower(en.Type)
@@ -1828,6 +1933,7 @@ func updateIntel(env RuleEnv) {
 	}
 
 	updateDefenseIntel(env)
+	updateCapturableIntel(env)
 
 	// Units dedupe by ID; buildings track a high-water mark instead, since they
 	// are destroyed and rebuilt under fresh IDs.

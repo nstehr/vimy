@@ -305,7 +305,7 @@ rule produce-heavy-vehicle {
 rule produce-scout-vehicle {
   priority 465
   category produce-vehicle exclusive
-  because "the gate was `not has-enemy-intel()`, which means build a scout only while we know nothing. HasEnemyIntel is true the moment ANY enemy building has ever been sighted, so first contact switched scout production off permanently: game 176 discovered the enemy base at tick 4110 of 54820 and never fired this rule again in 5368 evaluations, finishing the game knowing the position of six enemy objects. Everything downstream followed - an empty threat field, 706 no-target-en-route, blind-at-base, and an approach router scoring every corridor clear because it had nothing to score. The intel gate was never the thing preventing scout spam either: `not has-scout()` below already caps it at one alive, and designateScout clears the designation when that one dies, so the rule re-arms on its own. Removing it gives continuous reconnaissance - keep a scout alive - which is what a human does and what scouting is for"
+  because "the gate was `not has-enemy-intel()`, which means build a scout only while we know nothing. HasEnemyIntel is true the moment ANY enemy building has ever been sighted, so first contact switched scout production off permanently: game 176 discovered the enemy base at tick 4110 of 54820 and never fired this rule again in 5368 evaluations, finishing the game knowing the position of six enemy objects. Everything downstream followed - an empty threat field, 706 no-target-en-route, blind-at-base, and an approach router scoring every corridor clear because it had nothing to score. The intel gate was never the thing preventing scout spam either: `not has-scout()` below already caps it at one alive, and designateScout clears the designation when that one dies, so the rule re-arms on its own. Removing it gives continuous reconnaissance - keep a scout alive - which is what a human does and what scouting is for. The reserve is the tank rule's, not a cheaper one of its own: at reserves(500) against produce-vehicle's scaled-reserves(800) this rule bought every time cash sat between the two floors, so a 465-priority rule that cannot preempt an 480 one still took its money. Game 177 sent 13 scout envelopes against 7 for tanks - 18% of priced production against 12%, shares rather than credits because an act is a produce envelope resent every 100 ticks until the item appears - and the army was wiped by tick 18000 of 34290 and never rebuilt, and reserves(cost) was the sole blocker in 55% of the states it was evaluated in. Sharing the floor means a scout is bought out of surplus - when the money for a tank is there and something else, the cap or a burned axis, is what stops the tank"
   do produce-scout-vehicle
   require vehicle-weight > 0.1
   require has-role(war-factory)
@@ -313,7 +313,7 @@ rule produce-scout-vehicle {
   require can-build-role(ranger) or can-build-role(light-tank)
   require not has-role(ranger)
   require not has-scout()
-  require reserves(500)
+  require scaled-reserves(800)
 }
 
 rule produce-siege-vehicle {

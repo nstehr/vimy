@@ -407,8 +407,10 @@ func (a *Agent) sampleUnits(gs model.GameState) {
 	//
 	// So only the genuine neutral tech structures are neutral; the rest are the
 	// enemy, and are emitted as such if they were not already seen this tick.
+	seenNeutral := make(map[int]bool)
 	for _, cp := range gs.Capturables {
 		if rules.IsNeutralTechStructure(cp.Type) {
+			seenNeutral[cp.ID] = true
 			a.WAL.WriteUnit(wal.Unit{
 				Tick: gs.Tick, ID: cp.ID, Type: cp.Type, Side: "neutral",
 				X: cp.X, Y: cp.Y, HP: cp.HP, Building: true,
@@ -431,7 +433,8 @@ func (a *Agent) sampleUnits(gs model.GameState) {
 	a.Engine.LockMemory()
 	bases := rules.RememberedEnemyBases(a.Engine.Memory)
 	structs := rules.RememberedEnemyStructures(a.Engine.Memory)
-	remembered := make([]wal.Unit, 0, len(bases)+len(structs))
+	caps := rules.RememberedCapturables(a.Engine.Memory)
+	remembered := make([]wal.Unit, 0, len(bases)+len(structs)+len(caps))
 	for owner, b := range bases {
 		remembered = append(remembered, wal.Unit{
 			Tick: gs.Tick, ID: 0, Type: "base:" + owner, Side: "enemy",
@@ -442,6 +445,17 @@ func (a *Agent) sampleUnits(gs model.GameState) {
 		remembered = append(remembered, wal.Unit{
 			Tick: gs.Tick, ID: id, Type: d.Type, Side: "enemy",
 			X: d.X, Y: d.Y, Building: true, Remembered: true,
+		})
+	}
+	// A derrick seen once is known for good, so the map keeps its marker
+	// instead of blinking it out as the scout drives on.
+	for id, c := range caps {
+		if seenNeutral[id] {
+			continue
+		}
+		remembered = append(remembered, wal.Unit{
+			Tick: gs.Tick, ID: id, Type: c.Type, Side: "neutral",
+			X: c.X, Y: c.Y, Building: true, Remembered: true,
 		})
 	}
 	a.Engine.UnlockMemory()

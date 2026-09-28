@@ -957,6 +957,7 @@ func computePressureFlags(currentTick int, gs *model.GameState, stress []Event) 
 
 	harvesterAttackEvents := 0
 	harvesterLostEvents := 0
+	buildingLostEvents := 0
 	for _, e := range stress {
 		if currentTick-e.Tick > pressureLookbackTicks {
 			continue
@@ -966,11 +967,22 @@ func computePressureFlags(currentTick int, gs *model.GameState, stress []Event) 
 			harvesterAttackEvents++
 		case EventHarvesterLost:
 			harvesterLostEvents++
+		case EventCriticalBuildingLost:
+			buildingLostEvents++
 		}
 	}
 
+	// A critical building lost inside the early window is a rush at least as
+	// much as a harvester being shot at, and this function used to read only the
+	// harvesters. Game 179 lost its construction yard at tick 8760 and its war
+	// factory at 9180 - both inside the window - and the flag stayed false, so
+	// build-base-defense-rush, whose whole purpose is the 200-credit floor a
+	// base under attack needs, fired 0 times in 938 evaluations. Every other
+	// `not is-rushed()` gate stayed open too, which is Vimy expanding while the
+	// yard burns. EventCriticalBuildingLost was already in the stress feed this
+	// function reads; nothing counted it.
 	beingRushed := currentTick < rushTickCutoff &&
-		(harvesterAttackEvents >= 1 || harvesterLostEvents >= 1)
+		(harvesterAttackEvents >= 1 || harvesterLostEvents >= 1 || buildingLostEvents >= 1)
 
 	harvesterHarassed := currentTick >= harassTickFloor &&
 		(harvesterAttackEvents >= harassMinHarvesterEvents || harvesterLostEvents >= 1)
@@ -1231,17 +1243,16 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 	// alongside four oil derricks. Unfiltered it rendered as "Capturable
 	// neutral buildings visible: 2x apc 1x 3tnk 1x ftrk", which asked the
 	// strategist to spend on engineers to go and capture enemy armour.
-	if len(gs.Capturables) > 0 {
-		capCounts := make(map[string]int)
-		for _, c := range gs.Capturables {
-			if !rules.IsNeutralTechStructure(c.Type) {
-				continue
-			}
-			capCounts[rules.BaseTypeName(c.Type)]++
-		}
-		for t, c := range capCounts {
-			sit.Capturables_visible = append(sit.Capturables_visible, types.TypeCount{Type: t, Count: int64(c)})
-		}
+	// Remembered, not visible. A derrick does not move: the count used to spike
+	// as a scout drove past one and fall back to zero as it drove on, so
+	// capture_priority was being set from whatever happened to be on screen at
+	// the instant the strategist ran.
+	capCounts := make(map[string]int)
+	for _, c := range rules.RememberedCapturables(memory) {
+		capCounts[rules.BaseTypeName(c.Type)]++
+	}
+	for t, c := range capCounts {
+		sit.Capturables_visible = append(sit.Capturables_visible, types.TypeCount{Type: t, Count: int64(c)})
 	}
 
 	if bases, ok := memory["enemyBases"].(map[string]rules.EnemyBaseIntel); ok {

@@ -1667,11 +1667,11 @@ func TestScrambleToHarvestersTakesTheNearestAndHoldsThem(t *testing.T) {
 			MapWidth:  1000,
 			MapHeight: 1000,
 			Units: []model.Unit{
-				{ID: 1, Type: "harv", X: 900, Y: 900},       // the one being raided
-				{ID: 2, Type: "2tnk", X: 880, Y: 880},       // nearest
-				{ID: 3, Type: "e1", X: 860, Y: 860},         // next
-				{ID: 4, Type: "e1", X: 100, Y: 100},         // far side of the map
-				{ID: 5, Type: "harv", X: 890, Y: 890},       // harvesters do not defend
+				{ID: 1, Type: "harv", X: 900, Y: 900}, // the one being raided
+				{ID: 2, Type: "2tnk", X: 880, Y: 880}, // nearest
+				{ID: 3, Type: "e1", X: 860, Y: 860},   // next
+				{ID: 4, Type: "e1", X: 100, Y: 100},   // far side of the map
+				{ID: 5, Type: "harv", X: 890, Y: 890}, // harvesters do not defend
 			},
 			Enemies: []model.Enemy{{ID: 90, Type: "3tnk", X: 905, Y: 905, HP: 400, MaxHP: 400}},
 		},
@@ -1878,5 +1878,74 @@ func TestAssaultPhaseRecordsTransitionsNotTicks(t *testing.T) {
 	// Squads are tracked apart.
 	if got := at(2000).AssaultPhase("harvester-guard"); got != "" {
 		t.Errorf("unrelated squad has phase %q, want empty", got)
+	}
+}
+
+// A defender standing in front of the structures is not a reason to call off the
+// strike. Game 180 recorded not-building 371 times - 10.7 per thousand ticks
+// against game 178's 0.18 - and destroyed one enemy building in 34790 ticks,
+// because this branch returned nil whenever a tank outscored a war factory.
+func TestSquadStructureTargetLooksPastTheDefender(t *testing.T) {
+	squad := func(mem map[string]any) {
+		mem["squads"] = map[string]*Squad{
+			"ground-attack": {Name: "ground-attack", UnitIDs: []int{1, 2}, Domain: "ground"},
+		}
+	}
+	base := func(enemies []model.Enemy, mem map[string]any) RuleEnv {
+		return RuleEnv{
+			State: model.GameState{
+				MapWidth: 1000, MapHeight: 1000,
+				Buildings: []model.Building{{ID: 9, Type: "fact", X: 100, Y: 100}},
+				Units: []model.Unit{
+					{ID: 1, Type: "2tnk", X: 900, Y: 900},
+					{ID: 2, Type: "2tnk", X: 905, Y: 905},
+				},
+				Enemies: enemies,
+			},
+			Memory: mem,
+		}
+	}
+
+	// A heavy tank beside the squad outscores the war factory behind it. The
+	// factory is what the strike is for.
+	mem := map[string]any{}
+	squad(mem)
+	env := base([]model.Enemy{
+		{ID: 80, Type: "3tnk", X: 902, Y: 902, HP: 100, MaxHP: 1000}, // near death, so it scores high
+		{ID: 90, Type: "weap", X: 912, Y: 912, HP: 900, MaxHP: 1000},
+	}, mem)
+	if got := squadStructureTarget(env, "ground-attack"); got == nil || got.ID != 90 {
+		t.Errorf("picked %v, want the war factory the defender was standing in front of", got)
+	}
+
+	// Only units in sight, and a building remembered in reach: shoot the memory's
+	// position, same as the sighted-nothing branch does.
+	mem2 := map[string]any{}
+	squad(mem2)
+	mem2["enemyStructures"] = map[int]EnemyDefenseIntel{
+		7: {ActorID: 7, Type: "proc", X: 908, Y: 908, Tick: 1000},
+	}
+	env2 := base([]model.Enemy{{ID: 80, Type: "3tnk", X: 902, Y: 902, HP: 100, MaxHP: 1000}}, mem2)
+	if got := squadStructureTarget(env2, "ground-attack"); got == nil || got.ID != 7 {
+		t.Errorf("picked %v, want the remembered refinery in reach", got)
+	}
+
+	// Units in sight, every structure a march away: still a walk, and it must be
+	// counted as out-of-reach rather than as a targeting defect.
+	mem3 := map[string]any{}
+	squad(mem3)
+	env3 := base([]model.Enemy{
+		{ID: 80, Type: "3tnk", X: 902, Y: 902, HP: 100, MaxHP: 1000},
+		{ID: 90, Type: "weap", X: 200, Y: 200, HP: 900, MaxHP: 1000},
+	}, mem3)
+	if got := squadStructureTarget(env3, "ground-attack"); got != nil {
+		t.Errorf("opened fire on a building %d away instead of closing the distance", got.ID)
+	}
+	blocked := RuleEnv{Memory: mem3}.StrikeBlockers()
+	if blocked[StrikeBlockedNotBuilding] != 0 {
+		t.Errorf("a structure out of reach was recorded as not-building: %v", blocked)
+	}
+	if blocked[StrikeBlockedOutOfReach] == 0 {
+		t.Errorf("the walk was not counted as out-of-reach: %v", blocked)
 	}
 }

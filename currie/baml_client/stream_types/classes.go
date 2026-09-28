@@ -710,6 +710,72 @@ func (c Finding) BamlTypeName() string {
 	return "Finding"
 }
 
+type FiringRule struct {
+	Name       *string `json:"name"`
+	Acted      *int64  `json:"acted"`
+	Matched    *int64  `json:"matched"`
+	First_tick *int64  `json:"first_tick"`
+	Last_tick  *int64  `json:"last_tick"`
+}
+
+func (c *FiringRule) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "FiringRule" {
+		panic(fmt.Sprintf("expected FiringRule, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "name":
+			c.Name = baml.Decode(valueHolder).Interface().(*string)
+
+		case "acted":
+			c.Acted = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "matched":
+			c.Matched = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "first_tick":
+			c.First_tick = baml.Decode(valueHolder).Interface().(*int64)
+
+		case "last_tick":
+			c.Last_tick = baml.Decode(valueHolder).Interface().(*int64)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class FiringRule", key))
+
+		}
+	}
+
+}
+
+func (c FiringRule) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["name"] = c.Name
+
+	fields["acted"] = c.Acted
+
+	fields["matched"] = c.Matched
+
+	fields["first_tick"] = c.First_tick
+
+	fields["last_tick"] = c.Last_tick
+
+	return baml.EncodeClass("FiringRule", fields, nil)
+}
+
+func (c FiringRule) BamlTypeName() string {
+	return "FiringRule"
+}
+
 type GameFacts struct {
 	Our_faction      *string             `json:"our_faction"`
 	Opponent_faction *string             `json:"opponent_faction"`
@@ -729,6 +795,8 @@ type GameFacts struct {
 	Directive        *string             `json:"directive"`
 	Doctrines        []DoctrineChoice    `json:"doctrines"`
 	Missing          []MissingThing      `json:"missing"`
+	Top_firing       []FiringRule        `json:"top_firing"`
+	Preempted        []PreemptedRule     `json:"preempted"`
 }
 
 func (c *GameFacts) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
@@ -799,6 +867,12 @@ func (c *GameFacts) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
 		case "missing":
 			c.Missing = baml.Decode(valueHolder).Interface().([]MissingThing)
 
+		case "top_firing":
+			c.Top_firing = baml.Decode(valueHolder).Interface().([]FiringRule)
+
+		case "preempted":
+			c.Preempted = baml.Decode(valueHolder).Interface().([]PreemptedRule)
+
 		default:
 
 			panic(fmt.Sprintf("unexpected field: %s in class GameFacts", key))
@@ -846,6 +920,10 @@ func (c GameFacts) Encode() (*cffi.HostValue, error) {
 	fields["doctrines"] = c.Doctrines
 
 	fields["missing"] = c.Missing
+
+	fields["top_firing"] = c.Top_firing
+
+	fields["preempted"] = c.Preempted
 
 	return baml.EncodeClass("GameFacts", fields, nil)
 }
@@ -996,6 +1074,66 @@ func (c MissingThing) Encode() (*cffi.HostValue, error) {
 
 func (c MissingThing) BamlTypeName() string {
 	return "MissingThing"
+}
+
+type PreemptedRule struct {
+	Name      *string  `json:"name"`
+	Category  *string  `json:"category"`
+	Lost_to   []string `json:"lost_to"`
+	Preempted *int64   `json:"preempted"`
+}
+
+func (c *PreemptedRule) Decode(holder *cffi.CFFIValueClass, typeMap baml.TypeMap) {
+	typeName := holder.Name
+	if typeName.Namespace != cffi.CFFITypeNamespace_STREAM_TYPES {
+		panic(fmt.Sprintf("expected cffi.CFFITypeNamespace_STREAM_TYPES, got %s", string(typeName.Namespace.String())))
+	}
+	if typeName.Name != "PreemptedRule" {
+		panic(fmt.Sprintf("expected PreemptedRule, got %s", typeName.Name))
+	}
+
+	for _, field := range holder.Fields {
+		key := field.Key
+		valueHolder := field.Value
+		switch key {
+
+		case "name":
+			c.Name = baml.Decode(valueHolder).Interface().(*string)
+
+		case "category":
+			c.Category = baml.Decode(valueHolder).Interface().(*string)
+
+		case "lost_to":
+			c.Lost_to = baml.Decode(valueHolder).Interface().([]string)
+
+		case "preempted":
+			c.Preempted = baml.Decode(valueHolder).Interface().(*int64)
+
+		default:
+
+			panic(fmt.Sprintf("unexpected field: %s in class PreemptedRule", key))
+
+		}
+	}
+
+}
+
+func (c PreemptedRule) Encode() (*cffi.HostValue, error) {
+	fields := map[string]any{}
+
+	fields["name"] = c.Name
+
+	fields["category"] = c.Category
+
+	fields["lost_to"] = c.Lost_to
+
+	fields["preempted"] = c.Preempted
+
+	return baml.EncodeClass("PreemptedRule", fields, nil)
+}
+
+func (c PreemptedRule) BamlTypeName() string {
+	return "PreemptedRule"
 }
 
 type QueryTool struct {

@@ -76,6 +76,21 @@ class MissingThing {
   verdict string
 }
 
+class FiringRule {
+  name string
+  acted int @description("times the action did something in the real game. This is what HAPPENED, and the rest of this input is what did not")
+  matched int @description("times the condition held")
+  first_tick int @description("when it first acted")
+  last_tick int @description("when it last acted. Compare with duration_ticks: a rule that stopped early stopped for a reason")
+}
+
+class PreemptedRule {
+  name string
+  category string
+  lost_to string[] @description("rules in the same category whose condition also held. Whichever of these outranks it is what it keeps losing to")
+  preempted int @description("states where its condition HELD and a higher-priority rule in the same exclusive category took the slot")
+}
+
 class GameFacts {
   our_faction string
   opponent_faction string
@@ -95,6 +110,8 @@ class GameFacts {
   directive string @description("the line of prose the player gave the strategist. Empty when the game was played before it was recorded")
   doctrines DoctrineChoice[] @description("a sample of the doctrines the strategist wrote from that directive, with its stated reasoning")
   missing MissingThing[] @description("clauses that report a thing absent, followed one hop back to whatever was supposed to make it")
+  top_firing FiringRule[] @description("what actually fired and acted, most first. READ THIS BEFORE CONCLUDING THAT SOMETHING DID NOT HAPPEN: everything else in this input describes rules that did not fire, and a rule can be blocked thousands of times while a sibling does its job")
+  preempted PreemptedRule[] @description("rules whose condition HELD and which still never ran, because a higher-priority rule in the same EXCLUSIVE category took the slot. A blocked count for one of these is not a blocked capability - check whether the rule that outranks it is in top_firing, and if it is, the category worked and this rule losing is the design")
 }
 
 class Finding {

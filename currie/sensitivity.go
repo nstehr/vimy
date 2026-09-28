@@ -64,6 +64,12 @@ func (s Sensitivity) Verdict() string {
 	}
 }
 
+// Says reports whether this row has a verdict worth a line on the page. A
+// clause whose blocking varies with nothing measurable is the default state of
+// most clauses, and printing that under every one of them buries the two
+// verdicts that mean something: a doctrine drives it, or nothing does.
+func (s Sensitivity) Says() bool { return s.Doctrinal || s.High-s.Low < 0.15 }
+
 // doctrinalSpread is the gap between halves worth naming; below it the clause
 // blocks for reasons no doctrine controls.
 const doctrinalSpread = 0.25

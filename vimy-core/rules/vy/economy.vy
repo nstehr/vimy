@@ -84,7 +84,7 @@ rule build-ore-silo {
 rule produce-extra-harvester {
   priority 510
   category produce-vehicle exclusive
-  because "above every combat-vehicle rule, so the exclusive queue cannot starve income"
+  because "above every combat-vehicle rule, so the exclusive queue cannot starve income. The ceiling stays at refineries plus two and is deliberately NOT two per refinery: that was tried between 8 and 10 September, put ten harvesters on the field, and game 98 lost nine of them to raids while a 540-credit pillbox was unaffordable in 90% of states. The mod gives one Vehicle queue however many war factories are built and this rule outranks every combat-vehicle rule in it, so a higher ceiling buys income with the army's queue time. Game 178 looked like a case for raising it - 6 refineries, 10 harvesters, 27 matches and 6 acts - but its fleet matched game 175's and its income was a third lower, because the harvesters spent the game fleeing: 47% of their time mining, 117 flee-harvesters acts. The ceiling was not the limit"
   do produce-harvester
   require economy-priority > 0.5
   require has-role(refinery)
