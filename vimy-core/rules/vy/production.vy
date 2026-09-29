@@ -35,11 +35,13 @@ def scaled-reserves(cost: int) =
        or has-role(war-factory) or not has-role(radar)
        or cash >= cost + trunc(2000.0 * select(vehicle-weight >= 0.4, 1.0 - vehicle-weight, 1.0)))
   and (vehicle-weight <= 0.3 or has-role(service-depot) or not has-role(war-factory)
+       or combat-vehicle-count < lerp(2, 5, vehicle-weight)
        or not can-build-role(service-depot)
        or cash >= cost + min(cost * 2, 1200))
   and (tech-priority <= 0.4
        or trunc(1500.0 * select(vehicle-weight >= 0.4, 1.0 - vehicle-weight, 1.0)) <= 0
        or has-role(tech-center) or not has-role(radar)
+       or combat-vehicle-count < lerp(2, 5, vehicle-weight)
        or cash >= cost + trunc(1500.0 * select(vehicle-weight >= 0.4, 1.0 - vehicle-weight, 1.0)))
   and (superweapon-priority <= 0.4
        or trunc(2500.0 * select(vehicle-weight >= 0.4, 1.0 - vehicle-weight, 1.0)) <= 0
