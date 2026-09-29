@@ -370,8 +370,34 @@ func isHuskType(t string) bool {
 
 // BaseUnderAttack triggers within 20% of the map diagonal — far enough out to
 // catch an attack before it lands, close enough to ignore distant enemies.
+// baseBuildings is what counts as "the base" for proximity: everything we own
+// except captured neutral tech structures.
+//
+// An oil derrick is a building we own and is nowhere near the base. Game 193
+// held three, at 28, 45 and 76 cells from the construction yard, and the
+// proximity threshold is 20 percent of the map diagonal -- about 26 cells -- so
+// each one added its own "the base is under attack" bubble in a far corner and
+// the union covered most of the map. 52 percent of defend-base's 606 firings in
+// that game had the nearest enemy next to a DERRICK and none within 26 cells of
+// the real base, which recalled the army from the enemy's doorstep to defend an
+// oil well.
+//
+// Invisible until capture started working: before the capture gate was fixed,
+// Vimy took two derricks in ten sessions, and it now takes three a game.
+func (e RuleEnv) baseBuildings() []model.Building {
+	out := make([]model.Building, 0, len(e.State.Buildings))
+	for _, b := range e.State.Buildings {
+		if IsNeutralTechStructure(b.Type) {
+			continue
+		}
+		out = append(out, b)
+	}
+	return out
+}
+
 func (e RuleEnv) BaseUnderAttack() bool {
-	if len(e.State.Buildings) == 0 || len(e.State.Enemies) == 0 {
+	base := e.baseBuildings()
+	if len(base) == 0 || len(e.State.Enemies) == 0 {
 		return false
 	}
 	mw := float64(e.State.MapWidth)
@@ -380,9 +406,9 @@ func (e RuleEnv) BaseUnderAttack() bool {
 	threshSq := threshold * threshold
 
 	for i := range e.State.Enemies {
-		for j := range e.State.Buildings {
-			dx := float64(e.State.Enemies[i].X - e.State.Buildings[j].X)
-			dy := float64(e.State.Enemies[i].Y - e.State.Buildings[j].Y)
+		for j := range base {
+			dx := float64(e.State.Enemies[i].X - base[j].X)
+			dy := float64(e.State.Enemies[i].Y - base[j].Y)
 			if dx*dx+dy*dy < threshSq {
 				return true
 			}

@@ -204,7 +204,8 @@ func (e RuleEnv) IdleGroundUnits() []model.Unit {
 // NearBaseGroundUnits ignores idle status so emergency defense can recall units
 // already en route elsewhere. Same 20% map-diagonal threshold as BaseUnderAttack.
 func (e RuleEnv) NearBaseGroundUnits() []model.Unit {
-	if len(e.State.Buildings) == 0 {
+	base := e.baseBuildings()
+	if len(base) == 0 {
 		return nil
 	}
 	mw := float64(e.State.MapWidth)
@@ -220,9 +221,9 @@ func (e RuleEnv) NearBaseGroundUnits() []model.Unit {
 		if isAircraft(u) || isNaval(u) {
 			continue
 		}
-		for j := range e.State.Buildings {
-			dx := float64(u.X - e.State.Buildings[j].X)
-			dy := float64(u.Y - e.State.Buildings[j].Y)
+		for j := range base {
+			dx := float64(u.X - base[j].X)
+			dy := float64(u.Y - base[j].Y)
 			if dx*dx+dy*dy < threshSq {
 				out = append(out, u)
 				break
