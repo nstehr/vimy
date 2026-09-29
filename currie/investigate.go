@@ -168,11 +168,15 @@ squad_timeline — how the attack squad behaved over the game: size, how much of
   where "the squad arrived" is separated from "two stragglers arrived", and
   where an approach that oscillates instead of closing shows up.
 
-strike_blockers — why strikes did not happen, counted by reason. unclumped means
-  the squad failed its own cohesion gate; no-target-en-route means it was
-  walking with nothing to aim at; blind-at-base means it ARRIVED and could see
-  nothing, which is a targeting or intel failure rather than a movement one.
-  Counts are not causes: read them against the timeline.
+strike_blockers — why strikes did not happen, counted by reason. EVERY LINE COMES
+  WITH ITS MEANING; read that before ranking anything, because the biggest count
+  is routinely the most benign. no-target-en-route is the squad still walking and
+  is EXPECTED, not a defect -- it is normally the largest number and is never an
+  aborted strike. unclumped means the squad failed its own cohesion gate and
+  re-gathered. out-of-reach means it had a target and was still closing.
+  blind-at-base and not-building are the defect-class ones: the squad arrived and
+  could see nothing, or saw only units. Counts are not causes: read them against
+  the timeline.
 
 field_at — every actor at one tick, with the threat map: ours, enemies seen,
   what the AI merely believes is there, capturables, and the danger field the
@@ -304,6 +308,29 @@ func (iv *investigator) squadTimeline(ctx context.Context, session string) strin
 	return b.String()
 }
 
+// blockerMeaning is what each strike blocker means, lifted from
+// rules/assault_phase.go where the constants are defined.
+//
+// The counts alone mislead, and did: Currie's reading of game 189 concluded the
+// squad suffered "many aborted strikes" from no-target-en-route 641, which is
+// the squad WALKING. That reason is expected by construction and is almost
+// always the largest number, so anything ranked by count leads with it and
+// buries not-building 162 and out-of-reach 55. The two were split apart in the
+// first place because game 132 could not tell them apart; shipping the counts
+// without the split's meaning reintroduces exactly the confusion the split was
+// made to end.
+var blockerMeaning = map[string]string{
+	"no-target-en-route": "EXPECTED, NOT A DEFECT: the squad is still a walk from the base and has not arrived yet. Almost always the largest count here. Never read this as an aborted strike or as a targeting problem.",
+	"blind-at-base":      "DEFECT: the squad ARRIVED at the base it remembers and could see nothing. Targeting or intel, not movement. Remembered-but-not-visible buildings are already handled -- squadStructureTarget falls back to the nearest remembered structure in reach -- so a zero here means that fallback worked.",
+	"not-building":       "DEFECT: something was visible and the best of it was a unit, which means no building was in view at all rather than a unit outscoring one.",
+	"unclumped":          "the squad failed its own cohesion gate and was sent to re-gather, so it never looked for a target. A movement problem.",
+	"out-of-reach":       "a building was the best target and the squad was still too far to shoot it. A walk, not a failure.",
+}
+
+// defectBlockers are the reasons that indicate something is wrong, as opposed to
+// the squad simply being in transit.
+var defectBlockers = map[string]bool{"blind-at-base": true, "not-building": true}
+
 func (iv *investigator) strikeBlockers(ctx context.Context, session string) string {
 	if iv.ch == nil || session == "" {
 		return noTelemetry
@@ -323,8 +350,22 @@ func (iv *investigator) strikeBlockers(ctx context.Context, session string) stri
 	}
 	var b strings.Builder
 	b.WriteString("why strikes did not happen, and how the approach router decided. already-open on the approach means the direct corridor scored clear, which with little intel means unscouted rather than safe.\n")
+	b.WriteString("ORDERED BY COUNT, WHICH IS NOT ORDERED BY IMPORTANCE. Read each line's meaning before ranking it.\n")
+	var defects []string
 	for _, r := range rows {
-		fmt.Fprintf(&b, "%s: %d (last at tick %d)\n", r.Reason, r.N, r.Last)
+		fmt.Fprintf(&b, "%s: %d (last at tick %d)", r.Reason, r.N, r.Last)
+		if m, ok := blockerMeaning[r.Reason]; ok {
+			fmt.Fprintf(&b, " -- %s", m)
+		}
+		b.WriteString("\n")
+		if r.N > 0 && defectBlockers[r.Reason] {
+			defects = append(defects, fmt.Sprintf("%s (%d)", r.Reason, r.N))
+		}
+	}
+	if len(defects) == 0 {
+		b.WriteString("NO DEFECT-CLASS BLOCKER OCCURRED: every reason above is the squad walking, re-gathering or closing. Do not report a targeting failure from this.\n")
+	} else {
+		fmt.Fprintf(&b, "DEFECT-CLASS BLOCKERS PRESENT: %s. These are the ones worth a finding, whatever their size relative to the rest.\n", strings.Join(defects, ", "))
 	}
 	return b.String()
 }
