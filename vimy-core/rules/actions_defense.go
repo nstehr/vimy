@@ -107,9 +107,6 @@ func ScrambleToHarvesters(dangerPct float64, maxDefenders int) ActionFunc {
 		held := memoryMap[int, int](env.Memory, "disengagedUntil")
 		sent := memoryMap[int, scoutMoveEntry](env.Memory, "harvesterScrambleSent")
 
-		// Nearest first, so a raid is answered by whoever can actually get
-		// there rather than by whoever happens to sort early.
-		target := danger[0]
 		var pool []model.Unit
 		for _, u := range env.State.Units {
 			if !IsCombatUnit(u.Type) || isAircraft(u) || isNaval(u) {
@@ -137,6 +134,44 @@ func ScrambleToHarvesters(dangerPct float64, maxDefenders int) ActionFunc {
 		if free := withoutAttackSquads(env, pool); len(free) > 0 {
 			pool = free
 		}
+		if len(pool) == 0 {
+			return nil
+		}
+
+		// Which raid to answer, chosen by what this pool can actually reach.
+		//
+		// This was `danger[0]` under a comment claiming "nearest first", and
+		// the comment described the DEFENDER sort below, not the target.
+		// HarvestersInDanger walks State.Units and appends, so danger[0] is
+		// whichever endangered harvester happens to hold the lowest index --
+		// arbitrary, and stable across ticks, so the same one is answered every
+		// time while the rest are never answered at all.
+		//
+		// That is not a rare case. Game 195 sampled 225 states with a harvester
+		// in danger and 172 of them had THREE OR MORE at once, up to seven,
+		// because the raiding is spread across ore patches rather than aimed at
+		// one. Sending every defender to an arbitrary one of seven is close to
+		// sending them nowhere: the harvester count sat at 5 against the two
+		// wins' 10, and rebuild-harvester fired 43 times.
+		//
+		// Concentrating the whole pool on ONE harvester stays right -- splitting
+		// eight defenders across seven raids delivers one unit per raid, which
+		// is a donation. The choice of which is what changes.
+		target := danger[0]
+		bestReach := -1
+		for _, h := range danger {
+			reach := -1
+			for _, u := range pool {
+				d := (u.X-h.X)*(u.X-h.X) + (u.Y-h.Y)*(u.Y-h.Y)
+				if reach < 0 || d < reach {
+					reach = d
+				}
+			}
+			if reach >= 0 && (bestReach < 0 || reach < bestReach) {
+				bestReach, target = reach, h
+			}
+		}
+
 		distSq := func(u model.Unit) int {
 			return (u.X-target.X)*(u.X-target.X) + (u.Y-target.Y)*(u.Y-target.Y)
 		}

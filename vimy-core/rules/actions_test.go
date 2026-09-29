@@ -1949,3 +1949,49 @@ func TestSquadStructureTargetLooksPastTheDefender(t *testing.T) {
 		t.Errorf("the walk was not counted as out-of-reach: %v", blocked)
 	}
 }
+
+// The scramble answers the raid it can reach, not whichever endangered
+// harvester happens to hold the lowest index in State.Units.
+//
+// Game 195 had three or more harvesters in danger in 172 of 225 sampled
+// states, up to seven at once, so which one is chosen decides whether the
+// defenders arrive at a fight or walk across the map while it ends.
+func TestScrambleAnswersTheReachableRaid(t *testing.T) {
+	conn, cleanup := testConn(t)
+	defer cleanup()
+
+	env := RuleEnv{
+		State: model.GameState{
+			Tick: 1000, MapWidth: 128, MapHeight: 128,
+			Units: []model.Unit{
+				// Endangered, far from every defender. Lowest index, so this is
+				// what danger[0] picked before.
+				{ID: 1, Type: "harv", X: 5, Y: 5, HP: 600, MaxHP: 600},
+				// Endangered, right beside the defenders.
+				{ID: 2, Type: "harv", X: 100, Y: 100, HP: 600, MaxHP: 600},
+				{ID: 10, Type: "e1", X: 102, Y: 102, HP: 50, MaxHP: 50},
+				{ID: 11, Type: "e1", X: 103, Y: 101, HP: 50, MaxHP: 50},
+			},
+			Enemies: []model.Enemy{
+				{ID: 90, Type: "e1", X: 6, Y: 6, HP: 5000, MaxHP: 5000},
+				{ID: 91, Type: "e1", X: 101, Y: 101, HP: 5000, MaxHP: 5000},
+			},
+		},
+		Memory: map[string]any{},
+	}
+	if got := len(env.HarvestersInDanger(0.04)); got != 2 {
+		t.Fatalf("premise broken: %d harvesters in danger, want 2", got)
+	}
+	if err := ScrambleToHarvesters(0.04, 8)(env, conn); err != nil {
+		t.Fatalf("scramble: %v", err)
+	}
+	sent := memoryMap[int, scoutMoveEntry](env.Memory, "harvesterScrambleSent")
+	if len(sent) == 0 {
+		t.Fatal("nobody was scrambled")
+	}
+	for id, e := range sent {
+		if e.X != 100 || e.Y != 100 {
+			t.Errorf("unit %d sent to (%d,%d), want the reachable harvester at (100,100)", id, e.X, e.Y)
+		}
+	}
+}
