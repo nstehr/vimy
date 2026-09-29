@@ -225,6 +225,14 @@ rule fire-paratroopers {
   require has-enemy-intel() or enemies-visible
 }
 
+rule fire-gps {
+  priority 846
+  category superweapon exclusive
+  because "the only non-superweapon support power an Allied faction has, and nothing fired it. Every other power rule here -- fire-spy-plane, fire-paratroopers, fire-parabombs -- targets a power that lives on AFLD, the SOVIET airfield: spy plane and paratroopers need aircraft.soviet and parabombs needs aircraft.ukraine. They are gated on has-role(airfield), which maps to both afld and hpad, so for an Allied faction they look reachable, evaluate about 1981 times a game and can never succeed. GPS lives on ATEK, which Vimy already builds one to four of per game at 1500 credits, so it was paying for the building and leaving the power sitting on it. Worth firing because the two DEFECT-class strike blockers are vision problems: game 190 recorded not-building 287 and blind-at-base 25, where not-building means something was visible and the best of it was a unit, so no building was in view at all, and squadStructureTarget only falls back to a remembered structure once the squad is already within strike reach. A permanent reveal makes every enemy structure a live target rather than a memory, and it feeds the threat field the approach router scores corridors against -- produce-scout-vehicle's own note records a game where an empty field left the router scoring every corridor clear because it had nothing to score. No condition beyond readiness: the power is OneShot with a ChargeInterval of 12000, so support-power-ready gates it to one launch, and gating it on intel would be backwards when intel is what it provides. ATEK landed at ticks 11000, 23000, 13720 and 19680 in games 185 to 189, so the charge completes inside a normal game"
+  do fire-gps
+  require support-power-ready(GpsPowerInfoOrder)
+}
+
 rule fire-parabombs {
   priority 845
   category superweapon exclusive

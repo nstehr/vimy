@@ -59,6 +59,7 @@ var ActionRegistry = map[string]ActionFunc{
 	"fire-spy-plane":           ActionFireSpyPlane,
 	"fire-paratroopers":        ActionFireParatroopers,
 	"fire-parabombs":           ActionFireParabombs,
+	"fire-gps":                 ActionFireGPS,
 	"produce-grenadier":        ActionProduceGrenadier,
 	"produce-attack-dog":       ActionProduceAttackDog,
 	"produce-spy":              ActionProduceSpy,
