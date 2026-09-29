@@ -38,6 +38,22 @@ type Agent struct {
 
 	// When a game state was last processed, for the stall watchdog.
 	lastState atomic.Int64
+
+	// The tick each sampler last wrote at, so sampling is driven by ELAPSED
+	// ticks rather than by a modulus.
+	//
+	// `gs.Tick % 20 == 0` looks equivalent and is not: state arrives every ten
+	// ticks but its PHASE is whatever the tick was when the sidecar connected,
+	// and nothing aligns it to zero. Game 196's states landed on ticks
+	// congruent to 0 and 10 mod 20, so half of them sampled; the very next
+	// game's landed on 1 and 11, so `tick % 20` was never zero and NOT ONE unit
+	// or threat row was written for the whole game while evals streamed
+	// normally. A coin flip per game, silent either way.
+	//
+	// Set one interval negative at Hello, so the first state of a game samples
+	// rather than waiting a whole interval for the zero value to age out.
+	lastUnitSample   int
+	lastThreatSample int
 }
 
 // TelemetryConfig is everything needed to open a game's log, carried rather
@@ -133,6 +149,11 @@ func (a *Agent) HandleHello(env ipc.Envelope) (*ipc.Envelope, error) {
 	} else {
 		slog.Warn("no terrain data in hello — terrain awareness disabled")
 	}
+
+	// One interval negative, so the first state samples. Reset per game, not
+	// just initialised, because the sidecar serves several games in a row.
+	a.lastUnitSample = -unitSampleTicks
+	a.lastThreatSample = -threatSampleTicks
 
 	// After the terrain, so the session record carries it: it is static for the
 	// whole game and belongs written down once rather than sampled.
@@ -328,9 +349,13 @@ const threatSampleTicks = 200
 // switched itself off". Establishing which cost an evening and a new counter;
 // drawn on the map it is a glance.
 func (a *Agent) sampleThreat(gs model.GameState) {
-	if a.WAL == nil || a.terrain == nil || gs.Tick%threatSampleTicks != 0 {
+	if a.WAL == nil || a.terrain == nil {
 		return
 	}
+	if gs.Tick-a.lastThreatSample < threatSampleTicks {
+		return
+	}
+	a.lastThreatSample = gs.Tick
 	f := a.Engine.ThreatSnapshot(gs)
 	if f == nil {
 		return
@@ -368,9 +393,10 @@ func (a *Agent) sampleUnits(gs model.GameState) {
 	if a.WAL == nil {
 		return
 	}
-	if gs.Tick%unitSampleTicks != 0 {
+	if gs.Tick-a.lastUnitSample < unitSampleTicks {
 		return
 	}
+	a.lastUnitSample = gs.Tick
 	for _, u := range gs.Units {
 		a.WAL.WriteUnit(wal.Unit{
 			Tick: gs.Tick, ID: u.ID, Type: u.Type, Side: "ours",
