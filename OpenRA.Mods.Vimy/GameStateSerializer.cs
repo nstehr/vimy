@@ -136,6 +136,14 @@ namespace OpenRA.Mods.Vimy
 		[JsonPropertyName("buildable")]
 		public List<string> Buildable { get; set; } = new();
 
+		/// <summary>What each buildable item costs, so the sidecar can prefer the
+		/// heaviest vehicle it can AFFORD rather than the heaviest it can build.
+		/// BuildableItems() filters on price only when PayUpFront is set, and
+		/// ClassicProductionQueue does not set it, so "buildable" includes a
+		/// 2000-credit mammoth in an economy holding 400.</summary>
+		[JsonPropertyName("buildableCosts")]
+		public Dictionary<string, int> BuildableCosts { get; set; } = new();
+
 		[JsonPropertyName("currentItem")]
 		public string CurrentItem { get; set; }
 
@@ -340,7 +348,10 @@ namespace OpenRA.Mods.Vimy
 						queueData.Items.Add(item.Item);
 
 					foreach (var item in queue.BuildableItems())
+					{
 						queueData.Buildable.Add(item.Name);
+						queueData.BuildableCosts[item.Name] = queue.GetProductionCost(item);
+					}
 
 					queues.Add(queueData);
 				}

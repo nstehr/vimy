@@ -341,11 +341,16 @@ func ActionProduceTeslaCoil(env RuleEnv, conn CommandSender) error {
 }
 
 func ActionProduceHeavyVehicle(env RuleEnv, conn CommandSender) error {
-	for _, role := range []string{"heavy_tank", "medium_tank"} {
-		item := env.BuildableType(role)
-		if item != "" {
-			slog.Debug("producing heavy vehicle", "item", item)
-			return sendProduce(env, conn, QueueVehicle, item)
+	// Affordable first, then merely buildable. As SOVIET the heavy_tank role is
+	// a 2000-credit mammoth and the 1150 heavy tank sits behind it under
+	// medium_tank, so taking the first BUILDABLE one parked every order on the
+	// mammoth: 69 fires of this rule in game 192 and no tank delivered.
+	for _, resolve := range []func(string) string{env.AffordableType, env.BuildableType} {
+		for _, role := range []string{"heavy_tank", "medium_tank"} {
+			if item := resolve(role); item != "" {
+				slog.Debug("producing heavy vehicle", "item", item)
+				return sendProduce(env, conn, QueueVehicle, item)
+			}
 		}
 	}
 	return nil

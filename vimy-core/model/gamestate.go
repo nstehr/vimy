@@ -63,11 +63,15 @@ type Building struct {
 func (b Building) TypeName() string { return b.Type }
 
 type ProductionQueue struct {
-	Type            string   `json:"type"`
-	Items           []string `json:"items"`
-	Buildable       []string `json:"buildable"`
-	CurrentItem     string   `json:"currentItem"`
-	CurrentProgress int      `json:"currentProgress"`
+	Type      string   `json:"type"`
+	Items     []string `json:"items"`
+	Buildable []string `json:"buildable"`
+	// What each buildable item costs. BuildableItems() in the engine filters on
+	// price only when PayUpFront is set and ClassicProductionQueue does not set
+	// it, so Buildable lists a 2000-credit mammoth in an economy holding 400.
+	BuildableCosts  map[string]int `json:"buildableCosts"`
+	CurrentItem     string         `json:"currentItem"`
+	CurrentProgress int            `json:"currentProgress"`
 }
 
 type Enemy struct {

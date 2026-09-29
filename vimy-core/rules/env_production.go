@@ -92,13 +92,31 @@ func (e RuleEnv) BestBuildableSpecialist() string {
 // bestBuildableFrom picks the buildable candidate with the fewest existing
 // units, ties going to list order. Production cycles across roles without
 // losing preference. A non-nil allowSet restricts which roles are eligible.
+// bestBuildableFrom prefers what can be paid for, and only then what can merely
+// be built.
+//
+// Two passes rather than one, because the least-built role wins and a role never
+// built has count zero. As SOVIET that is heavy_tank, which resolves to a
+// 2000-credit mammoth, so it won every contest and the order was re-sent every
+// 100 ticks without ever completing: game 192 issued 169 tank orders across this
+// rule and produce-heavy-vehicle and built ZERO tanks. The second pass keeps the
+// old behaviour when nothing at all is affordable, so this never builds less
+// than before -- an order placed with no cash still progresses as cash arrives,
+// which is the right thing when there is no cheaper option.
 func (e RuleEnv) bestBuildableFrom(candidates []string, allowSet map[string]bool) string {
+	if item := e.bestFrom(candidates, allowSet, e.AffordableType); item != "" {
+		return item
+	}
+	return e.bestFrom(candidates, allowSet, e.BuildableType)
+}
+
+func (e RuleEnv) bestFrom(candidates []string, allowSet map[string]bool, resolve func(string) string) string {
 	minCount := math.MaxInt
 	for _, r := range candidates {
 		if allowSet != nil && !allowSet[r] {
 			continue
 		}
-		if e.BuildableType(r) == "" {
+		if resolve(r) == "" {
 			continue
 		}
 		if c := e.RoleCount(r); c < minCount {
@@ -115,7 +133,7 @@ func (e RuleEnv) bestBuildableFrom(candidates []string, allowSet map[string]bool
 		if e.RoleCount(r) != minCount {
 			continue
 		}
-		if item := e.BuildableType(r); item != "" {
+		if item := resolve(r); item != "" {
 			return item
 		}
 	}
@@ -177,6 +195,49 @@ func (e RuleEnv) CanBuildRole(name string) bool {
 
 // BuildableType resolves a role to its actual buildable name for the current faction
 // (e.g. "barracks" → "tent" for Allies, "barr" for Soviets).
+// AffordableType is the first type of a role that is buildable AND costs no
+// more than the cash in hand, in the role's own order.
+//
+// BuildableType returns the heaviest buildable type, and the engine's
+// BuildableItems() only filters on price when PayUpFront is set, which
+// ClassicProductionQueue does not. So as SOVIET the heavy_tank role resolves to
+// a 2000-credit mammoth that game 192 could afford in 15 of 699 sampled states,
+// the order went out, could not be paid, and the envelope was re-sent every 100
+// ticks: 169 tank orders across produce-vehicle and produce-heavy-vehicle, and
+// ZERO tanks built, while the 1150 heavy tank behind it in the list -- affordable
+// in 138 of those states -- was never reached. As ALLIED the mammoth is never
+// buildable so it fell straight through to a 2tnk at 850, which is why the bug
+// was invisible until Vimy played Soviet.
+//
+// Empty when nothing in the role is affordable, so a caller can fall through to
+// the next role and then to BuildableType, never doing less than before.
+func (e RuleEnv) AffordableType(name string) string {
+	r, ok := roles[name]
+	if !ok {
+		return ""
+	}
+	cash := e.Cash()
+	for _, pq := range e.State.ProductionQueues {
+		if !strings.EqualFold(pq.Type, r.queue) {
+			continue
+		}
+		for _, t := range r.types {
+			for _, b := range pq.Buildable {
+				if !matchesType(b, t) {
+					continue
+				}
+				// No recorded cost means an older mod build that does not send
+				// them; treat it as affordable rather than refusing to build.
+				if cost, known := pq.BuildableCosts[b]; !known || cost <= cash {
+					return b
+				}
+			}
+		}
+		return ""
+	}
+	return ""
+}
+
 func (e RuleEnv) BuildableType(name string) string {
 	r, ok := roles[name]
 	if !ok {
