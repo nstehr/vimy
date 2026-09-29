@@ -50,9 +50,9 @@ func (e RuleEnv) BestCapturable() *model.Enemy {
 		return nil
 	}
 	bx, by := 0, 0
-	if len(e.State.Buildings) > 0 {
-		bx = e.State.Buildings[0].X
-		by = e.State.Buildings[0].Y
+	if ax, ay, ok := e.baseAnchor(); ok {
+		bx = ax
+		by = ay
 	}
 	var best *model.Enemy
 	bestScore := -1.0
@@ -536,9 +536,9 @@ func (e RuleEnv) NearestEnemyBase() *EnemyBaseIntel {
 	}
 
 	bx, by := 0, 0
-	if len(e.State.Buildings) > 0 {
-		bx = e.State.Buildings[0].X
-		by = e.State.Buildings[0].Y
+	if ax, ay, ok := e.baseAnchor(); ok {
+		bx = ax
+		by = ay
 	}
 
 	var nearest *EnemyBaseIntel

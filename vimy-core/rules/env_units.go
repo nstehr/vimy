@@ -108,16 +108,14 @@ func (e RuleEnv) Airfield() *model.Building {
 }
 
 // BuildingCentroid returns the average position of all buildings.
+// BuildingCentroid is the centre of the base, and excludes captured tech
+// structures: recall-stray-units walks units to this point, and with three
+// derricks held it was dragged off the base and pulled forward units away from
+// the fight. It fired 134 times against squad-attack-known-base's 204 in the
+// game that surfaced it.
 func (e RuleEnv) BuildingCentroid() (int, int) {
-	if len(e.State.Buildings) == 0 {
-		return 0, 0
-	}
-	sumX, sumY := 0, 0
-	for _, b := range e.State.Buildings {
-		sumX += b.X
-		sumY += b.Y
-	}
-	return sumX / len(e.State.Buildings), sumY / len(e.State.Buildings)
+	x, y, _ := e.baseCentroid()
+	return x, y
 }
 
 func isInfantry(u model.Unit) bool {
@@ -138,13 +136,8 @@ func (e RuleEnv) ServiceDepotOrCentroid() (int, int) {
 			return b.X, b.Y
 		}
 	}
-	if len(e.State.Buildings) > 0 {
-		sumX, sumY := 0, 0
-		for _, b := range e.State.Buildings {
-			sumX += b.X
-			sumY += b.Y
-		}
-		return sumX / len(e.State.Buildings), sumY / len(e.State.Buildings)
+	if x, y, ok := e.baseCentroid(); ok {
+		return x, y
 	}
 	return 0, 0
 }
@@ -536,13 +529,8 @@ func (e RuleEnv) GroundUnitCentroid() (int, int) {
 		}
 		return sumX / len(idle), sumY / len(idle)
 	}
-	if len(e.State.Buildings) > 0 {
-		sumX, sumY := 0, 0
-		for _, b := range e.State.Buildings {
-			sumX += b.X
-			sumY += b.Y
-		}
-		return sumX / len(e.State.Buildings), sumY / len(e.State.Buildings)
+	if x, y, ok := e.baseCentroid(); ok {
+		return x, y
 	}
 	return 0, 0
 }

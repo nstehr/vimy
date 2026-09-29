@@ -79,8 +79,10 @@ func ActionSendIdleHarvesters(env RuleEnv, conn CommandSender) error {
 		case len(refineries) > 0:
 			r := refineries[i%len(refineries)]
 			tx, ty = r.X, r.Y
-		case len(env.State.Buildings) > 0:
-			tx, ty = env.State.Buildings[0].X, env.State.Buildings[0].Y
+		default:
+			if x, y, ok := env.baseAnchor(); ok {
+				tx, ty = x, y
+			}
 		}
 		if prev, ok := state[u.ID]; ok && prev.X == tx && prev.Y == ty && env.State.Tick-prev.Tick < harvestResend {
 			continue
@@ -157,14 +159,10 @@ func FleeHarvesters(dangerPct float64) ActionFunc {
 			}
 		}
 		fallbackX, fallbackY := 0, 0
-		if len(env.State.Buildings) > 0 {
-			sumX, sumY := 0, 0
-			for _, b := range env.State.Buildings {
-				sumX += b.X
-				sumY += b.Y
-			}
-			fallbackX = sumX / len(env.State.Buildings)
-			fallbackY = sumY / len(env.State.Buildings)
+		// The base, not a captured derrick: a harvester fleeing a raid should
+		// run home, and three derricks held drag this centroid across the map.
+		if x, y, ok := env.baseCentroid(); ok {
+			fallbackX, fallbackY = x, y
 		}
 
 		for _, u := range harvesters {

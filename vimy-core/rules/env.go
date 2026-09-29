@@ -173,9 +173,9 @@ func (e RuleEnv) NearestEnemy() *model.Enemy {
 		return nil
 	}
 	bx, by := 0, 0
-	if len(e.State.Buildings) > 0 {
-		bx = e.State.Buildings[0].X
-		by = e.State.Buildings[0].Y
+	if ax, ay, ok := e.baseAnchor(); ok {
+		bx = ax
+		by = ay
 	}
 	var nearest *model.Enemy
 	bestDist := math.MaxFloat64

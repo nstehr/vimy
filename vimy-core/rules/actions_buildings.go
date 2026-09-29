@@ -148,7 +148,12 @@ type chokePos struct {
 // defenseHint scores candidates around the base perimeter and picks randomly
 // from the top 3 — deterministic placement is trivially exploitable.
 func defenseHint(env RuleEnv) (int, int) {
-	buildings := env.State.Buildings
+	// The real base: defences placed around a captured derrick's share of the
+	// centroid defend an oil well nobody is attacking.
+	buildings := env.baseBuildings()
+	if len(buildings) == 0 {
+		buildings = env.State.Buildings
+	}
 	if len(buildings) == 0 {
 		return 0, 0
 	}

@@ -14,9 +14,9 @@ func (e RuleEnv) WeakestVisibleEnemy() *model.Enemy {
 		return nil
 	}
 	bx, by := 0, 0
-	if len(e.State.Buildings) > 0 {
-		bx = e.State.Buildings[0].X
-		by = e.State.Buildings[0].Y
+	if ax, ay, ok := e.baseAnchor(); ok {
+		bx = ax
+		by = ay
 	}
 	var weakest *model.Enemy
 	bestRatio := 2.0 // above max possible ratio of 1.0
@@ -122,9 +122,9 @@ func (e RuleEnv) BestAirTarget() *model.Enemy {
 		return nil
 	}
 	bx, by := 0, 0
-	if len(e.State.Buildings) > 0 {
-		bx = e.State.Buildings[0].X
-		by = e.State.Buildings[0].Y
+	if ax, ay, ok := e.baseAnchor(); ok {
+		bx = ax
+		by = ay
 	}
 	var best *model.Enemy
 	bestScore := -1.0
@@ -197,9 +197,9 @@ const groundDistanceScale = 50.0
 // wants: the thing nearest home is the thing to kill.
 func (e RuleEnv) BestGroundTarget() *model.Enemy {
 	bx, by := 0, 0
-	if len(e.State.Buildings) > 0 {
-		bx = e.State.Buildings[0].X
-		by = e.State.Buildings[0].Y
+	if ax, ay, ok := e.baseAnchor(); ok {
+		bx = ax
+		by = ay
 	}
 	return e.BestGroundTargetFrom(bx, by)
 }
@@ -393,6 +393,36 @@ func (e RuleEnv) baseBuildings() []model.Building {
 		out = append(out, b)
 	}
 	return out
+}
+
+// baseAnchor is a point to measure "from us" against: the real base, ignoring
+// captured tech structures. Falls back to any building we own, because a derrick
+// is still a better reference than the map origin.
+func (e RuleEnv) baseAnchor() (int, int, bool) {
+	if base := e.baseBuildings(); len(base) > 0 {
+		return base[0].X, base[0].Y, true
+	}
+	if len(e.State.Buildings) > 0 {
+		return e.State.Buildings[0].X, e.State.Buildings[0].Y, true
+	}
+	return 0, 0, false
+}
+
+// baseCentroid is the centre of the real base. Same fallback, same reason.
+func (e RuleEnv) baseCentroid() (int, int, bool) {
+	base := e.baseBuildings()
+	if len(base) == 0 {
+		base = e.State.Buildings
+	}
+	if len(base) == 0 {
+		return 0, 0, false
+	}
+	sumX, sumY := 0, 0
+	for _, b := range base {
+		sumX += b.X
+		sumY += b.Y
+	}
+	return sumX / len(base), sumY / len(base), true
 }
 
 func (e RuleEnv) BaseUnderAttack() bool {
