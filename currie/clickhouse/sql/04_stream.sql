@@ -149,8 +149,14 @@ CREATE TABLE IF NOT EXISTS stream_units
     unit_id    UInt32,
     type       LowCardinality(String),
     side       LowCardinality(String),   -- 'ours' | 'enemy'
-    x          UInt16,
-    y          UInt16,
+    -- Int32, not UInt16: an aircraft entering or leaving the map has a NEGATIVE
+    -- cell coordinate. A Badger at x = -1 -- Vimy's own, spawned by
+    -- fire-paratroopers the first time that power ever worked -- made the INSERT
+    -- fail with CANNOT_PARSE_NUMBER, and because the shipper retries the same
+    -- segment every pass it wedged for four hours and shipped nothing after it.
+    -- Game 192's units stop at tick 15660 of 32760 for that reason.
+    x          Int32,
+    y          Int32,
     hp         UInt16,
     idle       Bool,
     -- What holds ground versus what moves over it. A map without bases on it

@@ -330,3 +330,45 @@ func TestRunOnePassStillReportsFailure(t *testing.T) {
 		t.Fatal("a single pass that failed must report it")
 	}
 }
+
+// A segment the server will never accept must not stop the ones behind it.
+//
+// It used to. A pass returned on the first failure and restarts from the
+// beginning, so a Badger at x = -1 against a UInt16 column wedged the shipper
+// for four hours: the log repeated the same CANNOT_PARSE_NUMBER every five
+// seconds and game 192 lost every unit row after tick 15660. Head-of-line
+// blocking on one poison row is a worse failure than the row.
+func TestShipSkipsARejectedSegmentAndKeepsGoing(t *testing.T) {
+	root := t.TempDir()
+	session(t, root, "s1",
+		`{"tick":1,"rule":"a"}`+"\n",
+		`{"tick":2,"rule":"poison"}`+"\n",
+		`{"tick":3,"rule":"c"}`+"\n")
+
+	// Reject only the middle segment. The fake decides from the query, which
+	// does not name the segment, so it counts data INSERTs instead: the second
+	// one is the middle segment.
+	var inserts int
+	f := &fakeCH{}
+	f.fail = func(q string) bool {
+		if strings.Contains(q, "INSERT INTO stream_rule_evals") {
+			inserts++
+			return inserts == 2
+		}
+		return false
+	}
+	srv := newFake(t, f)
+	sh := New(root, srv.URL, "currie", "u", "p")
+	sh.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	st, err := sh.Pass(context.Background())
+	if err != nil {
+		t.Fatalf("a rejected segment must not fail the pass: %v", err)
+	}
+	if st.Failed != 1 {
+		t.Errorf("Failed = %d, want 1", st.Failed)
+	}
+	if st.Segments != 2 {
+		t.Errorf("Segments = %d, want 2 — the two good ones still landed", st.Segments)
+	}
+}

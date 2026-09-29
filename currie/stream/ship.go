@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -58,6 +59,9 @@ type Stats struct {
 	// Compressed counts segments that were already in the table and have now
 	// been archived in place.
 	Compressed int
+	// Failed counts segments the server rejected. They stay on disk and out of
+	// the ledger, so the next pass tries them again.
+	Failed int
 }
 
 // Run ships everything ready, then keeps shipping on an interval until the
@@ -103,11 +107,11 @@ func (s *Shipper) Run(ctx context.Context, interval time.Duration) error {
 }
 
 func (s *Shipper) logPass(st Stats) {
-	if st.Segments == 0 && st.Compressed == 0 {
+	if st.Segments == 0 && st.Compressed == 0 && st.Failed == 0 {
 		return
 	}
 	s.Log.Info("shipped", "segments", st.Segments, "sessions", st.Sessions,
-		"bytes", st.Bytes, "compressed", st.Compressed)
+		"bytes", st.Bytes, "compressed", st.Compressed, "failed", st.Failed)
 }
 
 // Pass ships every sealed segment that the ledger has not already recorded.
@@ -159,7 +163,25 @@ func (s *Shipper) Pass(ctx context.Context) (Stats, error) {
 			}
 			n, err := s.ship(ctx, sess, seg)
 			if err != nil {
-				return st, fmt.Errorf("ship %s: %w", seg.Token(), err)
+				// One segment must not stop the rest. This used to return, and
+				// because a pass restarts from the beginning it meant a segment
+				// the server will NEVER accept wedged the shipper permanently:
+				// a Badger at x = -1 against a UInt16 column stalled shipping
+				// for four hours and cost game 192 everything after tick 15660,
+				// while the log repeated the same CANNOT_PARSE_NUMBER every five
+				// seconds. Head-of-line blocking on a poison segment is a worse
+				// failure than the bad row.
+				//
+				// Not recorded in the ledger either way, so a transient failure
+				// is retried next pass and a permanent one keeps complaining --
+				// loud and skippable rather than quiet and fatal.
+				if !errors.Is(err, errRejected) {
+					return st, fmt.Errorf("ship %s: %w", seg.Token(), err)
+				}
+				st.Failed++
+				s.Log.Error("segment rejected, skipping and continuing",
+					"segment", seg.Token(), "error", err)
+				continue
 			}
 			moved++
 			st.Segments++
@@ -177,6 +199,13 @@ func (s *Shipper) Pass(ctx context.Context) (Stats, error) {
 // matters: a segment in the ledger but not in the table would be lost
 // silently, which is the failure we cannot detect later. The reverse is
 // detectable and free to fix.
+// errRejected marks a segment the server refused. Distinct from every other
+// failure because it will not get better: a Badger at x = -1 against a UInt16
+// column is rejected identically on every retry, and a pass that aborts on it
+// re-reads the same segment forever. A ledger failure is the opposite -- the
+// ledger being broken is systemic, so that still stops the pass.
+var errRejected = errors.New("segment rejected by the server")
+
 func (s *Shipper) ship(ctx context.Context, sess wal.Session, seg wal.Segment) (int64, error) {
 	f, err := os.Open(seg.Path)
 	if err != nil {
@@ -206,7 +235,7 @@ func (s *Shipper) ship(ctx context.Context, sess wal.Session, seg wal.Segment) (
 	q.Set("insert_deduplication_token", seg.Token())
 
 	if _, err := s.do(ctx, q, body); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("%w: %w", errRejected, err)
 	}
 
 	rows := countLines(seg)
@@ -308,7 +337,11 @@ var streams = map[string]streamSpec{
 	wal.UnitsPrefix: {
 		table:   "stream_units",
 		columns: "tick, unit_id, type, side, x, y, hp, idle, is_building, remembered",
-		input:   "tick UInt32, unit_id UInt32, type String, side String, x UInt16, y UInt16, hp UInt16, idle Bool, is_building Bool, remembered Bool",
+		// x and y are Int32, not UInt16: an aircraft entering or leaving the map
+		// has a NEGATIVE cell coordinate. input() types the incoming JSON here,
+		// so this declaration is what rejects the row -- widening the table's
+		// column alone changes nothing.
+		input: "tick UInt32, unit_id UInt32, type String, side String, x Int32, y Int32, hp UInt16, idle Bool, is_building Bool, remembered Bool",
 	},
 }
 
