@@ -143,6 +143,45 @@ func squadAssaulting(env RuleEnv, name string) bool {
 	return withinStrikeReach(env, cx, cy, base.X, base.Y)
 }
 
+// squadCommitted reports whether the squad's assault is still live: committed to
+// a target, and refreshed by an assault rule within the commitment TTL.
+//
+// This is the difference between a formation in contact and a remnant standing
+// at the gate, and without it the two are indistinguishable by position -- which
+// deadlocked game 194 from tick 18360 to the end.
+//
+// The loop: the squad decayed to 2 members at the enemy base, so squadAssaulting
+// was true and reinforcement was refused. TargetSize is recomputed from
+// committableGround on every call and set BEFORE the refusal, so as the army
+// grew at home the target climbed -- 68 ground units at tick 16000, 93 at 24000,
+// 86 of them idle. SquadReadyRatio is living members over TargetSize, so it fell
+// to 2/93, far under the doctrine's commit_ratio of 0.70, and
+// squad-attack-known-base could not fire: 502 fires, the last at 18360, none in
+// the remaining 6700 ticks. A squad that cannot attack does not move, so
+// squadAssaulting stayed true; a squad with living members is never dissolved by
+// updateSquads, so no fresh squad could form either. Every unit produced for the
+// rest of the game went straight to the pool recall-stray-units walks in circles
+// at home -- form-ground-attack fired 1133 times and recruited nobody.
+//
+// The army growing is what tightened the trap, which is the signature of a
+// feedback loop rather than a threshold: the more Vimy built, the further out of
+// reach its own gate went. Vimy won anyway, on two aircraft.
+//
+// A size threshold was the obvious fix and is wrong: reinforcement would reopen
+// below some fraction of the target while the assault gate stays shut at
+// activation(), leaving a second dead band between the two. Commitment has no
+// such band. It is also the honest question -- the guard exists to avoid
+// reshuffling a formation in contact, and a stale commitment means there is no
+// contact to disturb.
+func squadCommitted(env RuleEnv, name string) bool {
+	st := memoryMap[string, squadAttackState](env.Memory, "squadAttackState")
+	prev, ok := st[name]
+	if !ok || !prev.Attacking {
+		return false
+	}
+	return env.State.Tick-prev.LastTick <= squadAttackCommitTTL
+}
+
 func squadTarget(env RuleEnv, name string, floor int) int {
 	if n := committableGround(env, name); n > floor {
 		return n
@@ -211,7 +250,14 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 			// The joiner's POSITION was always the real question. A unit at the
 			// muster point costs nothing to absorb; one at the factory while the
 			// squad stands at the enemy base is what wrecks the formation.
-			if squadAssaulting(env, name) {
+			//
+			// And position alone is still not enough, because a squad can be at
+			// the enemy base and not be fighting. squadCommitted is the other
+			// half: only a formation whose assault rule is still firing is a
+			// formation, and one whose commitment has gone stale is a remnant
+			// standing where it died. Refusing THAT reinforcement is what
+			// strands the entire army -- see squadCommitted for game 194.
+			if squadAssaulting(env, name) && squadCommitted(env, name) {
 				return nil
 			}
 			need := sq.TargetSize - len(sq.UnitIDs) - len(sq.Joining)

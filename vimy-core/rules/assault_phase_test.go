@@ -125,6 +125,11 @@ func TestSquadReinforcesWhileTravellingButNotInContact(t *testing.T) {
 		{ID: 7, Type: "2tnk", X: 10, Y: 12, Idle: true},
 		{ID: 8, Type: "2tnk", X: 12, Y: 10, Idle: true},
 	}
+	commit := func(mem map[string]any, tx, ty, tick int) {
+		mem["squadAttackState"] = map[string]squadAttackState{
+			"ground-attack": {TargetX: tx, TargetY: ty, Attacking: true, LastTick: tick},
+		}
+	}
 	build := func(baseX, baseY int) (RuleEnv, map[string]any) {
 		mem := map[string]any{
 			"squads": map[string]*Squad{
@@ -158,9 +163,10 @@ func TestSquadReinforcesWhileTravellingButNotInContact(t *testing.T) {
 		t.Error("recruits from across the map were enlisted directly, not dispatched")
 	}
 
-	// Enemy base under the squad's feet: it is in contact and must not
-	// reshuffle for anyone.
+	// Enemy base under the squad's feet AND the assault still live: it is in
+	// contact and must not reshuffle for anyone.
 	env2, mem2 := build(101, 101)
+	commit(mem2, 101, 101, env2.State.Tick)
 	if !squadAssaulting(env2, "ground-attack") {
 		t.Fatal("premise broken: the squad is supposed to be in contact")
 	}
@@ -170,6 +176,27 @@ func TestSquadReinforcesWhileTravellingButNotInContact(t *testing.T) {
 	sq2 := getSquads(mem2)["ground-attack"]
 	if got := len(sq2.UnitIDs) + len(sq2.Joining); got != 4 {
 		t.Errorf("squad = %d, want 4: a squad at the gate must not take joiners", got)
+	}
+
+	// Same position, commitment gone stale: the assault rule has stopped firing,
+	// so this is not a formation in contact but a remnant standing where it
+	// died, and refusing it reinforcement is what locked 86 idle units out of
+	// game 194 for the last 6700 ticks.
+	env3, mem3 := build(101, 101)
+	env3.State.Tick = 20000
+	commit(mem3, 101, 101, env3.State.Tick-squadAttackCommitTTL-1)
+	if !squadAssaulting(env3, "ground-attack") {
+		t.Fatal("premise broken: the remnant is supposed to be at the gate")
+	}
+	if squadCommitted(env3, "ground-attack") {
+		t.Fatal("premise broken: the commitment is supposed to be stale")
+	}
+	if err := FormSquad("ground-attack", "ground", 8, "attack")(env3, conn); err != nil {
+		t.Fatalf("stale commitment: %v", err)
+	}
+	sq3 := getSquads(mem3)["ground-attack"]
+	if got := len(sq3.UnitIDs) + len(sq3.Joining); got <= 4 {
+		t.Errorf("squad = %d, want more than 4: a stranded remnant must be able to rebuild", got)
 	}
 }
 
