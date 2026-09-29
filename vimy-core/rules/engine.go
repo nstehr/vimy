@@ -613,6 +613,7 @@ func sampleIncome(env RuleEnv) {
 	if !haveLast || !havePrev {
 		env.Memory["incomeSampleTick"] = tick
 		env.Memory["incomeSampleCash"] = cash
+		env.Memory["earnSampleTotal"] = env.State.Player.Earned
 		return
 	}
 	if tick-last < incomeSampleTicks {
@@ -621,6 +622,30 @@ func sampleIncome(env RuleEnv) {
 	env.Memory["incomeRate"] = cash - prev
 	env.Memory["incomeSampleTick"] = tick
 	env.Memory["incomeSampleCash"] = cash
+
+	// GROSS earnings over the same window, alongside the net rate.
+	//
+	// income-rate is net by design -- it goes to zero exactly when every credit
+	// is committed as it arrives -- which makes it the right release for "am I
+	// accumulating" and useless for "is my economy productive". A game that
+	// spends everything reads as having no economy. Game 196 earned 138659
+	// credits against winning game 194's 88075 and its net rate said nothing
+	// about that, because it spent as fast as it earned.
+	//
+	// Sampled the same way and in the same window, so the two are comparable,
+	// and the previous window is kept so a rule can ask whether the economy is
+	// still RESPONDING to investment rather than only how big it is.
+	//
+	// The baseline is seeded in the early return above, alongside income's, so
+	// the first rate lands in the same window as the first income rate rather
+	// than one window later.
+	earned := env.State.Player.Earned
+	prevEarned, _ := env.Memory["earnSampleTotal"].(int)
+	if r, ok := env.Memory["earnRate"].(int); ok {
+		env.Memory["earnRatePrev"] = r
+	}
+	env.Memory["earnRate"] = earned - prevEarned
+	env.Memory["earnSampleTotal"] = earned
 }
 
 // StrikeBlockedCounts is why squads told to attack never shot a building,

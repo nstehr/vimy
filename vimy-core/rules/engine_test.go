@@ -500,3 +500,49 @@ func TestSampleIncomeCountsOreInSilos(t *testing.T) {
 		t.Error("IncomeRate() disagrees with what sampleIncome stored")
 	}
 }
+
+// The gross earn rate is what makes the refinery reserve escapable, so it has
+// to be sampled independently of net income and has to keep the previous
+// window.
+//
+// income-rate is net and goes to zero when every credit is committed as it
+// arrives, so it cannot tell a suppressed economy from a busy one: game 196
+// earned 138659 credits against winning game 194's 88075 and its net rate said
+// nothing about either.
+func TestSampleIncomeTracksGrossEarnings(t *testing.T) {
+	mem := map[string]any{}
+	env := func(tick, cash, earned int) RuleEnv {
+		return RuleEnv{Memory: mem, State: model.GameState{
+			Tick:   tick,
+			Player: model.Player{Cash: cash, Earned: earned},
+		}}
+	}
+	// Seeds the baseline only.
+	sampleIncome(env(0, 0, 0))
+	if _, ok := mem["earnRate"]; ok {
+		t.Fatal("the first sample should establish a baseline, not a rate")
+	}
+	// Spent it all as it arrived: net income is flat, gross earnings are not.
+	sampleIncome(env(incomeSampleTicks, 0, 900))
+	if got := env(0, 0, 0).EarnRate(); got != 900 {
+		t.Errorf("EarnRate() = %d, want 900", got)
+	}
+	if got := env(0, 0, 0).IncomeRate(); got != 0 {
+		t.Errorf("IncomeRate() = %d, want 0: everything was spent as it arrived", got)
+	}
+	// A second window, and the first must still be readable.
+	sampleIncome(env(incomeSampleTicks*2, 0, 2000))
+	if got := env(0, 0, 0).EarnRate(); got != 1100 {
+		t.Errorf("EarnRate() = %d, want 1100", got)
+	}
+	if got := env(0, 0, 0).EarnRatePrev(); got != 900 {
+		t.Errorf("EarnRatePrev() = %d, want 900: the reserve needs the previous window", got)
+	}
+	// Earnings stall. The reserve's own test -- earn > prev*1.05 -- must now
+	// fail, which is the whole point: saving has stopped paying off.
+	sampleIncome(env(incomeSampleTicks*3, 0, 3000))
+	e, p := env(0, 0, 0).EarnRate(), env(0, 0, 0).EarnRatePrev()
+	if e*100 > p*105 {
+		t.Errorf("earn %d vs prev %d still reads as growing; the reserve would stay armed", e, p)
+	}
+}

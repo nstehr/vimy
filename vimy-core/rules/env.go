@@ -154,6 +154,31 @@ func (e RuleEnv) IncomeRate() int {
 	return v
 }
 
+// EarnRate is GROSS credits earned over the last sampling window.
+//
+// The counterpart to IncomeRate, which is net and therefore cannot tell a
+// starved economy from a busy one. Use this to ask how productive the economy
+// is, and IncomeRate to ask whether anything is being kept.
+func (e RuleEnv) EarnRate() int {
+	v, _ := e.Memory["earnRate"].(int)
+	return v
+}
+
+// EarnRatePrev is the gross earn rate one window earlier, so a rule can ask
+// whether the economy is still responding to investment.
+//
+// This is what makes a savings reserve escapable. A reserve gated on "is the
+// economy big enough yet" arms itself hardest when the economy is being
+// suppressed, which is when the money is needed for an army instead: game 195
+// kept the refinery reserve armed in 91 percent of sampled states and game 196
+// in 59, against 29 and 36 in the two wins. Asking whether saving is WORKING
+// inverts that -- when earnings stop climbing, more refineries are not the
+// answer.
+func (e RuleEnv) EarnRatePrev() int {
+	v, _ := e.Memory["earnRatePrev"].(int)
+	return v
+}
+
 func (e RuleEnv) PowerExcess() int {
 	return e.State.Player.PowerProvided - e.State.Player.PowerDrained
 }
