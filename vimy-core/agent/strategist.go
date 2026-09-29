@@ -59,6 +59,10 @@ type BattlefieldStatus struct {
 type Strategist struct {
 	mu              sync.Mutex
 	evaluateMu      sync.Mutex
+
+	// retro counts retrospectives still in flight, so shutdown can wait for the
+	// archive write instead of killing it. See runRetrospective.
+	retro sync.WaitGroup
 	generation      uint64
 	latest          *model.GameState
 	engine          *rules.Engine

@@ -238,7 +238,19 @@ func main() {
 
 	<-ctx.Done()
 	slog.Info("shutting down")
+	// A game that has just ended may still be archiving. The retrospective runs
+	// detached from this context on purpose, so exiting here without waiting is
+	// what loses the record -- game 197 finished, wrote its export, and had no
+	// archive row because the process went away first.
+	if strategist != nil {
+		strategist.WaitForRetrospectives(retrospectiveShutdownGrace)
+	}
 }
+
+// retrospectiveShutdownGrace is how long shutdown waits for an archive write.
+// Slightly longer than the retrospective's own timeout, so the bound that
+// actually applies is the one next to the work.
+const retrospectiveShutdownGrace = 100 * time.Second
 
 // sourceVersion is what the rule sources fingerprint to, filled in at startup.
 // Zero when there is no compiler -- a run with no strategist plays the built-in

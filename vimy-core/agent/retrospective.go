@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"time"
 
 	baml_client "github.com/nstehr/vimy/vimy-core/baml_client"
 	"github.com/nstehr/vimy/vimy-core/baml_client/types"
@@ -108,11 +109,51 @@ func (s *Strategist) snapshotForReview(won bool, exportPath string) *retrospecti
 // runRetrospective launches the post-game review in a goroutine that outlives
 // HandleGameEnd by design: the sidecar is long-running and the review is not
 // latency-critical. A nil snapshot is a no-op.
+// retrospectiveGrace bounds the detached retrospective: long enough for an LLM
+// review and a handful of inserts, short enough that a wedged call cannot hold
+// shutdown open.
+const retrospectiveGrace = 90 * time.Second
+
 func (s *Strategist) runRetrospective(ctx context.Context, snap *retrospectiveSnapshot) {
 	if snap == nil {
 		return
 	}
-	go doRetrospective(ctx, snap)
+	// DETACHED from the caller's cancellation, and tracked.
+	//
+	// This ran on the agent's context, which is the process-wide signal context
+	// from main. So closing the game after it ended cancelled the retrospective
+	// mid-flight: the LLM review failed with "context canceled" and, because
+	// buildArchival proceeds without a review by design, so did ArchiveGame's
+	// insert -- leaving an export on disk with no row pointing at it. Game 197
+	// lost its entire archive record that way, and a SHORT game is the most
+	// exposed, because there is least time for the goroutine to finish before
+	// the process goes away.
+	//
+	// WithoutCancel keeps the context's values and drops only the cancellation,
+	// and the timeout replaces it with one that shutdown cannot trip.
+	detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), retrospectiveGrace)
+	s.retro.Add(1)
+	go func() {
+		defer cancel()
+		defer s.retro.Done()
+		doRetrospective(detached, snap)
+	}()
+}
+
+// WaitForRetrospectives blocks until every in-flight retrospective has finished
+// or the grace period expires, so the process does not exit out from under an
+// archive write. Safe to call with none running.
+func (s *Strategist) WaitForRetrospectives(grace time.Duration) {
+	done := make(chan struct{})
+	go func() {
+		s.retro.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(grace):
+		slog.Warn("gave up waiting for a retrospective to finish", "grace", grace)
+	}
 }
 
 func doRetrospective(ctx context.Context, snap *retrospectiveSnapshot) {

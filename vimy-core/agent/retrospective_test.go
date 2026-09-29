@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nstehr/vimy/vimy-core/baml_client/types"
 	"github.com/nstehr/vimy/vimy-core/rules"
@@ -156,5 +157,62 @@ func TestArchivalEndToEnd(t *testing.T) {
 	}
 	if len(mem.Lessons) != 1 {
 		t.Errorf("Lessons len = %d, want 1", len(mem.Lessons))
+	}
+}
+
+// The archive write must survive the process being told to shut down.
+//
+// The retrospective ran on the agent's context, which is main's signal context,
+// so closing the game after it ended cancelled the archive insert along with the
+// LLM review: game 197 wrote its export, had no row in `games`, and its stream
+// session was left with game_id 0. A short game is the most exposed, having the
+// least time to finish before the process goes away.
+func TestRetrospectiveSurvivesShutdown(t *testing.T) {
+	// Slow: doRetrospective attempts the LLM review before it archives, and with
+	// no reachable model that attempt runs its retries out. The archive write is
+	// what is under test, and it happens after.
+	if testing.Short() {
+		t.Skip("attempts a real LLM call before archiving")
+	}
+	st, err := store.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	s := &Strategist{}
+	sealed := make(chan int64, 1)
+	snap := &retrospectiveSnapshot{
+		ourFaction:      "germany",
+		opponentFaction: "russia",
+		won:             false,
+		durationTicks:   13801,
+		history:         []DoctrineRecord{{Tick: 100}},
+		totalLosses:     map[string]int{},
+		store:           st,
+		onArchived:      func(id int64) error { sealed <- id; return nil },
+	}
+
+	// Already cancelled: exactly the state shutdown leaves behind.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	s.runRetrospective(ctx, snap)
+	s.WaitForRetrospectives(30 * time.Second)
+
+	games, err := st.AllGames(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(games) != 1 {
+		t.Fatalf("archived %d games, want 1: a cancelled parent context must not lose the record", len(games))
+	}
+	select {
+	case id := <-sealed:
+		if id == 0 {
+			t.Error("the telemetry log was sealed with game_id 0, so the session cannot be joined to the archive")
+		}
+	default:
+		t.Error("the telemetry log was never sealed")
 	}
 }
