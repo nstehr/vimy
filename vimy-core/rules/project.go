@@ -130,6 +130,27 @@ func projectFor(env RuleEnv, rules []*Rule) vimycState {
 	return projectWith(env, lits, used)
 }
 
+// alwaysProjected are nil-ary RuleEnv methods recorded in every export whether
+// or not a rule names them.
+//
+// The projector is scoped to what the compiled rule set asks, which is right for
+// keeping an export the size of the questions the rules actually pose. It is
+// wrong for diagnostics. EarnRate was added to measure whether the economy was
+// productive, used briefly by a savings rule, and when that rule was reverted the
+// scalar silently stopped being exported -- game 201 recorded a gross earn rate of
+// ZERO in every state while the game earned 110544 credits. The commit that
+// reverted it claimed the accessor alone was enough to keep the measurement,
+// which was asserted without checking and was false.
+//
+// So measurement is separated from behaviour here: a name in this list is
+// exported because we want to watch it, not because anything reads it. Keep it
+// short, and keep it to nil-ary methods -- one with arguments needs literals from
+// a rule to enumerate, which is exactly the coupling this avoids.
+var alwaysProjected = []string{
+	"EarnRate",     // gross credits per sampling window; income-rate is NET and
+	"EarnRatePrev", // reads a suppressed economy and a busy one identically
+}
+
 func projectWith(env RuleEnv, lits map[string][]map[string]bool, used map[string]bool) vimycState {
 	s := vimycState{
 		Scalars: map[string]float64{}, Collections: map[string]int{},
@@ -139,10 +160,19 @@ func projectWith(env RuleEnv, lits map[string][]map[string]bool, used map[string
 	}
 
 	rv := reflect.ValueOf(env)
+	// Copied rather than mutated: `used` belongs to the caller, and a doctrine
+	// swap reuses it.
+	project := make(map[string]bool, len(used)+len(alwaysProjected))
+	for k, v := range used {
+		project[k] = v
+	}
+	for _, name := range alwaysProjected {
+		project[name] = true
+	}
 	// The argument values rules actually pass, per method and position.
 	for i := 0; i < rv.NumMethod(); i++ {
 		mt := rv.Type().Method(i)
-		if !used[mt.Name] {
+		if !project[mt.Name] {
 			continue
 		}
 		ft := mt.Type
