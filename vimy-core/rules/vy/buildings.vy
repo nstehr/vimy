@@ -303,15 +303,17 @@ rule build-extra-war-factory {
 rule build-extra-airfield {
   priority 480
   category economy exclusive
-  because "grow pads to match the doctrine's aircraft ambition, but only once the ones we have fill up"
+  because "grow pads to match the doctrine's aircraft ambition, but only once the ones we have fill up. Both halves of that were false. The fullness test was `combat-aircraft-count >= aircraft-capacity - 1`, where the minus-one is meant to read as nearly full and equals the WHOLE capacity when capacity is 1: at one pad and no aircraft it is `0 >= 0`, so the second pad went up while the first stood empty. And this rule carried none of build-airfield's prerequisites, so at zero airfields the same test read `0 >= -1` and it built the FIRST pad too, ahead of the war factory and the service depot that build-airfield insists on. Games 198 and 199 each held three helipads and ZERO aircraft, 1500 credits of empty landing pads, and game 198 never built a service depot at all -- which is the tech prerequisite for the medium tank, so the eight vehicles it did field were jeeps, artillery and light tanks. Full means full, and the first pad is build-airfield's job"
   do produce-airfield
   require air-weight > 0.1
   require not is-rushed()
   require not queue-busy(Building)
   require can-build-role(airfield)
   require not queue-producing-role(airfield)
+  require has-role(war-factory)
+  require has-role(service-depot)
   require aircraft-capacity < lerp(2, 8, air-weight)
-  require combat-aircraft-count >= aircraft-capacity - 1
+  require combat-aircraft-count >= aircraft-capacity
   require power-excess >= 0
   require cash >= 500
 }
