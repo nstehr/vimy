@@ -47,6 +47,19 @@ type Unit struct {
 	MaxHP      int    `json:"maxHp"`
 	Idle       bool   `json:"idle"`
 	CargoCount int    `json:"cargoCount"`
+	// What this unit is worth, from the engine — the counterpart of
+	// Enemy.Cost, so both sides of a comparison can be priced the same way.
+	//
+	// HP has been the only measure available for our own force and it is a poor
+	// proxy for combat power: a rocket soldier is 4500 and an artillery 10000
+	// against a Soviet heavy tank's 60000. Six rockets and two artillery come to
+	// 47000, less than ONE heavy tank, so squad-threat-ratio reads the
+	// anti-armour composition the doctrine asks for as the weakest thing Vimy
+	// can field and squad-disengage walks it home.
+	//
+	// Zero from an older mod build that does not send it, so a reader must treat
+	// zero as "unknown" and fall back rather than as "worthless".
+	Cost int `json:"cost"`
 }
 
 func (u Unit) TypeName() string { return u.Type }

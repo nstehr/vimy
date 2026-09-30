@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/nstehr/vimy/vimy-core/model"
@@ -1652,5 +1653,41 @@ func TestCapturableIntel_OutlivesVision(t *testing.T) {
 	updateCapturableIntel(RuleEnv{State: standing, Memory: memory})
 	if got := len(RememberedCapturables(memory)); got != 0 {
 		t.Errorf("stood on the derrick's spot and saw nothing, still remembered: %d", got)
+	}
+}
+
+// Unit.Cost carries the engine's price, so both sides of a force comparison can
+// be measured the same way.
+//
+// squad-threat-ratio divides enemy HP by squad HP, and HP is a poor proxy for
+// combat power: game 200 fielded rocket soldiers at 4500 and artillery at 10000
+// against a Soviet heavy tank at 60000, so six rockets and two artillery came to
+// less than ONE tank and the squad read as outmatched while it was winning.
+// Enemy already carried Cost for exactly this reason; this is its counterpart.
+func TestUnitCarriesItsCost(t *testing.T) {
+	var gs model.GameState
+	if err := json.Unmarshal([]byte(`{
+		"units":   [{"id":1,"type":"arty","hp":10000,"maxHp":10000,"cost":600}],
+		"enemies": [{"id":2,"type":"3tnk","hp":60000,"maxHp":60000,"cost":1150}]
+	}`), &gs); err != nil {
+		t.Fatal(err)
+	}
+	if got := gs.Units[0].Cost; got != 600 {
+		t.Errorf("Unit.Cost = %d, want 600: the engine's price must survive the wire", got)
+	}
+	// The point of the field: by HP the artillery is a sixth of the tank, by
+	// cost it is over half.
+	byHP := float64(gs.Enemies[0].HP) / float64(gs.Units[0].HP)
+	byCost := float64(gs.Enemies[0].Cost) / float64(gs.Units[0].Cost)
+	if !(byHP > 5 && byCost < 2.5) {
+		t.Errorf("HP ratio %.2f, cost ratio %.2f: expected HP to overstate the mismatch", byHP, byCost)
+	}
+	// An older mod build sends no cost. Zero must be readable as "unknown".
+	var old model.GameState
+	if err := json.Unmarshal([]byte(`{"units":[{"id":1,"type":"arty","hp":10000}]}`), &old); err != nil {
+		t.Fatal(err)
+	}
+	if old.Units[0].Cost != 0 {
+		t.Error("a unit from a mod build that sends no cost should read zero")
 	}
 }

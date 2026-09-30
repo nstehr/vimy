@@ -93,6 +93,15 @@ namespace OpenRA.Mods.Vimy
 
 		[JsonPropertyName("cargoCount")]
 		public int CargoCount { get; set; }
+
+		// What this unit is worth, the counterpart of EnemyActorData.Cost, so
+		// both sides of a comparison can be priced the same way. HP is the only
+		// measure the sidecar has had for our own force and it is a poor proxy
+		// for combat power: a rocket soldier is 4500 and an artillery 10000
+		// against a Soviet heavy tank's 60000, so the anti-armour composition
+		// the doctrine asks for reads as the weakest thing on the field.
+		[JsonPropertyName("cost")]
+		public int Cost { get; set; }
 	}
 
 	public class EnemyActorData : ActorData
@@ -277,6 +286,7 @@ namespace OpenRA.Mods.Vimy
 					continue;
 
 				var health = actor.TraitOrDefault<Health>();
+				var valued = actor.Info.TraitInfoOrDefault<ValuedInfo>();
 				units.Add(new UnitData
 				{
 					Type = actor.Info.Name,
@@ -286,7 +296,8 @@ namespace OpenRA.Mods.Vimy
 					Hp = health?.HP ?? 0,
 					MaxHp = health?.MaxHP ?? 0,
 					Idle = IsEffectivelyIdle(actor),
-					CargoCount = actor.TraitOrDefault<Cargo>()?.PassengerCount ?? 0
+					CargoCount = actor.TraitOrDefault<Cargo>()?.PassengerCount ?? 0,
+					Cost = valued?.Cost ?? 0
 				});
 			}
 
