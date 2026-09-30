@@ -315,7 +315,7 @@ rule build-extra-airfield {
   require aircraft-capacity < lerp(2, 8, air-weight)
   require combat-aircraft-count >= aircraft-capacity
   require power-excess >= 0
-  require cash >= 500
+  require free(500)
 }
 
 rule build-extra-naval-yard {
