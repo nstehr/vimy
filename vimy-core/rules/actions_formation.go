@@ -2,6 +2,7 @@ package rules
 
 import (
 	"log/slog"
+	"math"
 	"strings"
 
 	"github.com/nstehr/vimy/vimy-core/model"
@@ -265,6 +266,43 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 				return nil
 			}
 			add := min(need, len(pool))
+
+			// Recruits cross together when the crossing is long.
+			//
+			// The dispatch always sent the whole pool, which looks like batching
+			// and is not: unassigned-idle-ground runs a median of 0 and units are
+			// produced one at a time, so the pool is almost always ONE. Game 205
+			// measured 86 reinforcements of exactly 1.0 units each, walking a mean
+			// 0.262 of the map diagonal and up to 0.636 to reach a forward squad.
+			//
+			// That is the leak. Game 202 lost 31 of 33 combat units between ticks
+			// 24000 and 48000 with the squad NOT in transit, one or two at a time,
+			// born 7 cells from home and dead 44 away having travelled 46 -- 56
+			// percent of the distance between the bases. Joiners are deliberately
+			// not members until they arrive, so none of it appeared in a transit
+			// row and the army leaked at the rate production filled it.
+			//
+			// A short walk is still sent immediately: a unit joining a squad near
+			// home costs nothing and waiting would only idle it. The hold has a
+			// deadline because the alternative failure is the one squadCommitted
+			// was written to fix -- recruits that never dispatch are recruits
+			// standing at home, which is the same small squad reached from the
+			// other side.
+			if cx, cy, ok := squadCentroid(env, name); ok && add > 0 {
+				held := memoryMap[string, int](env.Memory, "reinforceHeldSince")
+				if meanJoinFraction(env, pool[:add], cx, cy) > reinforceSoloFraction {
+					since, holding := held[name]
+					if !holding {
+						since = env.State.Tick
+						held[name] = since
+					}
+					if add < reinforceMinGroup && env.State.Tick-since < reinforceMaxHold {
+						return nil
+					}
+				}
+				delete(held, name)
+			}
+
 			joiners := make([]uint32, 0, add)
 			for i := range add {
 				sq.Joining = append(sq.Joining, pool[i].ID)
@@ -313,6 +351,37 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 			"size", take, "target", target)
 		return nil
 	}
+}
+
+const (
+	// reinforceSoloFraction is how far a recruit may walk alone, as a fraction
+	// of the map diagonal. Below it the crossing is short enough that a single
+	// unit is in no more danger than the squad already is.
+	reinforceSoloFraction = 0.15
+	// reinforceMinGroup is how many travel together across a long crossing.
+	// Three is enough to answer a scout or a single raider, which is what picks
+	// off a lone rifleman; it is not an escort.
+	reinforceMinGroup = 3
+	// reinforceMaxHold bounds the wait, because recruits that never dispatch are
+	// recruits standing at home -- the failure squadCommitted exists to prevent,
+	// reached from the other side. Production delivers a unit every few hundred
+	// ticks, so 1500 is several chances to reach three.
+	reinforceMaxHold = 1500
+)
+
+// meanJoinFraction is how far the given units must walk to reach a point, as a
+// fraction of the map diagonal.
+func meanJoinFraction(env RuleEnv, units []model.Unit, cx, cy int) float64 {
+	mw, mh := float64(env.State.MapWidth), float64(env.State.MapHeight)
+	diag := math.Sqrt(mw*mw + mh*mh)
+	if len(units) == 0 || diag == 0 {
+		return 0
+	}
+	var sum float64
+	for _, u := range units {
+		sum += math.Hypot(float64(u.X-cx), float64(u.Y-cy))
+	}
+	return sum / float64(len(units)) / diag
 }
 
 // squadCentroid returns false for an empty or unknown squad.

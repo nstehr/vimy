@@ -221,17 +221,7 @@ func (e RuleEnv) ApproachChoices() map[string]int {
 // a fraction of the map diagonal, which is the number that decides whether this
 // is a short walk or a solo march.
 func recordReinforce(env RuleEnv, squad string, members, dispatched int, joiners []model.Unit, cx, cy int) {
-	mw, mh := float64(env.State.MapWidth), float64(env.State.MapHeight)
-	diag := math.Sqrt(mw*mw + mh*mh)
-	var sum float64
-	for _, u := range joiners {
-		dx, dy := float64(u.X-cx), float64(u.Y-cy)
-		sum += math.Hypot(dx, dy)
-	}
-	var frac float64
-	if len(joiners) > 0 && diag > 0 {
-		frac = sum / float64(len(joiners)) / diag
-	}
+	frac := meanJoinFraction(env, joiners, cx, cy)
 	emit(env, wal.Event{
 		Kind: "reinforce", Squad: squad,
 		// Members is the squad before the recruits land; Idle carries the
