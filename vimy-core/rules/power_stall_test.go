@@ -153,3 +153,39 @@ func TestPowerStallUsesTheGoSpellingOfTheRole(t *testing.T) {
 		t.Fatal(`roles["power_plant"] is gone: every count in this file silently became 0`)
 	}
 }
+
+// Cash extremes bracket affordability where the 200/500 counts cannot.
+//
+// build-power's floor is lerp(500, 200, economy-priority) and economy-priority is
+// compiled into the rule, out of Go's reach. Game 210 ran it at 245-305 -- between
+// the two brackets -- so the extremes are what settle whether a plant was ever
+// affordable during an episode.
+func TestPowerStallBracketsAffordabilityWithCashExtremes(t *testing.T) {
+	sink := &capture{}
+	mem := map[string]any{}
+	for i, cash := range []int{480, 120, 300, 90, 700, 250} {
+		st := powerState(1000+i*100, cash, 50, "proc", 12, true)
+		trackPowerStall(RuleEnv{State: st, Memory: mem, Events: sink})
+	}
+	// Close the episode so the counts are final.
+	trackPowerStall(RuleEnv{State: powerState(2000, 250, -10, "", 0, true), Memory: mem, Events: sink})
+
+	end := sink.events[len(sink.events)-1]
+	if end.Kind != "power-recovered" {
+		t.Fatalf("last event = %q, want power-recovered", end.Kind)
+	}
+	if got := end.Attrs["cash_min"]; got != 90 {
+		t.Errorf("cash_min = %v, want 90", got)
+	}
+	if got := end.Attrs["cash_max"]; got != 700 {
+		t.Errorf("cash_max = %v, want 700", got)
+	}
+	// A floor of 260 sits inside [90,700], so the extremes say "sometimes
+	// affordable" and the brackets quantify it: 480, 300, 700 and 250 clear 200.
+	if got := end.Attrs["n_cash_200"]; got != 4 {
+		t.Errorf("n_cash_200 = %v, want 4", got)
+	}
+	if got := end.Attrs["n_cash_500"]; got != 1 {
+		t.Errorf("n_cash_500 = %v, want 1 (only 700)", got)
+	}
+}

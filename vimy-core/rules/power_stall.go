@@ -31,6 +31,22 @@ import (
 // vimy-ccvb asserts the second. plant_queued is the column that can refute it,
 // which is the point of measuring before editing the rule.
 //
+// IT DID REFUTE IT, in the first game instrumented. Game 210 (england vs ukraine,
+// 59210 ticks, 8.4 percent of states power-negative) ran six episodes, every one
+// of which recovered. n_held_200 and n_held_500 were ZERO in all six, because
+// whenever the Building queue was busy during an episode it was busy WITH A POWER
+// PLANT -- n_plant_queued matched or exceeded n_queue_busy every time. So the
+// queue gate did not bind, build-power fired, and the loop self-corrected.
+//
+// What made the two long episodes long (1090 and 1550 ticks) was money: cash
+// never reached 200 in either, against a floor of lerp(500, 200, 0.8) = 260. Being
+// broke plus the 3x slowdown, not the gate. That is why cashMin and cashMax exist
+// below -- the brackets could not resolve a floor sitting between them.
+//
+// Game 210 does NOT clear 209, whose 56.7 percent is sixfold anything here; a game
+// with that profile has yet to be instrumented. But the ordinary case is settled,
+// and the fix vimy-ccvb proposed would have been shipped against it.
+//
 // THE ROLE KEY IS SNAKE HERE. `role-count(power-plant)` in a .vy file compiles
 // to RoleCount("power_plant") in Go -- the kebab form is the rule language and
 // the export's display spelling, and roles[] is keyed in snake. A miss returns 0
@@ -67,6 +83,17 @@ type powerEpisode struct {
 	canBuild    int // can-build-role(power-plant) was true
 	cash200     int // cash >= 200, the floor at economy-priority 1.0
 	cash500     int // cash >= 500, the floor at economy-priority 0.0
+
+	// cashMin and cashMax bracket what was actually affordable. The counts above
+	// sit at 200 and 500 because the floor is lerp(500, 200, economy-priority)
+	// and economy-priority is baked into the compiled rule by vimyc -- it never
+	// reaches RuleEnv, so Go cannot evaluate the real floor. Game 210's
+	// doctrines put it at 245-305, between the two brackets, which is exactly
+	// where a bracket pair stops answering. The extremes always do: a floor
+	// above cashMax was unaffordable for the whole episode, one below cashMin
+	// was affordable throughout.
+	cashMin int
+	cashMax int
 
 	// held is the deadlock signature: a plant was buildable and affordable,
 	// none was in production, and the Building queue was busy -- so the only
@@ -106,6 +133,12 @@ func trackPowerStall(env RuleEnv) {
 	can := env.CanBuildRole("power_plant")
 
 	ep.samples++
+	if ep.samples == 1 || cash < ep.cashMin {
+		ep.cashMin = cash
+	}
+	if cash > ep.cashMax {
+		ep.cashMax = cash
+	}
 	if busy {
 		ep.queueBusy++
 	}
@@ -163,6 +196,8 @@ func emitPowerEvent(env RuleEnv, kind string, ep *powerEpisode, excess int) {
 		attrs["n_cash_200"] = float64(ep.cash200)
 		attrs["n_cash_500"] = float64(ep.cash500)
 		attrs["n_held_200"] = float64(ep.heldAt200)
+		attrs["cash_min"] = float64(ep.cashMin)
+		attrs["cash_max"] = float64(ep.cashMax)
 		attrs["n_held_500"] = float64(ep.heldAt500)
 	}
 
