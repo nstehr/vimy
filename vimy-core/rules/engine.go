@@ -247,6 +247,7 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn CommandSender
 	logProductionDiagnostics(env)
 	logProduceInfantryGate(env)
 	logCashFlow(env)
+	trackPowerStall(env)
 	fired := make(map[string]bool) // category → exclusive rule already fired
 
 	// Re-projected after each firing rather than once per evaluation: an
