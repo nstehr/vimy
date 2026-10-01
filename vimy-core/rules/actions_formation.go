@@ -297,6 +297,8 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 						held[name] = since
 					}
 					if add < reinforceMinGroup && env.State.Tick-since < reinforceMaxHold {
+						recordReinforceHeld(env, name, len(sq.UnitIDs), add,
+							env.State.Tick-since, meanJoinFraction(env, pool[:add], cx, cy))
 						return nil
 					}
 				}

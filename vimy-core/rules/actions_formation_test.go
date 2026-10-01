@@ -17,8 +17,8 @@ func TestReinforcementWaitsForAGroupOnLongCrossings(t *testing.T) {
 	conn, cleanup := testConn(t)
 	defer cleanup()
 
-	// Squad of 4 forward at (80,80); recruits at home (10,10) -- 0.54 of a 128.7
-	// diagonal away, well past reinforceSoloFraction.
+	// Squad of 4 forward at (80,80); recruits at home (10,10) -- 99 cells, 0.77 of
+	// a 128.7 diagonal, well past reinforceSoloFraction.
 	build := func(nPool int, tick int) (RuleEnv, map[string]any) {
 		units := []model.Unit{
 			{ID: 1, Type: "e1", X: 80, Y: 80}, {ID: 2, Type: "e1", X: 80, Y: 80},
@@ -33,13 +33,24 @@ func TestReinforcementWaitsForAGroupOnLongCrossings(t *testing.T) {
 		return RuleEnv{State: model.GameState{Tick: tick, MapWidth: 91, MapHeight: 91, Units: units}, Memory: mem}, mem
 	}
 
-	// One recruit, long crossing: held.
+	// One recruit, long crossing: held, and the hold is recorded.
 	env, mem := build(1, 1000)
+	sink := &capture{}
+	env.Events = sink
 	if err := FormSquad("ground-attack", "ground", 12, "attack")(env, conn); err != nil {
 		t.Fatal(err)
 	}
 	if n := len(getSquads(mem)["ground-attack"].Joining); n != 0 {
-		t.Errorf("dispatched %d recruits alone across 0.54 of the map; should have waited", n)
+		t.Errorf("dispatched %d recruits alone across 0.77 of the map; should have waited", n)
+	}
+	if len(sink.events) != 1 || sink.events[0].Kind != "reinforce-held" {
+		t.Fatalf("holding recruits emitted %v; a hold that is not recorded cannot be told from a leak", sink.events)
+	}
+	if got := sink.events[0].Idle; got != 1 {
+		t.Errorf("pool waiting = %d, want 1", got)
+	}
+	if got := sink.events[0].Attrs["join_fraction"]; got < 0.74 || got > 0.80 {
+		t.Errorf("join_fraction = %.3f, want ~0.769 (99 cells over a 128.7 diagonal)", got)
 	}
 
 	// Three recruits: enough to travel together.

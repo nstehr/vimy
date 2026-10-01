@@ -220,6 +220,30 @@ func (e RuleEnv) ApproachChoices() map[string]int {
 // join_fraction is the mean distance from the dispatched units to the squad, as
 // a fraction of the map diagonal, which is the number that decides whether this
 // is a short walk or a solo march.
+// recordReinforceHeld says recruits were kept back rather than sent across alone.
+//
+// The counterpart of recordReinforce, and the measurement its absence cost. Game
+// 206 cut long crossings from 70 percent to 15 and lone deaths from 78 percent to
+// 43 -- the leak this was built for -- while the squad halved from 11.2 members to
+// 4.5 and the game ran 41400 ticks against 63970. Two readings fit that and
+// nothing recorded here could separate them: the hold starving the squad, or
+// simply a different matchup, since both germany-vs-ukraine games ran short
+// whatever was changed.
+//
+// So: waited is how long these recruits have been held, pool is how many are
+// waiting, and join_fraction is the crossing they are waiting to make. Together
+// those say whether the deadline is doing the work, whether three is reachable at
+// the rate units are produced, and how much standing-still the hold costs.
+func recordReinforceHeld(env RuleEnv, squad string, members, pool, waited int, frac float64) {
+	emit(env, wal.Event{
+		Kind: "reinforce-held", Squad: squad,
+		// Members is the squad; Idle carries the pool waiting, matching the use
+		// of that column on reinforce for the dispatched count.
+		Members: members, Idle: pool,
+		Attrs: map[string]float64{"join_fraction": frac, "waited": float64(waited)},
+	})
+}
+
 func recordReinforce(env RuleEnv, squad string, members, dispatched int, joiners []model.Unit, cx, cy int) {
 	frac := meanJoinFraction(env, joiners, cx, cy)
 	emit(env, wal.Event{
