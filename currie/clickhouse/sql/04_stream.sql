@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS currie.stream_events
 (
     session_id LowCardinality(String),
     tick       UInt32,
-    kind       LowCardinality(String),   -- 'rally' | 'strike-blocked' | 'transit'
+    kind       LowCardinality(String),   -- 'rally' | 'strike-blocked' | 'transit' | 'approach' | 'reinforce'
     squad      LowCardinality(String),
     reason     LowCardinality(String),   -- strike-blocked: which blocker
 
@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS currie.stream_events
     -- strike_blocked_no_target to be split, and that could not be applied
     -- backwards. Each kind fills a subset; filter on kind before reading these.
     members    Int32,
-    idle       Int32,                    -- rally
+    idle       Int32,                    -- rally, reinforce (reinforce: units dispatched)
     near       Int32,                    -- transit
     spread     Int32,
 

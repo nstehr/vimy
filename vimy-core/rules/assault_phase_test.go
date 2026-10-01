@@ -511,3 +511,38 @@ func TestAssaultPrefersARememberedBuildingToTheHunt(t *testing.T) {
 		t.Error("went to the remembered position with nothing remembered")
 	}
 }
+
+// A reinforce row says how far the recruits have to walk.
+//
+// Joiners are dispatched at the squad's centroid and are deliberately not
+// members until they arrive, so a squad that is forward sends every new unit
+// across the map alone and those units appear in no transit row. Game 202 lost
+// 31 of 33 units that way between ticks 24000 and 48000 with no attack underway,
+// and nothing recorded whether they were joiners.
+func TestReinforceRecordsHowFarRecruitsMustWalk(t *testing.T) {
+	sink := &capture{}
+	env := RuleEnv{
+		State:  model.GameState{Tick: 5000, MapWidth: 91, MapHeight: 91},
+		Memory: map[string]any{},
+		Events: sink,
+	}
+
+	// Two recruits at home, squad forward: 60 cells away on a 128.7 diagonal.
+	joiners := []model.Unit{{ID: 1, Type: "e1", X: 10, Y: 10}, {ID: 2, Type: "e1", X: 10, Y: 10}}
+	recordReinforce(env, "ground-attack", 4, 2, joiners, 70, 10)
+
+	if len(sink.events) != 1 {
+		t.Fatalf("emitted %d events, want 1", len(sink.events))
+	}
+	e := sink.events[0]
+	if e.Kind != "reinforce" || e.Squad != "ground-attack" {
+		t.Errorf("kind/squad = %q/%q", e.Kind, e.Squad)
+	}
+	if e.Members != 4 || e.Idle != 2 {
+		t.Errorf("members/dispatched = %d/%d, want 4/2", e.Members, e.Idle)
+	}
+	got := e.Attrs["join_fraction"]
+	if got < 0.45 || got > 0.48 {
+		t.Errorf("join_fraction = %.3f, want ~0.466 (60 cells over a 128.7 diagonal)", got)
+	}
+}

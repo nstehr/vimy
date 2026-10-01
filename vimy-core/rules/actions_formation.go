@@ -278,6 +278,7 @@ func FormSquad(name, domain string, size int, role string) ActionFunc {
 			// members when they arrive, so until then they must not be counted
 			// in cohesion and must not be walked into a fight alone.
 			if cx, cy, ok := squadCentroid(env, name); ok && len(joiners) > 0 {
+				recordReinforce(env, name, len(sq.UnitIDs), add, pool[:add], cx, cy)
 				return sendAttackMove(env, conn, joiners, cx, cy)
 			}
 			return nil

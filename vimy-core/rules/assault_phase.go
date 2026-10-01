@@ -202,6 +202,46 @@ func (e RuleEnv) ApproachChoices() map[string]int {
 // Kept out of the SQLite rally aggregate on purpose — that chain is a
 // migration, sqlc, store and Currie for a figure the event stream already
 // carries per rally and unsampled.
+// recordReinforce says how far each new recruit has to walk to reach its squad.
+//
+// Reinforcement dispatches joiners at the squad's CENTROID, so a squad that is
+// forward makes every newly-built unit cross the map on its own. Those units are
+// deliberately not members until they arrive, so they appear in no transit row
+// and their deaths look like they happened with no attack underway.
+//
+// Game 202 is why this exists: between ticks 24000 and 48000, 31 of 33 combat
+// units died with the ground squad not in transit, one or two at a time across
+// fifteen separate incidents, having been born 7 cells from home and died 44
+// away -- 56 percent of the distance to the enemy base, almost exactly on the
+// line between the two. The army never grew past 6-12 alive while production ran
+// flat out. Nothing recorded whether those were joiners, so the leak could be
+// measured and not attributed.
+//
+// join_fraction is the mean distance from the dispatched units to the squad, as
+// a fraction of the map diagonal, which is the number that decides whether this
+// is a short walk or a solo march.
+func recordReinforce(env RuleEnv, squad string, members, dispatched int, joiners []model.Unit, cx, cy int) {
+	mw, mh := float64(env.State.MapWidth), float64(env.State.MapHeight)
+	diag := math.Sqrt(mw*mw + mh*mh)
+	var sum float64
+	for _, u := range joiners {
+		dx, dy := float64(u.X-cx), float64(u.Y-cy)
+		sum += math.Hypot(dx, dy)
+	}
+	var frac float64
+	if len(joiners) > 0 && diag > 0 {
+		frac = sum / float64(len(joiners)) / diag
+	}
+	emit(env, wal.Event{
+		Kind: "reinforce", Squad: squad,
+		// Members is the squad before the recruits land; Idle carries the
+		// dispatched count, matching rally's use of it for "who the order went
+		// to" rather than for idleness.
+		Members: members, Idle: dispatched,
+		Attrs: map[string]float64{"join_fraction": frac},
+	})
+}
+
 func recordRallyShape(env RuleEnv, squad string, members, commandable, spread, near int) {
 	emit(env, wal.Event{
 		Kind: "rally", Squad: squad,
