@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"math"
 	"strings"
 
 	"github.com/nstehr/vimy/vimy-core/model"
+	"github.com/nstehr/vimy/vimy-core/rules"
 )
 
 // stressEventTTL keeps a high-impact event in the feed for roughly three
@@ -247,7 +249,76 @@ const (
 	harassTickFloor          = 10500
 	harassMinHarvesterEvents = 2    // sustained pressure, not one-off
 	pressureLookbackTicks    = 2000 // "recent" stress events window
+
+	// A massing enemy near our base is a rush BEFORE it costs anything.
+	//
+	// Every other trigger here is damage already taken, so the flag can only
+	// catch a rush that has both landed and landed early. Game 203 is what that
+	// misses: enemy units near the base went from 2 to FIFTEEN at tick 8000, and
+	// the first loss of any kind was an oil derrick at 11301, the first harvester
+	// at 13301 and the first refinery at 13421 -- all past rushTickCutoff. So
+	// is-rushed() was false for the whole game, build-base-defense-rush fired 0
+	// times in 2559 evaluations, and every `not is-rushed()` gate stayed open
+	// while fifteen units massed outside. Vimy lost its entire economy between
+	// ticks 13000 and 16000 and the game at 26671.
+	//
+	// The function's own history is the same mistake once already: it read only
+	// harvesters until game 179 lost its construction yard at 8760 with the flag
+	// still false, and the fix added a third kind of DAMAGE rather than asking
+	// whether damage is the right trigger.
+	//
+	// Six is above what scouting or a raiding pair looks like and below a real
+	// army, and the radius matches NearBaseGroundUnits' own 0.20 of the map
+	// diagonal so both sides of "near the base" mean the same thing.
+	rushEnemyNearBase  = 6
+	rushNearBaseRadius = 0.20
 )
+
+// enemiesMassingNearBase counts enemy COMBAT units within rushNearBaseRadius of
+// any of our own buildings.
+//
+// Our buildings, not a centroid: a centroid of a base plus three captured oil
+// derricks sits somewhere between them and is nowhere Vimy owns. Neutral tech
+// structures are excluded for the same reason -- a derrick is a thing we hold,
+// not part of the base we defend.
+//
+// Only what is currently VISIBLE, because the engine's enemy list is already
+// fog-filtered. That is the right behaviour: a rush we cannot see is one we
+// cannot answer either.
+func enemiesMassingNearBase(gs *model.GameState) int {
+	if gs == nil || len(gs.Enemies) == 0 {
+		return 0
+	}
+	var base []model.Building
+	for i := range gs.Buildings {
+		if rules.IsNeutralTechStructure(gs.Buildings[i].Type) {
+			continue
+		}
+		base = append(base, gs.Buildings[i])
+	}
+	if len(base) == 0 {
+		return 0
+	}
+	mw, mh := float64(gs.MapWidth), float64(gs.MapHeight)
+	reach := math.Sqrt(mw*mw+mh*mh) * rushNearBaseRadius
+	reachSq := reach * reach
+
+	n := 0
+	for _, en := range gs.Enemies {
+		if !rules.IsCombatUnit(en.Type) || rules.IsNeutralTechStructure(en.Type) {
+			continue
+		}
+		for j := range base {
+			dx := float64(en.X - base[j].X)
+			dy := float64(en.Y - base[j].Y)
+			if dx*dx+dy*dy <= reachSq {
+				n++
+				break
+			}
+		}
+	}
+	return n
+}
 
 // computePressureFlags returns (beingRushed, harvesterHarassed). Both can be
 // false; the disjoint tick thresholds keep both from being true at once, though
@@ -284,7 +355,8 @@ func computePressureFlags(currentTick int, gs *model.GameState, stress []Event) 
 	// yard burns. EventCriticalBuildingLost was already in the stress feed this
 	// function reads; nothing counted it.
 	beingRushed := currentTick < rushTickCutoff &&
-		(harvesterAttackEvents >= 1 || harvesterLostEvents >= 1 || buildingLostEvents >= 1)
+		(harvesterAttackEvents >= 1 || harvesterLostEvents >= 1 || buildingLostEvents >= 1 ||
+			enemiesMassingNearBase(gs) >= rushEnemyNearBase)
 
 	harvesterHarassed := currentTick >= harassTickFloor &&
 		(harvesterAttackEvents >= harassMinHarvesterEvents || harvesterLostEvents >= 1)
