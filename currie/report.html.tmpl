@@ -535,7 +535,7 @@ footer{color:var(--ink-3);font-size:.81rem;border-top:1px solid var(--rule);padd
           <td class="n">{{.Games}}</td>
           <td class="n">{{.Rallies}}</td>
           <td class="n">{{printf "%.2f" .MeanSpread}}</td>
-          <td class="n">{{if .Thin}}&mdash;{{else}}{{printf "%.2f" .StdErr}}{{end}}</td>
+          <td class="n">{{if or .Thin .Unmeasurable}}&mdash;{{else}}{{printf "%.2f" .StdErr}}{{end}}</td>
           <td class="n">{{printf "%.0f" .PctClumped}}%</td>
         </tr>
         {{end}}

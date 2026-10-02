@@ -456,6 +456,13 @@ func (c *Cohort) Moved() bool {
 	if cur == nil || prev == nil {
 		return false
 	}
+	// A one-game cohort has no between-game variance to estimate, so its
+	// clustered error is 0 -- which would make it look maximally certain and
+	// let any difference clear the threshold. It is the least certain case,
+	// not the most, so it gets no verdict at all.
+	if cur.Unmeasurable() || prev.Unmeasurable() {
+		return false
+	}
 	diff := cur.MeanSpread - prev.MeanSpread
 	if diff < 0 {
 		diff = -diff
@@ -471,6 +478,10 @@ func (c *Cohort) Delta() string {
 		return ""
 	}
 	diff := cur.MeanSpread - prev.MeanSpread
+	if cur.Unmeasurable() || prev.Unmeasurable() {
+		return fmt.Sprintf("%+.2f cells, but one side is a single game — "+
+			"no between-game error exists, so there is no verdict to give", diff)
+	}
 	noise := 2 * (cur.StdErr + prev.StdErr)
 	verdict := "inside the noise"
 	if c.Moved() {
@@ -538,22 +549,83 @@ func (r CohortRow) Short() string {
 // game 146's mean spread of 17.0 was exactly that.
 func (r CohortRow) Thin() bool { return r.Rallies < 30 }
 
+// Unmeasurable marks a cohort whose error cannot be estimated at all. The
+// clustered error needs at least two games to have any between-game variance
+// to measure; with one it computes to exactly 0, which reads as perfect
+// certainty on the panel and is the opposite of the truth. Rendered as a dash
+// beside Thin, and it suppresses the verdict rather than flattering it.
+func (r CohortRow) Unmeasurable() bool { return r.Games < 2 }
+
 // Pooled at the rally, not averaged over per-game means: game 146's 17.0 was a
 // single rally and a per-game mean gives it the same weight as game 135's 763.
+//
+// The MEAN stays pooled for that reason. The ERROR does not, because rallies
+// inside one game share a map, a doctrine, a squad and an opponent and are not
+// independent draws. `stddevSamp(spread)/sqrt(count())` over pooled rallies
+// understated it by sqrt(rallies per game) -- 8 to 16x on the cohorts on disk:
+//
+//	digest            games  rallies  as coded  by game  CLUSTERED
+//	3b346edd351a8178    18     4362     0.175    2.719     0.841
+//	b445fbd1e8ced679    11     1308     0.290    3.165     1.468
+//	fd972edb3b795f2c     6      503     0.660    6.041     3.276
+//
+// That number is load-bearing: Moved() and Delta() print "outside the noise"
+// from it, so it decides whether a tuning change is believed. At 10x too tight
+// a 1-4 cell difference reads as real. (It is not as bad as it first looked --
+// the 32.61 -> 21.18 comparison survives clustering at 2.5x the threshold, and
+// only flips under the naive by-game error. The marginal verdicts are the
+// wrong ones, and nothing distinguished them from the solid ones.)
+//
+// So: a cluster-robust (sandwich) error, clustering by game.
+//
+//	SE = sqrt( G/(G-1) * sum_g [ n_g * (mean_g - mean) ]^2 ) / N
+//
+// This keeps the size weighting the pooled mean has -- a one-rally game
+// contributes n_g^2 = 1 against a 763-rally game's 763^2, so game 146 still
+// cannot outweigh game 135 -- while dropping the independence assumption. A
+// by-game bootstrap gives the same answer and costs a resampling loop.
 const cohortSQL = `
+WITH per_game AS (
+	SELECT
+		s.rules_digest        AS digest,
+		s.session_id          AS sid,
+		count()               AS n,
+		sum(e.spread)         AS s_sum,
+		countIf(e.spread <= 8) AS c8,
+		min(s.started_at)     AS started,
+		max(s.modified)       AS modified
+	FROM stream_events AS e
+	INNER JOIN stream_sessions AS s FINAL USING (session_id)
+	WHERE e.kind = 'rally'
+	GROUP BY digest, sid
+),
+agg AS (
+	SELECT
+		digest,
+		min(started)                 AS started,
+		count()                      AS games,
+		sum(n)                       AS n_rallies,
+		sum(s_sum)                   AS spread_sum,
+		sum(c8)                      AS clumped,
+		countIf(modified)            AS modified_games,
+		groupArray((n, s_sum / n))   AS per_game_means
+	FROM per_game
+	GROUP BY digest
+)
 SELECT
-	s.rules_digest                                   AS digest,
-	toUnixTimestamp(min(s.started_at))               AS first_seen,
-	toInt64(uniq(s.session_id))                      AS games,
-	toInt64(count())                                 AS rallies,
-	round(avg(e.spread), 2)                          AS mean_spread,
-	round(100 * countIf(e.spread <= 8) / count(), 1) AS pct_clumped,
-	round(ifNotFinite(stddevSamp(e.spread) / sqrt(count()), 0), 3) AS stderr,
-	toInt64(uniqIf(s.session_id, s.modified))        AS modified_games
-FROM stream_events AS e
-INNER JOIN stream_sessions AS s FINAL USING (session_id)
-WHERE e.kind = 'rally'
-GROUP BY digest
+	digest                                               AS digest,
+	toUnixTimestamp(started)                             AS first_seen,
+	toInt64(games)                                       AS games,
+	toInt64(n_rallies)                                   AS rallies,
+	round(spread_sum / n_rallies, 2)                     AS mean_spread,
+	round(100 * clumped / n_rallies, 1)                  AS pct_clumped,
+	round(ifNotFinite(
+		sqrt(
+			if(games > 1, games / (games - 1), 1) *
+			arraySum(g -> pow(g.1 * (g.2 - spread_sum / n_rallies), 2), per_game_means)
+		) / n_rallies, 0), 3)                            AS stderr,
+	toInt64(modified_games)                              AS modified_games
+FROM agg
 ORDER BY first_seen`
 
 func ralliesSQL(filter string) string {

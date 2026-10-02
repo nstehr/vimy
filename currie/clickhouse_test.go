@@ -123,8 +123,8 @@ func TestDroppedRowsSurfaceAsAFloor(t *testing.T) {
 func TestCohortMovedNeedsMoreThanNoise(t *testing.T) {
 	co := &Cohort{
 		Rows: []CohortRow{
-			{Digest: "old", Rallies: 500, MeanSpread: 19.8, StdErr: 0.20},
-			{Digest: "new", Rallies: 500, MeanSpread: 19.2, StdErr: 0.20, Current: true},
+			{Digest: "old", Games: 5, Rallies: 500, MeanSpread: 19.8, StdErr: 0.20},
+			{Digest: "new", Games: 5, Rallies: 500, MeanSpread: 19.2, StdErr: 0.20, Current: true},
 		},
 	}
 	if co.Moved() {
@@ -137,6 +137,31 @@ func TestCohortMovedNeedsMoreThanNoise(t *testing.T) {
 	co.Rows[1].MeanSpread = 7.9
 	if !co.Moved() {
 		t.Errorf("19.8 to 7.9 against ±0.8 is a move: %s", co.Delta())
+	}
+}
+
+// A one-game cohort gets NO verdict, however large the difference looks.
+//
+// The clustered error needs two games to have any between-game variance to
+// measure; with one it is exactly 0, so the old test -- diff > 2*(0+err) --
+// would clear on almost anything and the least certain cohort on the page
+// would read as the most certain. This is the regression that came with
+// clustering the error, and it is the dangerous direction.
+func TestCohortSingleGameGetsNoVerdict(t *testing.T) {
+	co := &Cohort{
+		Rows: []CohortRow{
+			{Digest: "old", Games: 5, Rallies: 500, MeanSpread: 30.0, StdErr: 1.0},
+			{Digest: "new", Games: 1, Rallies: 97, MeanSpread: 12.0, StdErr: 0, Current: true},
+		},
+	}
+	if co.Moved() {
+		t.Error("a single-game cohort has no measurable error, so nothing can be outside it")
+	}
+	if !strings.Contains(co.Delta(), "single game") {
+		t.Errorf("delta should say why there is no verdict, got %q", co.Delta())
+	}
+	if !co.Rows[1].Unmeasurable() || co.Rows[0].Unmeasurable() {
+		t.Error("Unmeasurable should mark the one-game cohort and only that one")
 	}
 }
 
