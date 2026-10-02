@@ -4,10 +4,12 @@ param tech-priority: float
 rule build-power {
   priority 800
   category economy exclusive
+  because "builds on HEADROOM rather than on a deficit already arrived. RA sets LowPowerModifier 300, so the moment excess goes negative everything builds three times slower - including the plant that would fix it, which then holds the Building queue and shuts this rule's own `not queue-busy` gate. Game 212 spent 35920 ticks power-negative across 26 episodes, 1128 evaluations of them with a plant buildable, cash in hand, nothing queued and the queue busy. Measured warning: power decays THROUGH the thin band first, so the trigger has time to work. In the 2000 ticks before an episode game 211 ran median excess 80, then 65, then 38 in the last 300 with 71 percent of samples under 50, and game 212 ran 96, then 50, then 70 with about half under 50. A threshold of 50 fires in that window, several hundred ticks before the deficit, while the queue is still free - which is what makes it a fix rather than one more order queued behind a refinery. The threshold also bounds the spending by itself: once excess clears 50 the rule stops, so it cannot run away. Matches build-advanced-power, which has used `power-excess < 50` all along. NOT the alternative of dropping the queue gate: the Building queue is serial, so a plant queued behind a half-built refinery arrives no sooner"
   do produce-power-plant
   require not queue-busy(Building)
+  require not queue-producing-role(power-plant)
   require can-build-role(power-plant)
-  require power-excess < 0 or role-count(power-plant) == 0
+  require power-excess < 50 or role-count(power-plant) == 0
   require cash >= lerp(500, 200, economy-priority)
 }
 
