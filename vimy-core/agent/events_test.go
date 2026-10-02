@@ -1334,3 +1334,50 @@ func TestRushDetectedFromBuildingLoss(t *testing.T) {
 		t.Error("a building lost 8600 ticks ago is not current pressure")
 	}
 }
+
+// The strategist compares live force against live force, not against a
+// cumulative count that includes everything it has already destroyed.
+//
+// doctrine.baml's FORCE COMPARISON put our_combat_units beside the cumulative
+// enemy_combat_units_seen. Three quarters to seven eighths of that figure was
+// units Vimy had killed: games 210-212 showed deficits of 22.6x, 17.7x and
+// 18.9x where the standing ratios were 3.0, 3.1 and 4.7 — and since the
+// cumulative count only rises, killing more of them made the briefing worse.
+func TestStrategistSeesStandingEnemyForceNotCumulative(t *testing.T) {
+	gs := model.GameState{
+		Tick: 40000, MapWidth: 128, MapHeight: 128,
+		// The engine's counter, not an inference: the sidecar's own kill
+		// tracking was retired for over-counting threefold.
+		Player: model.Player{UnitsKilled: 80},
+	}
+	memory := map[string]any{
+		"enemyUnitsSeen": map[string]int{"e1": 60, "3tnk": 40, "harv": 9},
+	}
+	sit := buildSituation(gs, memory, nil, nil, nil)
+
+	// 100 combat units ever seen (harvesters are not combat), 80 killed.
+	if sit.Enemy_combat_units_built != 100 {
+		t.Errorf("built = %d, want 100 — the cumulative figure is kept, just renamed", sit.Enemy_combat_units_built)
+	}
+	if sit.Enemy_combat_units_standing != 20 {
+		t.Errorf("standing = %d, want 20 (100 seen - 80 killed)", sit.Enemy_combat_units_standing)
+	}
+}
+
+// Killed can exceed combat-units-seen, and the answer is zero rather than a
+// negative force. The two counters have different provenance — ours is the
+// engine's and counts harvesters, theirs is only what we have SCOUTED — so an
+// opponent we have barely seen can have killed-greater-than-seen.
+func TestStandingEnemyForceClampsAtZero(t *testing.T) {
+	gs := model.GameState{Tick: 40000, MapWidth: 128, MapHeight: 128,
+		Player: model.Player{UnitsKilled: 150}}
+	memory := map[string]any{"enemyUnitsSeen": map[string]int{"e1": 10}}
+	sit := buildSituation(gs, memory, nil, nil, nil)
+
+	if sit.Enemy_combat_units_standing != 0 {
+		t.Errorf("standing = %d, want 0 — never a negative army", sit.Enemy_combat_units_standing)
+	}
+	if sit.Enemy_combat_units_built != 10 {
+		t.Errorf("built = %d, want 10", sit.Enemy_combat_units_built)
+	}
+}

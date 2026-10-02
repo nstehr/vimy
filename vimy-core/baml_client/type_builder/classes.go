@@ -787,8 +787,12 @@ func (t *GameSituationClassView) PropertyOur_combat_units() (ClassPropertyView, 
 	return t.inner.Property("our_combat_units")
 }
 
-func (t *GameSituationClassView) PropertyEnemy_combat_units_seen() (ClassPropertyView, error) {
-	return t.inner.Property("enemy_combat_units_seen")
+func (t *GameSituationClassView) PropertyEnemy_combat_units_standing() (ClassPropertyView, error) {
+	return t.inner.Property("enemy_combat_units_standing")
+}
+
+func (t *GameSituationClassView) PropertyEnemy_combat_units_built() (ClassPropertyView, error) {
+	return t.inner.Property("enemy_combat_units_built")
 }
 
 func (t *GameSituationClassView) PropertyTime_to_reach_enemy_estimate() (ClassPropertyView, error) {

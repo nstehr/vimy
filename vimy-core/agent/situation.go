@@ -303,14 +303,37 @@ func buildSituation(gs model.GameState, memory map[string]any, events []Event, s
 	enemyCombat := 0
 	for t, c := range rules.GetEnemyUnitsSeen(memory) {
 		sit.Enemy_units_seen = append(sit.Enemy_units_seen, types.TypeCount{Type: t, Count: int64(c)})
-		// Cumulative, so this counts units already destroyed. That is the right
-		// measure for the comparison: it says what the opponent has been
-		// willing to build, not what happens to be alive this second.
 		if rules.IsCombatUnit(t) {
 			enemyCombat += c
 		}
 	}
-	sit.Enemy_combat_units_seen = int64(enemyCombat)
+	sit.Enemy_combat_units_built = int64(enemyCombat)
+
+	// What they still HAVE, as against what they have ever fielded.
+	//
+	// The cumulative figure was being set beside our LIVING army under a
+	// heading reading "FORCE COMPARISON", and it is not comparable to it:
+	// three quarters to seven eighths of it is units we already destroyed.
+	// Games 210-212 showed the strategist deficits of 22.6x, 17.7x and 18.9x
+	// where the standing ratios were 3.0, 3.1 and 4.7 — and because the
+	// cumulative count only rises, killing more of them made its own briefing
+	// look worse. A planner reading that should turtle, which is roughly what
+	// it did.
+	//
+	// UnitsKilled is the engine's counter, not an inference: the sidecar's own
+	// kill tracking was retired for over-counting threefold. It counts every
+	// unit we killed including harvesters, so this subtraction is slightly
+	// generous to the enemy — it can only understate what remains, never
+	// inflate it, which is the safe direction for a number that decides
+	// whether to commit. Clamped at zero because the two counters have
+	// different provenance (ours is the engine's, theirs is what we have
+	// SEEN) and nothing guarantees their difference is positive: an opponent
+	// we have barely scouted can have fewer units seen than killed.
+	standing := enemyCombat - gs.Player.UnitsKilled
+	if standing < 0 {
+		standing = 0
+	}
+	sit.Enemy_combat_units_standing = int64(standing)
 	for t, c := range rules.GetEnemyBuildingsSeen(memory) {
 		sit.Enemy_buildings_seen = append(sit.Enemy_buildings_seen, types.TypeCount{Type: t, Count: int64(c)})
 	}
