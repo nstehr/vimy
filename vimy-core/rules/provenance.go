@@ -28,7 +28,7 @@ func artifactFor(rs []*Rule) json.RawMessage {
 		if err != nil {
 			return nil
 		}
-		source = append(source, artifactRule{Name: r.Name, Priority: r.Priority, Category: r.Category, Exclusive: r.Exclusive, Because: r.Because, Action: name, Condition: r.ConditionSrc, Source: r.Source})
+		source = append(source, artifactRule{Name: r.Name, Priority: r.Priority, Category: r.Category, Exclusive: r.Exclusive, Share: r.Share, Because: r.Because, Action: name, Condition: r.ConditionSrc, Source: r.Source})
 	}
 	raw, _ := json.Marshal(source)
 	return raw

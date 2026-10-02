@@ -19,6 +19,7 @@ type RuleSummary struct {
 	Priority     int
 	Category     string
 	Exclusive    bool
+	Share        int
 	ConditionSrc string
 	Because      string
 	Source       string
@@ -256,12 +257,37 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn CommandSender
 	exporter.RecordRuleSet(ruleSetID, e.record)
 	stateIdx := exporter.begin(env, rules)
 
+	// Share rationing state. Counted in category WINS, not ticks: the contested
+	// resource is the production slot. Lives in Memory so Reset clears it
+	// between games, like every other cross-tick counter that is not a
+	// package-level diagnostic.
+	categoryWins := memoryMap[string, int](env.Memory, "categoryWins")
+	ruleLastWin := memoryMap[string, int](env.Memory, "ruleLastWin")
+
 	anyFired := false
 	for _, r := range rules {
 		if fired[r.Category] {
 			exporter.record(stateIdx, gs.Tick, ruleSetID, r.Name, false, true)
 			streamEval(events, stateIdx, gs.Tick, ruleSetID, r.Name, false, true)
 			continue
+		}
+
+		// A rationed rule stands aside until its category has been won Share
+		// times since it last won, which lets the next-priority rule through.
+		// Recorded as SKIPPED rather than as a false condition, because that is
+		// what it is -- the condition was never evaluated -- and because
+		// stream_rule_evals already means "preempted" by that column, so
+		// rationing stays visible in the same place preemption is read.
+		if r.Share > 1 {
+			// Share-1, not Share: the rule's own win is one of the Share. After
+			// winning turn k it is eligible again at turn k+Share, so it takes
+			// turns 1, 1+Share, 1+2*Share -- one in Share. Comparing against
+			// Share directly yields one in Share+1, which the test caught.
+			if last, won := ruleLastWin[r.Name]; won && categoryWins[r.Category]-last < r.Share-1 {
+				exporter.record(stateIdx, gs.Tick, ruleSetID, r.Name, false, true)
+				streamEval(events, stateIdx, gs.Tick, ruleSetID, r.Name, false, true)
+				continue
+			}
 		}
 
 		result, err := vm.Run(r.program, env)
@@ -289,6 +315,11 @@ func (e *Engine) Evaluate(gs model.GameState, faction string, conn CommandSender
 
 		if r.Exclusive {
 			fired[r.Category] = true
+			// Counted for every exclusive win, not only rationed ones: the
+			// denominator is "turns this category took", so an unrationed rule
+			// winning still advances the clock a rationed one waits on.
+			categoryWins[r.Category]++
+			ruleLastWin[r.Name] = categoryWins[r.Category]
 		}
 	}
 
@@ -386,6 +417,7 @@ func (e *Engine) Rules() []RuleSummary {
 			Priority:     r.Priority,
 			Category:     r.Category,
 			Exclusive:    r.Exclusive,
+			Share:        r.Share,
 			ConditionSrc: r.ConditionSrc,
 			Because:      r.Because,
 			Source:       r.Source,

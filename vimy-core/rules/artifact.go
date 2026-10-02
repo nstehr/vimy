@@ -36,6 +36,7 @@ type artifactRule struct {
 	Priority  int    `json:"priority"`
 	Category  string `json:"category"`
 	Exclusive bool   `json:"exclusive"`
+	Share     int    `json:"share,omitempty"`
 	Because   string `json:"because,omitempty"`
 	Action    string `json:"action"`
 	Condition string `json:"condition"`
@@ -62,6 +63,7 @@ func LoadArtifact(data []byte) ([]*Rule, error) {
 			Priority:     a.Priority,
 			Category:     a.Category,
 			Exclusive:    a.Exclusive,
+			Share:        a.Share,
 			ConditionSrc: a.Condition,
 			Source:       a.Source,
 			Because:      a.Because,
