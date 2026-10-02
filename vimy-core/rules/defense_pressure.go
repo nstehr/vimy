@@ -58,6 +58,14 @@ type defenseEpisode struct {
 	critical int
 	damaged  int
 
+	// anyDamage is the sensitive end of the ladder: ANY building below full
+	// health, where damaged needs a quarter gone and critical needs a critical
+	// repair type with an enemy inside 10 cells. Game 211's first episodes read
+	// critical 14 against damaged 0 -- a building being shot at that had not yet
+	// lost 25 percent -- so reading damaged alone would have filed a real attack
+	// as loitering.
+	anyDamage int
+
 	// What it cost. Buildings are counted at the episode's start so that losses
 	// during it are a subtraction rather than a guess, and the engine's own
 	// BuildingsDead is carried too -- it is ground truth and the count of
@@ -75,6 +83,17 @@ type defenseEpisode struct {
 	tierUnassign int
 	tierReserves int
 	tierAssault  int
+
+	// targetChanges counts how often consecutive acts aimed at a DIFFERENT enemy.
+	// Game 211 measured 1687 acts across 1889 evaluations under pressure -- 0.89
+	// per evaluation, exactly 1.00 in most episodes -- so defend-base re-issues an
+	// order roughly every 10 ticks for the whole episode. Whether that is harmful
+	// turns entirely on this number: re-sending the SAME attack-move is close to a
+	// no-op, while a new target every few ticks is units re-pathing instead of
+	// shooting, which is vimy-mfq's harvester oscillation in another costume.
+	// Nothing recorded it, so the question could not be settled from game 211.
+	lastTargetID  int
+	targetChanges int
 
 	// respondersSum and distSum make the means available without shipping a row
 	// per act. distSum is in fractions of the map diagonal, so "how far the
@@ -115,6 +134,9 @@ func trackDefensePressure(env RuleEnv) {
 	if len(env.DamagedBuildings()) > 0 {
 		ep.damaged++
 	}
+	if anyBuildingDamaged(env) {
+		ep.anyDamage++
+	}
 
 	if env.State.Tick-ep.lastBeat >= defenseBeatTicks {
 		emitDefenseEvent(env, "base-pressure-held", ep)
@@ -131,14 +153,22 @@ func trackDefensePressure(env RuleEnv) {
 // that should not happen -- and if it ever does, the act is deliberately NOT
 // counted into a neighbouring episode, because an act outside pressure is a
 // different bug and silently folding it in would hide it.
-func recordDefendBase(env RuleEnv, tier string, responders []model.Unit, threatX, threatY int) {
+func recordDefendBase(env RuleEnv, tier string, responders []model.Unit, target *model.Enemy) {
 	ep, ok := env.Memory[defensePressureKey].(*defenseEpisode)
 	if !ok {
 		return
 	}
 	ep.acts++
+	if target != nil {
+		if ep.acts > 1 && target.ID != ep.lastTargetID {
+			ep.targetChanges++
+		}
+		ep.lastTargetID = target.ID
+	}
 	ep.respondersSum += len(responders)
-	ep.distSum += meanJoinFraction(env, responders, threatX, threatY)
+	if target != nil {
+		ep.distSum += meanJoinFraction(env, responders, target.X, target.Y)
+	}
 	switch tier {
 	case "garrison":
 		ep.tierGarrison++
@@ -165,6 +195,7 @@ func emitDefenseEvent(env RuleEnv, kind string, ep *defenseEpisode) {
 	if ep.samples > 0 {
 		attrs["n_critical"] = float64(ep.critical)
 		attrs["n_damaged"] = float64(ep.damaged)
+		attrs["n_any_damage"] = float64(ep.anyDamage)
 		attrs["tier_garrison"] = float64(ep.tierGarrison)
 		attrs["tier_unassigned"] = float64(ep.tierUnassign)
 		attrs["tier_reserves"] = float64(ep.tierReserves)
@@ -174,6 +205,7 @@ func emitDefenseEvent(env RuleEnv, kind string, ep *defenseEpisode) {
 		attrs["units_delta"] = float64(len(env.State.Units) - ep.unitsAtStart)
 	}
 	if ep.acts > 0 {
+		attrs["n_target_changes"] = float64(ep.targetChanges)
 		attrs["mean_responders"] = float64(ep.respondersSum) / float64(ep.acts)
 		attrs["mean_response_fraction"] = ep.distSum / float64(ep.acts)
 	}
@@ -211,4 +243,16 @@ func threatDepthBucket(env RuleEnv) string {
 	default:
 		return "distant"
 	}
+}
+
+// anyBuildingDamaged is the most sensitive damage test available: one building
+// below full health, of any type, with no proximity requirement. It is the bottom
+// rung of the ladder n_critical and n_damaged sit on.
+func anyBuildingDamaged(env RuleEnv) bool {
+	for _, b := range env.State.Buildings {
+		if b.MaxHP > 0 && b.HP < b.MaxHP {
+			return true
+		}
+	}
+	return false
 }

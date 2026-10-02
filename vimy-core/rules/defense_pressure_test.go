@@ -50,10 +50,10 @@ func TestDefensePressureRecordsCostAndResponse(t *testing.T) {
 	// Two defend-base acts land during the episode, one from the garrison and one
 	// that had to recall the assault.
 	e := env(1100, 5, true, 3)
-	recordDefendBase(e, "garrison", []model.Unit{{ID: 10, X: 22, Y: 22}, {ID: 11, X: 23, Y: 21}}, 25, 20)
+	recordDefendBase(e, "garrison", []model.Unit{{ID: 10, X: 22, Y: 22}, {ID: 11, X: 23, Y: 21}}, &model.Enemy{ID: 99, X: 25, Y: 20})
 	trackDefensePressure(e)
 	e2 := env(1200, 5, true, 4) // a building has died since
-	recordDefendBase(e2, "assault recalled", []model.Unit{{ID: 12, X: 90, Y: 90}}, 25, 20)
+	recordDefendBase(e2, "assault recalled", []model.Unit{{ID: 12, X: 90, Y: 90}}, &model.Enemy{ID: 99, X: 25, Y: 20})
 	trackDefensePressure(e2)
 
 	for _, tick := range []int{1300, 1400} {
@@ -152,11 +152,44 @@ func TestDefendBaseActOutsideAnEpisodeIsNotCounted(t *testing.T) {
 	sink := &capture{}
 	mem := map[string]any{}
 	e := RuleEnv{State: pressureState(1000, 60, false, 0), Memory: mem, Events: sink}
-	recordDefendBase(e, "garrison", []model.Unit{{ID: 10}}, 5, 5)
+	recordDefendBase(e, "garrison", []model.Unit{{ID: 10}}, &model.Enemy{ID: 7, X: 5, Y: 5})
 	if len(sink.events) != 0 {
 		t.Errorf("emitted %v for an act with no pressure episode", sink.events)
 	}
 	if _, created := mem[defensePressureKey]; created {
 		t.Error("an act created an episode; only trackDefensePressure may open one")
+	}
+}
+
+// Target churn is counted, because it is what decides whether re-ordering hurts.
+//
+// Game 211 measured 1687 defend-base acts across 1889 evaluations under pressure --
+// an order roughly every 10 ticks, for the whole episode. Re-sending the SAME
+// attack-move is near enough a no-op; a new target every few ticks is units
+// re-pathing instead of shooting. Nothing recorded which, so game 211 could not
+// settle it.
+func TestDefensePressureCountsTargetChurn(t *testing.T) {
+	sink := &capture{}
+	mem := map[string]any{}
+	trackDefensePressure(RuleEnv{State: pressureState(1000, 5, true, 0), Memory: mem, Events: sink})
+
+	e := RuleEnv{State: pressureState(1100, 5, true, 0), Memory: mem, Events: sink}
+	// Same target three times, then a different one, then back.
+	for _, id := range []int{99, 99, 99, 42, 99} {
+		recordDefendBase(e, "garrison", []model.Unit{{ID: 10, X: 22, Y: 22}}, &model.Enemy{ID: id, X: 25, Y: 20})
+	}
+	trackDefensePressure(e)
+	trackDefensePressure(RuleEnv{State: pressureState(2000, 60, false, 0), Memory: mem, Events: sink})
+
+	end := sink.events[len(sink.events)-1]
+	if end.Kind != "base-pressure-cleared" {
+		t.Fatalf("last event = %q", end.Kind)
+	}
+	if got := end.Attrs["acts"]; got != 5 {
+		t.Errorf("acts = %v, want 5", got)
+	}
+	// 99,99,99,42,99: two switches. The first act sets the target and is not a change.
+	if got := end.Attrs["n_target_changes"]; got != 2 {
+		t.Errorf("n_target_changes = %v, want 2 -- re-sending the same order is not churn", got)
 	}
 }

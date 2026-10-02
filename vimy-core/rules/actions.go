@@ -53,7 +53,7 @@ func ActionDefendBase(env RuleEnv, conn CommandSender) error {
 	}
 	slog.Info("defending base", "count", len(ids), "tier", tier,
 		"target", enemy.ID, "targetType", enemy.Type, "critical", critical != nil)
-	recordDefendBase(env, tier, units, enemy.X, enemy.Y)
+	recordDefendBase(env, tier, units, enemy)
 	return sendAttackMove(env, conn, ids, enemy.X, enemy.Y)
 }
 
