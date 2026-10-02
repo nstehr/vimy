@@ -87,3 +87,65 @@ func TestHomeIsTheBaseNotTheDerricks(t *testing.T) {
 		t.Errorf("with only a derrick owned = (%d,%d), want (58,4) not the origin", x, y)
 	}
 }
+
+// Enemy siege outranks the screen in front of it.
+//
+// Every mobile type used to fall through to groundTargetValueDefault of 1.0, so
+// a v2 launcher scored what a rifleman scored, and the distance decay then
+// handed it to whichever was closer. A squad being shelled would shoot the
+// infantry screen and leave the artillery firing. Watching the games is what
+// surfaced this; the table is what confirmed it.
+func TestEnemySiegeOutscoresTheScreenInFrontOfIt(t *testing.T) {
+	env := RuleEnv{State: model.GameState{
+		Tick: 20000, MapWidth: 128, MapHeight: 128,
+		Buildings: []model.Building{{ID: 1, Type: "fact", X: 10, Y: 10, HP: 1000, MaxHP: 1000}},
+		Enemies: []model.Enemy{
+			// A rifleman right on top of the squad.
+			{ID: 1, Type: "e1", X: 45, Y: 40, HP: 50, MaxHP: 50},
+			// A v2 three times further away, behind the screen.
+			{ID: 2, Type: "v2rl", X: 60, Y: 40, HP: 150, MaxHP: 150},
+		},
+	}}
+
+	got := env.BestGroundTargetFrom(40, 40)
+	if got == nil {
+		t.Fatal("no target chosen")
+	}
+	if got.Type != "v2rl" {
+		t.Errorf("chose %q at range, want v2rl: the thing shelling the squad has to outscore "+
+			"the screen standing in front of it", got.Type)
+	}
+}
+
+// Allied artillery is scored the same way, so the rule is about siege and not
+// about the Soviet roster.
+func TestEnemyArtilleryIsScoredAsSiegeToo(t *testing.T) {
+	env := RuleEnv{State: model.GameState{
+		Tick: 20000, MapWidth: 128, MapHeight: 128,
+		Buildings: []model.Building{{ID: 1, Type: "fact", X: 10, Y: 10, HP: 1000, MaxHP: 1000}},
+		Enemies: []model.Enemy{
+			{ID: 1, Type: "e3", X: 45, Y: 40, HP: 45, MaxHP: 45},
+			{ID: 2, Type: "arty", X: 58, Y: 40, HP: 75, MaxHP: 75},
+		},
+	}}
+	if got := env.BestGroundTargetFrom(40, 40); got == nil || got.Type != "arty" {
+		t.Errorf("chose %v, want arty", got)
+	}
+}
+
+// A tank does NOT get siege treatment: armour can be fought on equal terms, and
+// valuing everything mobile would restore "chase the nearest thing" with extra
+// steps. The near rifleman should still win against a distant tank.
+func TestTanksAreNotScoredAsSiege(t *testing.T) {
+	env := RuleEnv{State: model.GameState{
+		Tick: 20000, MapWidth: 128, MapHeight: 128,
+		Buildings: []model.Building{{ID: 1, Type: "fact", X: 10, Y: 10, HP: 1000, MaxHP: 1000}},
+		Enemies: []model.Enemy{
+			{ID: 1, Type: "e1", X: 42, Y: 40, HP: 50, MaxHP: 50},
+			{ID: 2, Type: "3tnk", X: 70, Y: 40, HP: 400, MaxHP: 400},
+		},
+	}}
+	if got := env.BestGroundTargetFrom(40, 40); got == nil || got.Type != "e1" {
+		t.Errorf("chose %v, want the near e1: armour is not siege", got)
+	}
+}

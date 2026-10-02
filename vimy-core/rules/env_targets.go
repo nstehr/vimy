@@ -176,6 +176,19 @@ var groundTargetValue = map[string]float64{
 	MissileSilo: 9, IronCurtain: 9,
 	// AA defenses (low threat to ground)
 	AAGun: 2, SAMSite: 2,
+	// ENEMY SIEGE. The only MOBILE entries in this table, and they are here
+	// because everything mobile used to fall through to the default of 1.0 --
+	// a v2 launcher scored exactly what a rifleman, a dog or a harvester
+	// scored. With score = val * hpBonus / (1 + dist/50), a rifleman at 5
+	// cells scored 0.91 against a v2 at 20 cells on 0.71, so the screen always
+	// outranked the artillery behind it and the squad shot the screen while
+	// being shelled. Scored beside the static defences rather than above them:
+	// a v2 outranges everything Vimy fields and cannot be traded with, but a
+	// tesla coil cannot be walked away from, which is why that one stays
+	// highest. Deliberately NOT applied to tanks -- those can be fought on
+	// equal terms and giving every armoured unit a value would just restore
+	// "chase the nearest thing" with extra steps.
+	V2Launcher: 9, Artillery: 9,
 	// Production (destroy their ability to replace losses)
 	WarFactory: 6, Airfield: 5, Helipad: 5, SovietBarracks: 4, AlliedBarracks: 4,
 	// Economy — strangulation is a real win path once defenses are down.
