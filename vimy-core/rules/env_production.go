@@ -32,10 +32,12 @@ func (e RuleEnv) CombatVehicleCount() int {
 
 // BestBuildableVehicle checks LLM preferences before combatVehicleRoles.
 func (e RuleEnv) BestBuildableVehicle() string {
-	// The preference list gets the same capped-role filter as the fallback:
-	// otherwise a doctrine listing flak_truck behind two unbuildable tanks
-	// lands on it every time and the fallback is never reached.
-	if item := e.bestBuildableFrom(genericVehicleRoles(e.Preferences.Vehicle), nil); item != "" {
+	// The preference list is an ORDER, so the first buildable entry wins; the
+	// fallback below is an enumeration, so it keeps least-built cycling. A
+	// preference that cannot be paid for does not block a cheaper one behind
+	// it -- preferredFrom runs the affordable pass before the buildable one --
+	// which is what the capped-role filter was guarding against here.
+	if item := e.preferredFrom(genericVehicleRoles(e.Preferences.Vehicle), nil); item != "" {
 		return item
 	}
 	return e.bestBuildableFrom(genericVehicleRoles(combatVehicleRoles), nil)
@@ -83,7 +85,7 @@ func (e RuleEnv) BestBuildableSpecialist() string {
 	for _, r := range specialistInfantryRoles {
 		specialistSet[r] = true
 	}
-	if item := e.bestBuildableFrom(e.Preferences.Infantry, specialistSet); item != "" {
+	if item := e.preferredFrom(e.Preferences.Infantry, specialistSet); item != "" {
 		return item
 	}
 	return e.bestBuildableFrom(specialistInfantryRoles, nil)
@@ -108,6 +110,44 @@ func (e RuleEnv) bestBuildableFrom(candidates []string, allowSet map[string]bool
 		return item
 	}
 	return e.bestFrom(candidates, allowSet, e.BuildableType)
+}
+
+// preferredFrom takes the FIRST candidate in list order that can be built,
+// which is what a doctrine's preference list means.
+//
+// bestBuildableFrom below picks the LEAST-BUILT candidate instead, and that is
+// right for the fallback enumerations -- combatVehicleRoles has no meaningful
+// order, so cycling spreads production when the doctrine has expressed no view.
+// It is wrong for a preference list, which is an order the strategist chose.
+//
+// Measured: the strategist set preferred_vehicle to
+// [artillery, medium_tank, light_tank] in 223 of 233 doctrine windows across
+// games 217-224 -- artillery first, unambiguously -- and least-built cycling
+// built the THIRD choice as often as the first and the SECOND least of all:
+// game 219 built 20 artillery, 8 medium, 24 light; game 220 built 11, 3, 11;
+// game 222 built 10, 6, 10. Position only broke ties, so "artillery first"
+// became "whichever of these three I have fewest of". That is why the army is
+// one or two of each vehicle type instead of a mass of the one asked for.
+//
+// Affordable before merely buildable, for the same reason bestBuildableFrom
+// does it: a never-built role has count zero and resolves to whatever is most
+// expensive, so game 192 issued 169 tank orders and built zero tanks. Order is
+// honoured WITHIN each pass rather than across them -- the first affordable
+// preference wins, and only if nothing is affordable does the first buildable
+// one win. A preference that cannot be paid for must not block a cheaper one
+// behind it, which is the trap the capped-role filter was added for.
+func (e RuleEnv) preferredFrom(candidates []string, allowSet map[string]bool) string {
+	for _, resolve := range []func(string) string{e.AffordableType, e.BuildableType} {
+		for _, r := range candidates {
+			if allowSet != nil && !allowSet[r] {
+				continue
+			}
+			if item := resolve(r); item != "" {
+				return item
+			}
+		}
+	}
+	return ""
 }
 
 func (e RuleEnv) bestFrom(candidates []string, allowSet map[string]bool, resolve func(string) string) string {
@@ -142,7 +182,7 @@ func (e RuleEnv) bestFrom(candidates []string, allowSet map[string]bool, resolve
 
 // BestBuildableAircraft checks LLM preferences before combatAircraftRoles.
 func (e RuleEnv) BestBuildableAircraft() string {
-	if item := e.bestBuildableFrom(e.Preferences.Aircraft, nil); item != "" {
+	if item := e.preferredFrom(e.Preferences.Aircraft, nil); item != "" {
 		return item
 	}
 	return e.bestBuildableFrom(combatAircraftRoles, nil)
@@ -150,7 +190,7 @@ func (e RuleEnv) BestBuildableAircraft() string {
 
 // BestBuildableNaval checks LLM preferences before combatNavalRoles.
 func (e RuleEnv) BestBuildableNaval() string {
-	if item := e.bestBuildableFrom(e.Preferences.Naval, nil); item != "" {
+	if item := e.preferredFrom(e.Preferences.Naval, nil); item != "" {
 		return item
 	}
 	return e.bestBuildableFrom(combatNavalRoles, nil)
