@@ -112,39 +112,55 @@ func (e RuleEnv) bestBuildableFrom(candidates []string, allowSet map[string]bool
 	return e.bestFrom(candidates, allowSet, e.BuildableType)
 }
 
-// preferredFrom takes the FIRST candidate in list order that can be built,
-// which is what a doctrine's preference list means.
+// preferredFrom honours a preference list as a WEIGHTED order: every entry gets
+// built, the head gets built most, and the ratio follows list position.
 //
-// bestBuildableFrom below picks the LEAST-BUILT candidate instead, and that is
-// right for the fallback enumerations -- combatVehicleRoles has no meaningful
-// order, so cycling spreads production when the doctrine has expressed no view.
-// It is wrong for a preference list, which is an order the strategist chose.
+// Position i of n carries weight n-i, so [artillery, medium_tank, light_tank]
+// weighs 3:2:1. The pick is the candidate whose count is furthest below its
+// share, argmin of RoleCount(r)/weight(r), ties to the earlier position. Repeated
+// picks converge on the weights.
 //
-// Measured: the strategist set preferred_vehicle to
-// [artillery, medium_tank, light_tank] in 223 of 233 doctrine windows across
-// games 217-224 -- artillery first, unambiguously -- and least-built cycling
-// built the THIRD choice as often as the first and the SECOND least of all:
-// game 219 built 20 artillery, 8 medium, 24 light; game 220 built 11, 3, 11;
-// game 222 built 10, 6, 10. Position only broke ties, so "artillery first"
-// became "whichever of these three I have fewest of". That is why the army is
-// one or two of each vehicle type instead of a mass of the one asked for.
+// This sits between two things that were both wrong. LEAST-BUILT cycling, which
+// bestBuildableFrom still does for the fallback enumerations, ignores position
+// entirely: the strategist asked for [artillery, medium_tank, light_tank] in 223
+// of 233 doctrine windows across games 217-224 and got the THIRD choice as often
+// as the first and the SECOND least of all -- game 219 built 20/8/24, game 220
+// 11/3/11, game 222 10/6/10 -- which is the one-or-two-of-each army. STRICT
+// first-buildable order, tried on 2026-10-11, overcorrected: artillery and
+// medium_tank both cost 850, so the head won whenever cash cleared 850 and the
+// equally-priced second entry became unreachable. Game 225 built 7 artillery, 0
+// medium, 6 light, and its artillery:light ratio of 1.17 was IDENTICAL to game
+// 224's before the change -- the only realised effect was deleting a unit class,
+// with d/k 1.59 and 1 building killed, both inside the cohort band. No upside,
+// one less arm.
 //
-// Affordable before merely buildable, for the same reason bestBuildableFrom
-// does it: a never-built role has count zero and resolves to whatever is most
-// expensive, so game 192 issued 169 tank orders and built zero tanks. Order is
-// honoured WITHIN each pass rather than across them -- the first affordable
-// preference wins, and only if nothing is affordable does the first buildable
-// one win. A preference that cannot be paid for must not block a cheaper one
-// behind it, which is the trap the capped-role filter was added for.
+// Weighting keeps every entry in the army while making the order mean something,
+// which is what a ranked list from the strategist plainly intends.
+//
+// Affordable before merely buildable, as bestBuildableFrom does: a never-built
+// role has count zero and resolves to whatever is dearest, which is how game 192
+// issued 169 tank orders and built no tanks. The weighting applies within each
+// pass, so an unaffordable head does not block a cheaper entry behind it.
 func (e RuleEnv) preferredFrom(candidates []string, allowSet map[string]bool) string {
+	n := len(candidates)
 	for _, resolve := range []func(string) string{e.AffordableType, e.BuildableType} {
-		for _, r := range candidates {
+		best, bestScore := "", math.Inf(1)
+		for i, r := range candidates {
 			if allowSet != nil && !allowSet[r] {
 				continue
 			}
-			if item := resolve(r); item != "" {
-				return item
+			item := resolve(r)
+			if item == "" {
+				continue
 			}
+			// weight n-i: first position heaviest, last position 1.
+			score := float64(e.RoleCount(r)) / float64(n-i)
+			if score < bestScore {
+				best, bestScore = item, score
+			}
+		}
+		if best != "" {
+			return best
 		}
 	}
 	return ""

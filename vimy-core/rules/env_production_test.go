@@ -63,6 +63,59 @@ func TestAffordableTypePrefersWhatCanBePaidFor(t *testing.T) {
 	}
 }
 
+// A preference list is a WEIGHTED order: the head dominates, everything is built.
+//
+// Least-built cycling ignored position entirely -- the strategist asked for
+// [artillery, medium_tank, light_tank] in 223 of 233 windows and game 219 built
+// 20/8/24, the third choice most. Strict first-buildable order overcorrected:
+// artillery and medium_tank both cost 850, so game 225 built 7/0/6 and the
+// second entry became unreachable. This asserts the middle: repeated picks
+// converge on the 3:2:1 the list position implies.
+func TestPreferenceListConvergesOnItsPositionalWeights(t *testing.T) {
+	counts := map[string]int{"arty": 0, "2tnk": 0, "1tnk": 0}
+	role := map[string]string{"arty": "artillery", "2tnk": "medium_tank", "1tnk": "light_tank"}
+	picks := map[string]int{}
+	for i := 0; i < 60; i++ {
+		units := []model.Unit{}
+		id := 1
+		for typ, n := range counts {
+			for j := 0; j < n; j++ {
+				units = append(units, model.Unit{ID: id, Type: typ})
+				id++
+			}
+		}
+		env := RuleEnv{
+			Preferences: UnitPreferences{Vehicle: []string{"artillery", "medium_tank", "light_tank"}},
+			State: model.GameState{
+				Tick: 20000, Player: model.Player{Cash: 9000}, Units: units,
+				ProductionQueues: []model.ProductionQueue{{
+					Type: "Vehicle", Buildable: []string{"arty", "2tnk", "1tnk"},
+					BuildableCosts: map[string]int{"arty": 850, "2tnk": 850, "1tnk": 700},
+				}},
+			},
+		}
+		got := env.BestBuildableVehicle()
+		if got == "" {
+			t.Fatalf("iteration %d picked nothing", i)
+		}
+		counts[got]++
+		picks[role[got]]++
+	}
+	// 60 picks at 3:2:1 is 30/20/10. Allow slack for integer stepping.
+	if picks["artillery"] < 25 || picks["artillery"] > 35 {
+		t.Errorf("artillery picked %d of 60, want ~30 (weight 3 of 6): %v", picks["artillery"], picks)
+	}
+	if picks["medium_tank"] < 15 || picks["medium_tank"] > 25 {
+		t.Errorf("medium_tank picked %d of 60, want ~20 (weight 2 of 6): %v", picks["medium_tank"], picks)
+	}
+	if picks["light_tank"] == 0 {
+		t.Errorf("light_tank never picked; every entry in the list must be built: %v", picks)
+	}
+	if picks["artillery"] <= picks["medium_tank"] || picks["medium_tank"] <= picks["light_tank"] {
+		t.Errorf("the order must be respected as a ranking: %v", picks)
+	}
+}
+
 // A preference list is an ORDER, not a set to round-robin.
 //
 // The strategist set preferred_vehicle to [artillery, medium_tank, light_tank]
@@ -88,9 +141,13 @@ func TestPreferenceListIsHonouredAsAnOrder(t *testing.T) {
 			}},
 		},
 	}
-	if got := env.BestBuildableVehicle(); got != "arty" {
-		t.Errorf("picked %q with three artillery already alive; the doctrine asked for "+
-			"artillery FIRST, and a preference list is an order", got)
+	// Three artillery against weight 3 scores 1.0; medium and light at zero
+	// score 0, so the under-built entries come first. That is the point of
+	// weighting rather than strict order -- the head leads over time without
+	// excluding the rest.
+	if got := env.BestBuildableVehicle(); got == "arty" {
+		t.Errorf("picked artillery with three already alive and none of the others; "+
+			"weighting should top up the under-built entries, got %q", got)
 	}
 }
 
